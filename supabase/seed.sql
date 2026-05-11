@@ -1,0 +1,16 @@
+-- Run after creating two auth users. Replace the UUIDs with auth.users.id values.
+-- Ralph and Dorine intentionally have equal rights.
+
+-- insert into public.profiles (id, display_name) values
+--   ('00000000-0000-0000-0000-000000000001', 'Ralph'),
+--   ('00000000-0000-0000-0000-000000000002', 'Dorine');
+--
+-- insert into public.households (id, name) values
+--   ('11111111-1111-1111-1111-111111111111', 'Ralph & Dorine');
+--
+-- insert into public.household_members (household_id, user_id) values
+--   ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000001'),
+--   ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000002');
+--
+-- insert into public.vehicles (household_id, name) values
+--   ('11111111-1111-1111-1111-111111111111', 'Gezinsauto');
