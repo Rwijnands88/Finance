@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   ArrowDownToLine,
+  Camera,
   Car,
   Check,
   CircleUserRound,
@@ -12,6 +13,7 @@ import {
   Fuel,
   Landmark,
   ListChecks,
+  LoaderCircle,
   Plus,
   ReceiptText,
   Smartphone,
@@ -71,6 +73,8 @@ export function FinanceDashboard() {
   const [quickDate, setQuickDate] = useState("2026-05-11");
   const [quickNote, setQuickNote] = useState("");
   const [fuelLiters, setFuelLiters] = useState("");
+  const [scanMessage, setScanMessage] = useState("");
+  const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [chartsReady, setChartsReady] = useState(false);
 
   useEffect(() => {
@@ -127,6 +131,52 @@ export function FinanceDashboard() {
     setQuickAmount("");
     setQuickNote("");
     setFuelLiters("");
+    setScanMessage("");
+  }
+
+  async function scanReceipt(file: File) {
+    setIsScanningReceipt(true);
+    setScanMessage("Bon wordt gelezen...");
+
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const response = await fetch("/api/receipt-scan", {
+        method: "POST",
+        body: formData,
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setScanMessage(
+          typeof result.error === "string"
+            ? result.error
+            : "Deze bon kon niet duidelijk gelezen worden. Je kunt handmatig verder.",
+        );
+        return;
+      }
+
+      if (typeof result.amount === "number") {
+        setQuickAmount(String(result.amount.toFixed(2)));
+      }
+
+      if (typeof result.date === "string") {
+        setQuickDate(result.date);
+      }
+
+      if (typeof result.merchant === "string" && result.merchant.trim()) {
+        setQuickNote(result.merchant.trim());
+      }
+
+      setScanMessage("Bon gelezen. Controleer de gegevens en sla op.");
+    } catch {
+      setScanMessage(
+        "Deze bon kon niet gelezen worden. Je kunt handmatig verder.",
+      );
+    } finally {
+      setIsScanningReceipt(false);
+    }
   }
 
   function confirmFixedExpense(expense: FixedExpenseInstance) {
@@ -265,6 +315,9 @@ export function FinanceDashboard() {
             onNoteChange={setQuickNote}
             onCategoryChange={setQuickCategory}
             onFuelLitersChange={setFuelLiters}
+            isScanningReceipt={isScanningReceipt}
+            scanMessage={scanMessage}
+            onScanReceipt={scanReceipt}
             onSubmit={addVariableExpense}
           />
 
@@ -569,6 +622,9 @@ function QuickEntryCard({
   onNoteChange,
   onCategoryChange,
   onFuelLitersChange,
+  isScanningReceipt,
+  scanMessage,
+  onScanReceipt,
   onSubmit,
 }: {
   amount: string;
@@ -581,6 +637,9 @@ function QuickEntryCard({
   onNoteChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onFuelLitersChange: (value: string) => void;
+  isScanningReceipt: boolean;
+  scanMessage: string;
+  onScanReceipt: (file: File) => void;
   onSubmit: () => void;
 }) {
   const variableCategories = initialCategories.filter(
@@ -597,6 +656,43 @@ function QuickEntryCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <label className="flex min-h-20 cursor-pointer items-center justify-center gap-3 rounded-[16px] border border-indigo-400/30 bg-indigo-500/15 px-4 text-base font-semibold text-indigo-100 transition hover:bg-indigo-500/20 sm:hidden">
+          {isScanningReceipt ? (
+            <LoaderCircle className="h-7 w-7 animate-spin" />
+          ) : (
+            <Camera className="h-7 w-7" />
+          )}
+          {isScanningReceipt ? "Bon wordt gelezen..." : "Bon scannen"}
+          <input
+            className="sr-only"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            disabled={isScanningReceipt}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+
+              if (file) {
+                onScanReceipt(file);
+              }
+            }}
+          />
+        </label>
+
+        {scanMessage && (
+          <p
+            className={cn(
+              "rounded-[12px] border p-3 text-sm sm:hidden",
+              isScanningReceipt
+                ? "border-indigo-400/20 bg-indigo-500/10 text-indigo-100"
+                : "border-zinc-800 bg-zinc-950/70 text-zinc-300",
+            )}
+          >
+            {scanMessage}
+          </p>
+        )}
+
         <div className="grid grid-cols-3 gap-2">
           {variableCategories.map((item) => (
             <button

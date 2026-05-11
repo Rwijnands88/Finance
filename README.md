@@ -11,6 +11,7 @@ PWA voor Ralph en Dorine: twee logins, een gedeeld huishouden, vaste lasten als 
 - `xlsx` voor Excel-export
 - `@react-pdf/renderer` voor maandrapporten
 - `next-pwa` voor installable PWA output
+- OpenAI Vision via server-side `OPENAI_API_KEY` voor bonnenscans
 
 ## Lokaal starten
 
@@ -56,6 +57,7 @@ npx vercel
 npx vercel env add NEXT_PUBLIC_SUPABASE_URL
 npx vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
 npx vercel env add SUPABASE_SERVICE_ROLE_KEY
+npx vercel env add OPENAI_API_KEY
 npx vercel --prod
 ```
 
