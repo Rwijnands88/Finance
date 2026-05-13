@@ -14,10 +14,14 @@ import {
   Landmark,
   ListChecks,
   LoaderCircle,
+  Pencil,
   Plus,
+  Power,
   ReceiptText,
+  Save,
   Smartphone,
   WalletCards,
+  X,
 } from "lucide-react";
 import {
   Bar,
@@ -34,6 +38,7 @@ import {
   type DashboardData,
   type FixedExpenseInstance,
   type Person,
+  type RecurringExpense,
   type Transaction,
 } from "@/lib/types";
 import {
@@ -62,6 +67,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [fixedInstances, setFixedInstances] = useState<FixedExpenseInstance[]>(
     initialData.fixedInstances,
   );
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>(
+    initialData.recurringExpenses,
+  );
   const [selectedPerson, setSelectedPerson] = useState<Person>(
     initialData.currentPerson,
   );
@@ -76,6 +84,21 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [fuelLiters, setFuelLiters] = useState("");
   const [scanMessage, setScanMessage] = useState("");
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
+  const [manageMessage, setManageMessage] = useState("");
+  const [isSavingRecurring, setIsSavingRecurring] = useState(false);
+  const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
+  const [recurringName, setRecurringName] = useState("");
+  const [recurringAmount, setRecurringAmount] = useState("");
+  const [recurringStartsOn, setRecurringStartsOn] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [recurringCategory, setRecurringCategory] = useState(
+    initialData.categories.find(
+      (category) => category.kind === "fixed" || category.kind === "both",
+    )?.id ??
+      initialData.categories[0]?.id ??
+      "",
+  );
   const [chartsReady, setChartsReady] = useState(false);
 
   useEffect(() => {
@@ -109,6 +132,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   );
   const pendingFixed = fixedInstances.filter(
     (expense) => expense.month === currentMonth && expense.status === "pending",
+  );
+  const fixedCategories = useMemo(
+    () =>
+      initialData.categories.filter(
+        (category) => category.kind === "fixed" || category.kind === "both",
+      ),
+    [initialData.categories],
   );
 
   async function addVariableExpense() {
@@ -257,6 +287,131 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       },
       ...items,
     ]);
+  }
+
+  function resetRecurringForm() {
+    setEditingRecurringId(null);
+    setRecurringName("");
+    setRecurringAmount("");
+    setRecurringStartsOn(new Date().toISOString().slice(0, 10));
+    setRecurringCategory(fixedCategories[0]?.id ?? "");
+  }
+
+  function startEditingRecurring(expense: RecurringExpense) {
+    setEditingRecurringId(expense.id);
+    setRecurringName(expense.name);
+    setRecurringAmount(String(expense.currentAmount.toFixed(2)));
+    setRecurringStartsOn(expense.startsOn);
+    setRecurringCategory(expense.categoryId);
+    setManageMessage("");
+  }
+
+  async function saveRecurringExpense() {
+    const amount = Number(recurringAmount);
+
+    if (!recurringName.trim() || !recurringCategory || !amount || amount <= 0) {
+      setManageMessage("Vul naam, categorie en maandbedrag in.");
+      return;
+    }
+
+    setIsSavingRecurring(true);
+    setManageMessage("");
+
+    const response = await fetch("/api/recurring-expenses", {
+      method: editingRecurringId ? "PATCH" : "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: editingRecurringId,
+        householdId: initialData.householdId,
+        name: recurringName.trim(),
+        categoryId: recurringCategory,
+        currentAmount: amount,
+        startsOn: recurringStartsOn,
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingRecurring(false);
+
+    if (!response.ok) {
+      setManageMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Opslaan lukte niet. Probeer het nog eens.",
+      );
+      return;
+    }
+
+    const recurringExpense = result.recurringExpense as RecurringExpense;
+    const fixedInstance = result.fixedInstance as FixedExpenseInstance | null;
+
+    setRecurringExpenses((items) =>
+      editingRecurringId
+        ? items.map((item) =>
+            item.id === recurringExpense.id ? recurringExpense : item,
+          )
+        : [...items, recurringExpense].sort((a, b) =>
+            a.name.localeCompare(b.name, "nl"),
+          ),
+    );
+
+    if (fixedInstance) {
+      setFixedInstances((items) => {
+        const exists = items.some((item) => item.id === fixedInstance.id);
+        const nextItems = exists
+          ? items.map((item) => (item.id === fixedInstance.id ? fixedInstance : item))
+          : [...items, fixedInstance];
+
+        return nextItems.sort((a, b) => a.name.localeCompare(b.name, "nl"));
+      });
+    }
+
+    resetRecurringForm();
+    setManageMessage("Vaste last opgeslagen.");
+  }
+
+  async function deactivateRecurringExpense(expense: RecurringExpense) {
+    setIsSavingRecurring(true);
+    setManageMessage("");
+
+    const response = await fetch("/api/recurring-expenses", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: expense.id,
+        householdId: initialData.householdId,
+        isActive: false,
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingRecurring(false);
+
+    if (!response.ok) {
+      setManageMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Deactiveren lukte niet. Probeer het nog eens.",
+      );
+      return;
+    }
+
+    const recurringExpense = result.recurringExpense as RecurringExpense;
+    setRecurringExpenses((items) =>
+      items.map((item) =>
+        item.id === recurringExpense.id ? recurringExpense : item,
+      ),
+    );
+
+    if (editingRecurringId === expense.id) {
+      resetRecurringForm();
+    }
+
+    setManageMessage("Vaste last gedeactiveerd.");
   }
 
   function exportExcel() {
@@ -650,24 +805,235 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </Card>
         </section>
 
-        <section className="order-5 grid gap-4 lg:order-none lg:grid-cols-3">
-          {initialData.recurringExpenses.map((expense) => (
+        <section className="order-5 lg:order-none">
+          <FixedExpenseManager
+            expenses={recurringExpenses}
+            categories={fixedCategories}
+            labels={labels}
+            name={recurringName}
+            amount={recurringAmount}
+            startsOn={recurringStartsOn}
+            category={recurringCategory}
+            editingId={editingRecurringId}
+            message={manageMessage}
+            isSaving={isSavingRecurring}
+            onNameChange={setRecurringName}
+            onAmountChange={setRecurringAmount}
+            onStartsOnChange={setRecurringStartsOn}
+            onCategoryChange={setRecurringCategory}
+            onSave={saveRecurringExpense}
+            onEdit={startEditingRecurring}
+            onDeactivate={deactivateRecurringExpense}
+            onCancel={resetRecurringForm}
+          />
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function FixedExpenseManager({
+  expenses,
+  categories,
+  labels,
+  name,
+  amount,
+  startsOn,
+  category,
+  editingId,
+  message,
+  isSaving,
+  onNameChange,
+  onAmountChange,
+  onStartsOnChange,
+  onCategoryChange,
+  onSave,
+  onEdit,
+  onDeactivate,
+  onCancel,
+}: {
+  expenses: RecurringExpense[];
+  categories: DashboardData["categories"];
+  labels: Map<string, DashboardData["categories"][number]>;
+  name: string;
+  amount: string;
+  startsOn: string;
+  category: string;
+  editingId: string | null;
+  message: string;
+  isSaving: boolean;
+  onNameChange: (value: string) => void;
+  onAmountChange: (value: string) => void;
+  onStartsOnChange: (value: string) => void;
+  onCategoryChange: (value: string) => void;
+  onSave: () => void;
+  onEdit: (expense: RecurringExpense) => void;
+  onDeactivate: (expense: RecurringExpense) => void;
+  onCancel: () => void;
+}) {
+  const activeExpenses = expenses.filter((expense) => expense.isActive);
+  const inactiveExpenses = expenses.filter((expense) => !expense.isActive);
+
+  return (
+    <Card>
+      <CardHeader className="grid gap-2 lg:grid-cols-[1fr_auto] lg:items-start">
+        <div>
+          <CardTitle>Vaste lasten beheren</CardTitle>
+          <CardDescription>
+            Terugkerende afschrijvingen voor iedere maand.
+          </CardDescription>
+        </div>
+        {editingId && (
+          <Button size="sm" variant="secondary" onClick={onCancel}>
+            <X className="h-4 w-4" />
+            Annuleer
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+        <div className="space-y-3 rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              placeholder="Naam"
+              value={name}
+              onChange={(event) => onNameChange(event.target.value)}
+            />
+            <Input
+              inputMode="decimal"
+              placeholder="Maandbedrag"
+              value={amount}
+              onChange={(event) => onAmountChange(event.target.value)}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select
+              value={category}
+              onChange={(event) => onCategoryChange(event.target.value)}
+            >
+              {categories.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              type="date"
+              value={startsOn}
+              onChange={(event) => onStartsOnChange(event.target.value)}
+            />
+          </div>
+
+          {message && (
+            <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300">
+              {message}
+            </p>
+          )}
+
+          <Button className="w-full" onClick={onSave} disabled={isSaving}>
+            {isSaving ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {editingId ? "Wijziging opslaan" : "Vaste last toevoegen"}
+          </Button>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          {activeExpenses.map((expense) => (
+            <RecurringExpenseCard
+              key={expense.id}
+              expense={expense}
+              categoryName={labels.get(expense.categoryId)?.name ?? "Onbekend"}
+              isSaving={isSaving}
+              onEdit={onEdit}
+              onDeactivate={onDeactivate}
+            />
+          ))}
+
+          {inactiveExpenses.map((expense) => (
             <div
               key={expense.id}
-              className="rounded-[16px] border border-zinc-900 bg-zinc-950/40 p-4"
+              className="rounded-[16px] border border-zinc-900 bg-zinc-950/25 p-4 opacity-60"
             >
-              <p className="text-sm font-medium text-zinc-100">{expense.name}</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Vanaf {expense.startsOn} · {labels.get(expense.categoryId)?.name}
-              </p>
-              <p className="mt-4 text-xl font-semibold text-zinc-50">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-zinc-100">
+                    {expense.name}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {labels.get(expense.categoryId)?.name ?? "Onbekend"}
+                  </p>
+                </div>
+                <Badge className="border-zinc-800 bg-zinc-900 text-zinc-400">
+                  uit
+                </Badge>
+              </div>
+              <p className="text-lg font-semibold text-zinc-50">
                 {currency(expense.currentAmount)}
               </p>
             </div>
           ))}
-        </section>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RecurringExpenseCard({
+  expense,
+  categoryName,
+  isSaving,
+  onEdit,
+  onDeactivate,
+}: {
+  expense: RecurringExpense;
+  categoryName: string;
+  isSaving: boolean;
+  onEdit: (expense: RecurringExpense) => void;
+  onDeactivate: (expense: RecurringExpense) => void;
+}) {
+  return (
+    <div className="rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-zinc-100">
+            {expense.name}
+          </p>
+          <p className="mt-1 truncate text-xs text-zinc-500">
+            {categoryName} · vanaf {expense.startsOn}
+          </p>
+        </div>
+        <Badge className="border-emerald-400/20 bg-emerald-500/10 text-emerald-300">
+          actief
+        </Badge>
       </div>
-    </main>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xl font-semibold text-zinc-50">
+          {currency(expense.currentAmount)}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            size="icon"
+            variant="secondary"
+            title="Wijzig vaste last"
+            onClick={() => onEdit(expense)}
+            disabled={isSaving}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            title="Deactiveer vaste last"
+            onClick={() => onDeactivate(expense)}
+            disabled={isSaving}
+          >
+            <Power className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

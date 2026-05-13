@@ -176,6 +176,8 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          name_snapshot?: string;
+          category_id?: string;
           amount_snapshot?: number;
           status?: "pending" | "confirmed" | "adjusted" | "skipped";
           confirmed_by?: string | null;
