@@ -65,10 +65,11 @@ export function totalsByPerson(transactions: Transaction[], month: string) {
     .filter((transaction) => transaction.date.startsWith(month))
     .reduce(
       (result, transaction) => {
-        result[transaction.enteredBy] += transaction.amount;
+        result[transaction.enteredBy] =
+          (result[transaction.enteredBy] ?? 0) + transaction.amount;
         return result;
       },
-      { Ralph: 0, Dorine: 0 },
+      {} as Record<string, number>,
     );
 }
 

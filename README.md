@@ -29,9 +29,9 @@ De huidige UI gebruikt demo-data zodat het dashboard direct te beoordelen is. Vu
 
 1. Maak een Supabase-project.
 2. Zet `NEXT_PUBLIC_SUPABASE_URL` en `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env`.
-3. Run de SQL uit `supabase/migrations/20260511000000_household_finance.sql`.
+3. Run de SQL migrations uit `supabase/migrations` op volgorde.
 4. Maak twee auth users aan: Ralph en Dorine.
-5. Gebruik `supabase/seed.sql` als startpunt om profiles, huishouden, leden en de gezinsauto te koppelen.
+5. Volg `supabase/README.md` om het huishouden, leden, categorieen en de gezinsauto te bootstrappen.
 
 Belangrijk datamodel:
 

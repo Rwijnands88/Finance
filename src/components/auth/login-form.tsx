@@ -5,7 +5,6 @@ import { LockKeyhole, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
   const [email, setEmail] = useState("");
@@ -18,14 +17,21 @@ export function LoginForm() {
     setMessage("");
 
     try {
-      const supabase = getSupabaseBrowserClient();
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const response = await fetch("/auth/sign-in", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
       });
+      const result = await response.json();
 
-      if (error) {
-        setMessage(error.message);
+      if (!response.ok) {
+        setMessage(
+          typeof result.error === "string"
+            ? result.error
+            : "Inloggen lukte niet. Controleer je gegevens.",
+        );
         return;
       }
 

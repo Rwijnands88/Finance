@@ -1,4 +1,4 @@
-export type Person = "Ralph" | "Dorine";
+export type Person = string;
 
 export type CategoryKind = "fixed" | "variable" | "both";
 
@@ -41,9 +41,32 @@ export type Transaction = {
   enteredBy: Person;
   fixedInstanceId?: string;
   fuel?: {
-    vehicle: "Gezinsauto";
+    vehicle: string;
     liters: number;
   };
+};
+
+export type Vehicle = {
+  id: string;
+  name: string;
+};
+
+export type DashboardData = {
+  householdId: string;
+  currentUserId: string;
+  currentPerson: Person;
+  selectedMonth: string;
+  people: Person[];
+  vehicles: Vehicle[];
+  categories: Category[];
+  recurringExpenses: RecurringExpense[];
+  fixedInstances: FixedExpenseInstance[];
+  transactions: Transaction[];
+  sixMonthTrend: Array<{
+    month: string;
+    fixed: number;
+    variable: number;
+  }>;
 };
 
 export type MonthSummary = {

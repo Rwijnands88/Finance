@@ -31,20 +31,17 @@ import {
   YAxis,
 } from "recharts";
 import {
-  categories as initialCategories,
-  fixedInstances as initialFixedInstances,
-  people,
-  recurringExpenses,
-  sixMonthTrend,
-  transactions as initialTransactions,
-} from "@/lib/demo-data";
+  type DashboardData,
+  type FixedExpenseInstance,
+  type Person,
+  type Transaction,
+} from "@/lib/types";
 import {
   categoryById,
   categoryTotals,
   totalsByPerson,
   totalsForMonth,
 } from "@/lib/finance";
-import type { FixedExpenseInstance, Person, Transaction } from "@/lib/types";
 import { cn, currency, monthLabel, preciseCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,18 +56,22 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { MonthReportDocument } from "@/components/finance/month-report-document";
 
-const currentMonth = "2026-05";
-
-export function FinanceDashboard() {
+export function FinanceDashboard({ initialData }: { initialData: DashboardData }) {
   const [transactions, setTransactions] =
-    useState<Transaction[]>(initialTransactions);
+    useState<Transaction[]>(initialData.transactions);
   const [fixedInstances, setFixedInstances] = useState<FixedExpenseInstance[]>(
-    initialFixedInstances,
+    initialData.fixedInstances,
   );
-  const [selectedPerson, setSelectedPerson] = useState<Person>("Ralph");
-  const [quickCategory, setQuickCategory] = useState("groceries");
+  const [selectedPerson, setSelectedPerson] = useState<Person>(
+    initialData.currentPerson,
+  );
+  const [quickCategory, setQuickCategory] = useState(
+    initialData.categories.find((category) => category.kind === "variable")?.id ??
+      initialData.categories[0]?.id ??
+      "",
+  );
   const [quickAmount, setQuickAmount] = useState("");
-  const [quickDate, setQuickDate] = useState("2026-05-11");
+  const [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10));
   const [quickNote, setQuickNote] = useState("");
   const [fuelLiters, setFuelLiters] = useState("");
   const [scanMessage, setScanMessage] = useState("");
@@ -82,39 +83,76 @@ export function FinanceDashboard() {
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
-  const labels = useMemo(() => categoryById(initialCategories), []);
+  const currentMonth = initialData.selectedMonth;
+  const labels = useMemo(
+    () => categoryById(initialData.categories),
+    [initialData.categories],
+  );
   const monthTotals = useMemo(
     () => totalsForMonth(transactions, currentMonth),
-    [transactions],
+    [currentMonth, transactions],
   );
   const categoryRows = useMemo(
-    () => categoryTotals(transactions, initialCategories, currentMonth),
-    [transactions],
+    () => categoryTotals(transactions, initialData.categories, currentMonth),
+    [currentMonth, initialData.categories, transactions],
   );
   const personTotals = useMemo(
     () => totalsByPerson(transactions, currentMonth),
-    [transactions],
+    [currentMonth, transactions],
   );
   const monthTransactions = useMemo(
     () =>
       transactions
         .filter((transaction) => transaction.date.startsWith(currentMonth))
         .sort((a, b) => b.date.localeCompare(a.date)),
-    [transactions],
+    [currentMonth, transactions],
   );
   const pendingFixed = fixedInstances.filter(
     (expense) => expense.month === currentMonth && expense.status === "pending",
   );
 
-  function addVariableExpense() {
+  async function addVariableExpense() {
     const amount = Number(quickAmount);
     const liters = Number(fuelLiters);
+    const isFuel = labels.get(quickCategory)?.name === "Tanken";
 
     if (!amount || amount <= 0) return;
-    if (quickCategory === "fuel" && (!liters || liters <= 0)) return;
+    if (isFuel && (!liters || liters <= 0)) return;
+
+    const response = await fetch("/api/transactions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        categoryId: quickCategory,
+        amount,
+        date: quickDate,
+        note: quickNote || null,
+        fuel:
+          isFuel && initialData.vehicles[0]
+            ? {
+                vehicleId: initialData.vehicles[0].id,
+                vehicleName: initialData.vehicles[0].name,
+                liters,
+              }
+            : null,
+      }),
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setScanMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Opslaan lukte niet. Probeer het nog eens.",
+      );
+      return;
+    }
 
     const transaction: Transaction = {
-      id: crypto.randomUUID(),
+      id: result.transaction.id,
       type: "variable",
       categoryId: quickCategory,
       amount,
@@ -122,8 +160,8 @@ export function FinanceDashboard() {
       note: quickNote || undefined,
       enteredBy: selectedPerson,
       fuel:
-        quickCategory === "fuel"
-          ? { vehicle: "Gezinsauto", liters }
+        isFuel && initialData.vehicles[0]
+          ? { vehicle: initialData.vehicles[0].name, liters }
           : undefined,
     };
 
@@ -179,7 +217,25 @@ export function FinanceDashboard() {
     }
   }
 
-  function confirmFixedExpense(expense: FixedExpenseInstance) {
+  async function confirmFixedExpense(expense: FixedExpenseInstance) {
+    const response = await fetch("/api/fixed-expenses/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ instanceId: expense.id }),
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setScanMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Bevestigen lukte niet. Probeer het nog eens.",
+      );
+      return;
+    }
+
     setFixedInstances((items) =>
       items.map((item) =>
         item.id === expense.id
@@ -190,7 +246,7 @@ export function FinanceDashboard() {
 
     setTransactions((items) => [
       {
-        id: crypto.randomUUID(),
+        id: result.transactionId,
         type: "fixed",
         fixedInstanceId: expense.id,
         categoryId: expense.categoryId,
@@ -227,7 +283,7 @@ export function FinanceDashboard() {
       <MonthReportDocument
         month={currentMonth}
         transactions={transactions}
-        categories={initialCategories}
+        categories={initialData.categories}
       />,
     ).toBlob();
     const url = URL.createObjectURL(blob);
@@ -247,7 +303,7 @@ export function FinanceDashboard() {
               <Badge className="border-indigo-400/25 bg-indigo-500/10 text-indigo-200">
                 PWA dashboard
               </Badge>
-              <Badge>Ralph & Dorine</Badge>
+              <Badge>{initialData.people.join(" & ") || "Huishouden"}</Badge>
             </div>
             <h1 className="max-w-2xl text-3xl font-semibold tracking-normal text-zinc-50 sm:text-5xl">
               Huishoudgeld dat vanzelf rustig blijft.
@@ -259,7 +315,7 @@ export function FinanceDashboard() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 rounded-[16px] border border-zinc-800 bg-zinc-950/60 p-2">
-            {people.map((person) => (
+            {initialData.people.map((person) => (
               <button
                 key={person}
                 className={cn(
@@ -318,6 +374,8 @@ export function FinanceDashboard() {
             isScanningReceipt={isScanningReceipt}
             scanMessage={scanMessage}
             onScanReceipt={scanReceipt}
+            categories={initialData.categories}
+            vehicles={initialData.vehicles}
             onSubmit={addVariableExpense}
           />
 
@@ -460,7 +518,7 @@ export function FinanceDashboard() {
                   minWidth={1}
                   minHeight={1}
                 >
-                  <BarChart data={sixMonthTrend} barGap={8}>
+                  <BarChart data={initialData.sixMonthTrend} barGap={8}>
                     <XAxis
                       dataKey="month"
                       axisLine={false}
@@ -553,9 +611,12 @@ export function FinanceDashboard() {
               <CardDescription>Gedeeld huishouden, gedeeld zicht.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              {people.map((person) => {
-                const value = personTotals[person];
-                const max = Math.max(personTotals.Ralph, personTotals.Dorine, 1);
+              {initialData.people.map((person) => {
+                const value = personTotals[person] ?? 0;
+                const max = Math.max(
+                  ...initialData.people.map((name) => personTotals[name] ?? 0),
+                  1,
+                );
 
                 return (
                   <div key={person}>
@@ -591,7 +652,7 @@ export function FinanceDashboard() {
         </section>
 
         <section className="order-5 grid gap-4 lg:order-none lg:grid-cols-3">
-          {recurringExpenses.map((expense) => (
+          {initialData.recurringExpenses.map((expense) => (
             <div
               key={expense.id}
               className="rounded-[16px] border border-zinc-900 bg-zinc-950/40 p-4"
@@ -617,6 +678,8 @@ function QuickEntryCard({
   note,
   category,
   fuelLiters,
+  categories,
+  vehicles,
   onAmountChange,
   onDateChange,
   onNoteChange,
@@ -632,6 +695,8 @@ function QuickEntryCard({
   note: string;
   category: string;
   fuelLiters: string;
+  categories: DashboardData["categories"];
+  vehicles: DashboardData["vehicles"];
   onAmountChange: (value: string) => void;
   onDateChange: (value: string) => void;
   onNoteChange: (value: string) => void;
@@ -642,10 +707,12 @@ function QuickEntryCard({
   onScanReceipt: (file: File) => void;
   onSubmit: () => void;
 }) {
-  const variableCategories = initialCategories.filter(
+  const variableCategories = categories.filter(
     (item) => item.kind === "variable" || item.kind === "both",
   );
-  const isFuel = category === "fuel";
+  const isFuel =
+    variableCategories.find((item) => item.id === category)?.name === "Tanken";
+  const vehicleName = vehicles[0]?.name ?? "Gezinsauto";
 
   return (
     <Card className="overflow-hidden">
@@ -733,7 +800,7 @@ function QuickEntryCard({
             />
             <div className="flex h-12 items-center gap-2 rounded-[12px] border border-zinc-800 bg-zinc-950/70 px-3 text-sm text-zinc-300">
               <Car className="h-4 w-4 text-sky-300" />
-              Gezinsauto
+              {vehicleName}
             </div>
           </div>
         )}
