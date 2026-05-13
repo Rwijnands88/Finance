@@ -1,7 +1,7 @@
 {
-  "name": "Huishoudgeld",
-  "short_name": "Huishoudgeld",
-  "description": "Gedeeld financieel dashboard voor Ralph en Dorine.",
+  "name": "Finance",
+  "short_name": "Finance",
+  "description": "Familie Wijnands financieel dashboard.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#09090B",

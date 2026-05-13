@@ -306,11 +306,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               <Badge>{initialData.people.join(" & ") || "Huishouden"}</Badge>
             </div>
             <h1 className="max-w-2xl text-3xl font-semibold tracking-normal text-zinc-50 sm:text-5xl">
-              Huishoudgeld dat vanzelf rustig blijft.
+              Finance
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400 sm:text-base">
-              Een gedeeld overzicht voor vaste afschrijvingen, snelle invoer en
-              het maandritme van jullie huishouden.
+              Familie Wijnands
             </p>
           </div>
 

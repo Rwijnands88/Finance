@@ -13,12 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Huishoudelijk financieel dashboard",
-  description: "Gedeeld dashboard voor Ralph en Dorine.",
+  title: "Finance",
+  description: "Familie Wijnands financieel dashboard.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "Huishoudgeld",
+    title: "Finance",
     statusBarStyle: "black-translucent",
   },
 };
