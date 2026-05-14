@@ -84,6 +84,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [fuelLiters, setFuelLiters] = useState("");
   const [scanMessage, setScanMessage] = useState("");
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
+  const [fixedMessage, setFixedMessage] = useState("");
+  const [savingFixedId, setSavingFixedId] = useState<string | null>(null);
+  const [fixedDrafts, setFixedDrafts] = useState<
+    Record<string, { amount: string; note: string }>
+  >({});
   const [manageMessage, setManageMessage] = useState("");
   const [isSavingRecurring, setIsSavingRecurring] = useState(false);
   const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
@@ -247,46 +252,95 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
   }
 
-  async function confirmFixedExpense(expense: FixedExpenseInstance) {
+  function updateFixedDraft(
+    expense: FixedExpenseInstance,
+    field: "amount" | "note",
+    value: string,
+  ) {
+    setFixedDrafts((drafts) => ({
+      ...drafts,
+      [expense.id]: {
+        amount: drafts[expense.id]?.amount ?? expense.amount.toFixed(2),
+        note: drafts[expense.id]?.note ?? "",
+        [field]: value,
+      },
+    }));
+  }
+
+  async function submitFixedExpense(
+    expense: FixedExpenseInstance,
+    action: "confirm" | "skip",
+  ) {
+    const draft = fixedDrafts[expense.id];
+    const amount = parseCurrencyInput(draft?.amount ?? expense.amount.toFixed(2));
+    const note = draft?.note.trim() || null;
+
+    if (action === "confirm" && (!amount || amount <= 0)) {
+      setFixedMessage("Vul een geldig maandbedrag in.");
+      return;
+    }
+
+    setSavingFixedId(expense.id);
+    setFixedMessage("");
+
     const response = await fetch("/api/fixed-expenses/confirm", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ instanceId: expense.id }),
+      body: JSON.stringify({
+        instanceId: expense.id,
+        action,
+        amount: action === "confirm" ? amount : null,
+        note,
+      }),
     });
     const result = await response.json();
+    setSavingFixedId(null);
 
     if (!response.ok) {
-      setScanMessage(
+      setFixedMessage(
         typeof result.error === "string"
           ? result.error
-          : "Bevestigen lukte niet. Probeer het nog eens.",
+          : "Verwerken lukte niet. Probeer het nog eens.",
       );
       return;
     }
 
+    const fixedInstance = result.fixedInstance as FixedExpenseInstance | null;
+
     setFixedInstances((items) =>
       items.map((item) =>
-        item.id === expense.id
-          ? { ...item, status: "confirmed", confirmedBy: selectedPerson }
-          : item,
+        item.id === expense.id && fixedInstance
+          ? { ...fixedInstance, confirmedBy: selectedPerson }
+          : item
       ),
     );
 
-    setTransactions((items) => [
-      {
-        id: result.transactionId,
-        type: "fixed",
-        fixedInstanceId: expense.id,
-        categoryId: expense.categoryId,
-        amount: expense.amount,
-        date: `${expense.month}-01`,
-        enteredBy: selectedPerson,
-        note: "Automatisch terugkerend",
-      },
-      ...items,
-    ]);
+    if (result.transaction) {
+      setTransactions((items) => [
+        {
+          id: result.transaction.id,
+          type: "fixed",
+          fixedInstanceId: expense.id,
+          categoryId: expense.categoryId,
+          amount: Number(result.transaction.amount),
+          date: result.transaction.date,
+          enteredBy: selectedPerson,
+          note: result.transaction.note ?? undefined,
+        },
+        ...items,
+      ]);
+    }
+
+    setFixedDrafts((drafts) => {
+      const nextDrafts = { ...drafts };
+      delete nextDrafts[expense.id];
+      return nextDrafts;
+    });
+    setFixedMessage(
+      action === "skip" ? "Vaste last overgeslagen." : "Vaste last verwerkt.",
+    );
   }
 
   function resetRecurringForm() {
@@ -708,11 +762,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-2">
+              {fixedMessage && (
+                <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300 sm:col-span-2">
+                  {fixedMessage}
+                </p>
+              )}
               {fixedInstances
                 .filter((expense) => expense.month === currentMonth)
                 .map((expense) => {
                   const category = labels.get(expense.categoryId);
-                  const confirmed = expense.status !== "pending";
+                  const draft = fixedDrafts[expense.id];
+                  const amountValue = draft?.amount ?? expense.amount.toFixed(2);
+                  const noteValue = draft?.note ?? expense.note ?? "";
+                  const isPending = expense.status === "pending";
+                  const isSaving = savingFixedId === expense.id;
 
                   return (
                     <div
@@ -730,29 +793,89 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                         </div>
                         <Badge
                           className={cn(
-                            confirmed &&
+                            expense.status === "confirmed" &&
                               "border-emerald-400/20 bg-emerald-500/10 text-emerald-300",
-                            !confirmed &&
+                            expense.status === "adjusted" &&
+                              "border-indigo-400/25 bg-indigo-500/10 text-indigo-200",
+                            expense.status === "skipped" &&
+                              "border-red-400/20 bg-red-500/10 text-red-300",
+                            isPending &&
                               "border-zinc-700 bg-zinc-900 text-zinc-300",
                           )}
                         >
-                          {confirmed ? "bevestigd" : "open"}
+                          {fixedStatusLabel(expense.status)}
                         </Badge>
                       </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xl font-semibold text-zinc-50">
-                          {currency(expense.amount)}
-                        </p>
-                        <Button
-                          size="sm"
-                          variant={confirmed ? "secondary" : "primary"}
-                          onClick={() => confirmFixedExpense(expense)}
-                          disabled={confirmed}
-                        >
-                          <Check className="h-4 w-4" />
-                          OK
-                        </Button>
-                      </div>
+                      {isPending ? (
+                        <div className="space-y-3">
+                          <div className="grid gap-2 sm:grid-cols-[0.8fr_1fr]">
+                            <Input
+                              inputMode="decimal"
+                              value={amountValue}
+                              onChange={(event) =>
+                                updateFixedDraft(
+                                  expense,
+                                  "amount",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                            <Input
+                              placeholder="Notitie deze maand"
+                              value={noteValue}
+                              onChange={(event) =>
+                                updateFixedDraft(
+                                  expense,
+                                  "note",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => submitFixedExpense(expense, "confirm")}
+                              disabled={isSaving}
+                            >
+                              {isSaving ? (
+                                <LoaderCircle className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Check className="h-4 w-4" />
+                              )}
+                              Bevestig
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => submitFixedExpense(expense, "skip")}
+                              disabled={isSaving}
+                            >
+                              <X className="h-4 w-4" />
+                              Sla over
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-end justify-between gap-3">
+                          <div>
+                            <p className="text-xl font-semibold text-zinc-50">
+                              {currency(expense.amount)}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-500">
+                              {expense.note ??
+                                (expense.status === "skipped"
+                                  ? "Geen transactie aangemaakt"
+                                  : "Verwerkt")}
+                            </p>
+                          </div>
+                          {expense.confirmedBy && (
+                            <p className="text-xs text-zinc-500">
+                              {expense.confirmedBy}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1243,3 +1366,18 @@ const tooltipStyle = {
   borderRadius: 12,
   color: "#FAFAFA",
 };
+
+function parseCurrencyInput(value: string) {
+  return Number(value.replace(",", "."));
+}
+
+function fixedStatusLabel(status: FixedExpenseInstance["status"]) {
+  const labels = {
+    pending: "open",
+    confirmed: "bevestigd",
+    adjusted: "aangepast",
+    skipped: "overgeslagen",
+  };
+
+  return labels[status];
+}
