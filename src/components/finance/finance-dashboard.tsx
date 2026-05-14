@@ -92,6 +92,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [manageMessage, setManageMessage] = useState("");
   const [isSavingRecurring, setIsSavingRecurring] = useState(false);
   const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
+  const [highlightedRecurringId, setHighlightedRecurringId] =
+    useState<string | null>(null);
+  const [highlightedFixedInstanceId, setHighlightedFixedInstanceId] =
+    useState<string | null>(null);
   const [recurringName, setRecurringName] = useState("");
   const [recurringAmount, setRecurringAmount] = useState("");
   const [recurringStartsOn, setRecurringStartsOn] = useState(
@@ -353,6 +357,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   function startEditingRecurring(expense: RecurringExpense) {
     setEditingRecurringId(expense.id);
+    setHighlightedRecurringId(expense.id);
     setRecurringName(expense.name);
     setRecurringAmount(String(expense.currentAmount.toFixed(2)));
     setRecurringStartsOn(expense.startsOn);
@@ -400,6 +405,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
     const recurringExpense = result.recurringExpense as RecurringExpense;
     const fixedInstance = result.fixedInstance as FixedExpenseInstance | null;
+    const wasEditing = Boolean(editingRecurringId);
 
     setRecurringExpenses((items) =>
       editingRecurringId
@@ -422,8 +428,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       });
     }
 
+    setHighlightedRecurringId(recurringExpense.id);
+    setHighlightedFixedInstanceId(fixedInstance?.id ?? null);
+    setFixedMessage(
+      fixedInstance
+        ? `${recurringExpense.name} staat nu open bij deze maand.`
+        : `${recurringExpense.name} is opgeslagen.`,
+    );
     resetRecurringForm();
-    setManageMessage("Vaste last opgeslagen.");
+    setManageMessage(
+      wasEditing
+        ? `${recurringExpense.name} is bijgewerkt.`
+        : `${recurringExpense.name} is toegevoegd.`,
+    );
   }
 
   async function deactivateRecurringExpense(expense: RecurringExpense) {
@@ -465,7 +482,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       resetRecurringForm();
     }
 
-    setManageMessage("Vaste last gedeactiveerd.");
+    setHighlightedRecurringId(recurringExpense.id);
+    setManageMessage(`${recurringExpense.name} is gedeactiveerd.`);
   }
 
   function exportExcel() {
@@ -646,7 +664,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </Card>
         </section>
 
-        <section className="order-3 grid gap-4 lg:order-none lg:grid-cols-[1fr_1fr]">
+        <section className="order-4 grid gap-4 lg:order-none lg:grid-cols-[1fr_1fr]">
           <Card>
             <CardHeader>
               <CardTitle>Categorieen</CardTitle>
@@ -753,7 +771,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </Card>
         </section>
 
-        <section className="order-4 grid gap-4 lg:order-none lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="order-3 grid gap-4 lg:order-none lg:grid-cols-[1fr_1fr]">
           <Card>
             <CardHeader>
               <CardTitle>Terugkerende afschrijvingen</CardTitle>
@@ -780,7 +798,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   return (
                     <div
                       key={expense.id}
-                      className="rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4"
+                      className={cn(
+                        "rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4 transition",
+                        highlightedFixedInstanceId === expense.id &&
+                          "border-indigo-400/70 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.22)]",
+                      )}
                     >
                       <div className="mb-4 flex items-start justify-between gap-3">
                         <div>
@@ -882,6 +904,30 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             </CardContent>
           </Card>
 
+          <FixedExpenseManager
+            expenses={recurringExpenses}
+            categories={fixedCategories}
+            labels={labels}
+            name={recurringName}
+            amount={recurringAmount}
+            startsOn={recurringStartsOn}
+            category={recurringCategory}
+            editingId={editingRecurringId}
+            highlightedId={highlightedRecurringId}
+            message={manageMessage}
+            isSaving={isSavingRecurring}
+            onNameChange={setRecurringName}
+            onAmountChange={setRecurringAmount}
+            onStartsOnChange={setRecurringStartsOn}
+            onCategoryChange={setRecurringCategory}
+            onSave={saveRecurringExpense}
+            onEdit={startEditingRecurring}
+            onDeactivate={deactivateRecurringExpense}
+            onCancel={resetRecurringForm}
+          />
+        </section>
+
+        <section className="order-5 lg:order-none">
           <Card>
             <CardHeader>
               <CardTitle>Wie voerde wat in?</CardTitle>
@@ -927,29 +973,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             </CardContent>
           </Card>
         </section>
-
-        <section className="order-5 lg:order-none">
-          <FixedExpenseManager
-            expenses={recurringExpenses}
-            categories={fixedCategories}
-            labels={labels}
-            name={recurringName}
-            amount={recurringAmount}
-            startsOn={recurringStartsOn}
-            category={recurringCategory}
-            editingId={editingRecurringId}
-            message={manageMessage}
-            isSaving={isSavingRecurring}
-            onNameChange={setRecurringName}
-            onAmountChange={setRecurringAmount}
-            onStartsOnChange={setRecurringStartsOn}
-            onCategoryChange={setRecurringCategory}
-            onSave={saveRecurringExpense}
-            onEdit={startEditingRecurring}
-            onDeactivate={deactivateRecurringExpense}
-            onCancel={resetRecurringForm}
-          />
-        </section>
       </div>
     </main>
   );
@@ -964,6 +987,7 @@ function FixedExpenseManager({
   startsOn,
   category,
   editingId,
+  highlightedId,
   message,
   isSaving,
   onNameChange,
@@ -983,6 +1007,7 @@ function FixedExpenseManager({
   startsOn: string;
   category: string;
   editingId: string | null;
+  highlightedId: string | null;
   message: string;
   isSaving: boolean;
   onNameChange: (value: string) => void;
@@ -994,16 +1019,23 @@ function FixedExpenseManager({
   onDeactivate: (expense: RecurringExpense) => void;
   onCancel: () => void;
 }) {
-  const activeExpenses = expenses.filter((expense) => expense.isActive);
+  const activeExpenses = expenses
+    .filter((expense) => expense.isActive)
+    .sort((first, second) => {
+      if (first.id === highlightedId) return -1;
+      if (second.id === highlightedId) return 1;
+      return first.name.localeCompare(second.name, "nl");
+    });
   const inactiveExpenses = expenses.filter((expense) => !expense.isActive);
+  const formTitle = editingId ? "Vaste last wijzigen" : "Nieuwe vaste last";
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader className="grid gap-2 lg:grid-cols-[1fr_auto] lg:items-start">
         <div>
           <CardTitle>Vaste lasten beheren</CardTitle>
           <CardDescription>
-            Terugkerende afschrijvingen voor iedere maand.
+            Toevoegen of aanpassen, direct zichtbaar in deze maand.
           </CardDescription>
         </div>
         {editingId && (
@@ -1013,43 +1045,61 @@ function FixedExpenseManager({
           </Button>
         )}
       </CardHeader>
-      <CardContent className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+      <CardContent className="space-y-5">
         <div className="space-y-3 rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input
-              placeholder="Naam"
-              value={name}
-              onChange={(event) => onNameChange(event.target.value)}
-            />
-            <Input
-              inputMode="decimal"
-              placeholder="Maandbedrag"
-              value={amount}
-              onChange={(event) => onAmountChange(event.target.value)}
-            />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-zinc-100">{formTitle}</p>
+            <Badge className="border-zinc-700 bg-zinc-900 text-zinc-300">
+              {activeExpenses.length} actief
+            </Badge>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Select
-              value={category}
-              onChange={(event) => onCategoryChange(event.target.value)}
-            >
-              {categories.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </Select>
-            <Input
-              type="date"
-              value={startsOn}
-              onChange={(event) => onStartsOnChange(event.target.value)}
-            />
+            <FieldLabel label="Naam">
+              <Input
+                placeholder="Bijv. Hypotheek"
+                value={name}
+                onChange={(event) => onNameChange(event.target.value)}
+              />
+            </FieldLabel>
+            <FieldLabel label="Maandbedrag">
+              <Input
+                inputMode="decimal"
+                placeholder="Bijv. 1840,00"
+                value={amount}
+                onChange={(event) => onAmountChange(event.target.value)}
+              />
+            </FieldLabel>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FieldLabel label="Categorie">
+              <Select
+                value={category}
+                onChange={(event) => onCategoryChange(event.target.value)}
+              >
+                {categories.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+            </FieldLabel>
+            <FieldLabel label="Startdatum">
+              <Input
+                type="date"
+                value={startsOn}
+                onChange={(event) => onStartsOnChange(event.target.value)}
+              />
+            </FieldLabel>
           </div>
 
           {message && (
-            <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300">
-              {message}
-            </p>
+            <div
+              className="flex items-start gap-2 rounded-[12px] border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-200"
+              aria-live="polite"
+            >
+              <Check className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{message}</p>
+            </div>
           )}
 
           <Button className="w-full" onClick={onSave} disabled={isSaving}>
@@ -1062,12 +1112,13 @@ function FixedExpenseManager({
           </Button>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3">
           {activeExpenses.map((expense) => (
             <RecurringExpenseCard
               key={expense.id}
               expense={expense}
               categoryName={labels.get(expense.categoryId)?.name ?? "Onbekend"}
+              isHighlighted={expense.id === highlightedId}
               isSaving={isSaving}
               onEdit={onEdit}
               onDeactivate={onDeactivate}
@@ -1106,18 +1157,26 @@ function FixedExpenseManager({
 function RecurringExpenseCard({
   expense,
   categoryName,
+  isHighlighted,
   isSaving,
   onEdit,
   onDeactivate,
 }: {
   expense: RecurringExpense;
   categoryName: string;
+  isHighlighted: boolean;
   isSaving: boolean;
   onEdit: (expense: RecurringExpense) => void;
   onDeactivate: (expense: RecurringExpense) => void;
 }) {
   return (
-    <div className="rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4">
+    <div
+      className={cn(
+        "rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4 transition",
+        isHighlighted &&
+          "border-indigo-400/70 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.22)]",
+      )}
+    >
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-zinc-100">
@@ -1127,9 +1186,16 @@ function RecurringExpenseCard({
             {categoryName} · vanaf {expense.startsOn}
           </p>
         </div>
-        <Badge className="border-emerald-400/20 bg-emerald-500/10 text-emerald-300">
-          actief
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          {isHighlighted && (
+            <Badge className="border-indigo-400/25 bg-indigo-500/10 text-indigo-200">
+              net bijgewerkt
+            </Badge>
+          )}
+          <Badge className="border-emerald-400/20 bg-emerald-500/10 text-emerald-300">
+            actief
+          </Badge>
+        </div>
       </div>
       <div className="flex items-center justify-between gap-3">
         <p className="text-xl font-semibold text-zinc-50">
@@ -1157,6 +1223,21 @@ function RecurringExpenseCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function FieldLabel({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-xs font-medium text-zinc-500">{label}</span>
+      {children}
+    </label>
   );
 }
 
