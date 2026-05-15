@@ -44,6 +44,7 @@ import {
 import {
   categoryById,
   categoryTotals,
+  sixMonthTrend,
   totalsByPerson,
   totalsForMonth,
 } from "@/lib/finance";
@@ -65,6 +66,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const defaultAccount =
     initialData.accounts.find((account) => account.kind === "shared") ??
     initialData.accounts[0];
+  const personalAccount = initialData.accounts.find(
+    (account) =>
+      account.kind === "personal" && account.ownerUserId === initialData.currentUserId,
+  );
   const [transactions, setTransactions] =
     useState<Transaction[]>(initialData.transactions);
   const [fixedInstances, setFixedInstances] = useState<FixedExpenseInstance[]>(
@@ -79,6 +84,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       "",
   );
   const [quickAccount, setQuickAccount] = useState(defaultAccount?.id ?? "");
+  const [selectedAccountId, setSelectedAccountId] = useState(
+    defaultAccount?.id ?? personalAccount?.id ?? "all",
+  );
   const [quickAmount, setQuickAmount] = useState("");
   const [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10));
   const [quickNote, setQuickNote] = useState("");
@@ -129,24 +137,60 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     () => new Map(initialData.accounts.map((account) => [account.id, account])),
     [initialData.accounts],
   );
+  const accountTabs = useMemo(() => {
+    const tabs = [];
+
+    if (defaultAccount) {
+      tabs.push({
+        id: defaultAccount.id,
+        label: "Gezamenlijk",
+        description: defaultAccount.name,
+      });
+    }
+
+    if (personalAccount) {
+      tabs.push({
+        id: personalAccount.id,
+        label: "Mijn rekening",
+        description: personalAccount.name,
+      });
+    }
+
+    return tabs;
+  }, [defaultAccount, personalAccount]);
+  const selectedAccount = accountsById.get(selectedAccountId);
+  const selectedTransactions = useMemo(
+    () =>
+      selectedAccountId === "all"
+        ? transactions
+        : transactions.filter(
+            (transaction) =>
+              (transaction.accountId ?? defaultAccount?.id) === selectedAccountId,
+          ),
+    [defaultAccount?.id, selectedAccountId, transactions],
+  );
   const monthTotals = useMemo(
-    () => totalsForMonth(transactions, currentMonth),
-    [currentMonth, transactions],
+    () => totalsForMonth(selectedTransactions, currentMonth),
+    [currentMonth, selectedTransactions],
   );
   const categoryRows = useMemo(
-    () => categoryTotals(transactions, initialData.categories, currentMonth),
-    [currentMonth, initialData.categories, transactions],
+    () => categoryTotals(selectedTransactions, initialData.categories, currentMonth),
+    [currentMonth, initialData.categories, selectedTransactions],
   );
   const personTotals = useMemo(
-    () => totalsByPerson(transactions, currentMonth),
-    [currentMonth, transactions],
+    () => totalsByPerson(selectedTransactions, currentMonth),
+    [currentMonth, selectedTransactions],
+  );
+  const selectedSixMonthTrend = useMemo(
+    () => sixMonthTrend(selectedTransactions, currentMonth),
+    [currentMonth, selectedTransactions],
   );
   const monthTransactions = useMemo(
     () =>
-      transactions
+      selectedTransactions
         .filter((transaction) => transaction.date.startsWith(currentMonth))
         .sort((a, b) => b.date.localeCompare(a.date)),
-    [currentMonth, transactions],
+    [currentMonth, selectedTransactions],
   );
   const pendingFixed = fixedInstances.filter(
     (expense) => expense.month === currentMonth && expense.status === "pending",
@@ -220,6 +264,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     };
 
     setTransactions((items) => [transaction, ...items]);
+    setSelectedAccountId(selectedAccount.id);
     setQuickAmount("");
     setQuickNote("");
     setFuelLiters("");
@@ -620,6 +665,33 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </div>
         </header>
 
+        <section className="order-1 rounded-[18px] border border-zinc-800 bg-zinc-950/45 p-2 lg:order-none">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {accountTabs.map((tab) => {
+              const isActive = selectedAccountId === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSelectedAccountId(tab.id)}
+                  className={cn(
+                    "rounded-[14px] border px-4 py-3 text-left transition",
+                    isActive
+                      ? "border-indigo-400/60 bg-indigo-500/15 text-zinc-50"
+                      : "border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-900/70 hover:text-zinc-100",
+                  )}
+                >
+                  <span className="block text-sm font-semibold">{tab.label}</span>
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    {tab.description}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="order-2 grid gap-4 lg:order-none lg:grid-cols-4">
           <MetricCard
             icon={<Landmark className="h-5 w-5" />}
@@ -675,7 +747,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               <div>
                 <CardTitle>Maandoverzicht</CardTitle>
                 <CardDescription>
-                  Alle afschrijvingen van {monthLabel(currentMonth)}.
+                  {selectedAccount?.name ?? "Alle rekeningen"} in{" "}
+                  {monthLabel(currentMonth)}.
                 </CardDescription>
               </div>
               <div className="flex gap-2">
@@ -752,6 +825,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   </div>
                 );
               })}
+              {monthTransactions.length === 0 && (
+                <div className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
+                  Geen afschrijvingen voor deze rekening in{" "}
+                  {monthLabel(currentMonth)}.
+                </div>
+              )}
             </CardContent>
           </Card>
         </section>
@@ -793,6 +872,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 )}
               </div>
               <div className="space-y-3">
+                {categoryRows.length === 0 && (
+                  <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
+                    Nog geen categorieen voor deze rekening.
+                  </p>
+                )}
                 {categoryRows.map((row) => {
                   const overBudget = row.average > 0 && row.amount > row.average;
 
@@ -836,7 +920,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   minWidth={1}
                   minHeight={1}
                 >
-                  <BarChart data={initialData.sixMonthTrend} barGap={8}>
+                  <BarChart data={selectedSixMonthTrend} barGap={8}>
                     <XAxis
                       dataKey="month"
                       axisLine={false}

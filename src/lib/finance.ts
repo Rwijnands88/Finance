@@ -73,6 +73,49 @@ export function totalsByPerson(transactions: Transaction[], month: string) {
     );
 }
 
+export function sixMonthTrend(transactions: Transaction[], currentMonth: string) {
+  const currentMonthStart = `${currentMonth}-01`;
+
+  return Array.from({ length: 6 }, (_, index) => {
+    const monthStart = addMonths(currentMonthStart, index - 5);
+    const month = monthStart.slice(0, 7);
+    const monthTransactions = transactions.filter((transaction) =>
+      transaction.date.startsWith(month),
+    );
+
+    return {
+      month: new Intl.DateTimeFormat("nl-NL", { month: "short" }).format(
+        parseIsoDate(monthStart),
+      ),
+      fixed: sum(
+        monthTransactions
+          .filter((transaction) => transaction.type === "fixed")
+          .map((transaction) => transaction.amount),
+      ),
+      variable: sum(
+        monthTransactions
+          .filter((transaction) => transaction.type === "variable")
+          .map((transaction) => transaction.amount),
+      ),
+    };
+  });
+}
+
 function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0);
+}
+
+function addMonths(isoDate: string, months: number) {
+  const date = parseIsoDate(isoDate);
+  date.setMonth(date.getMonth() + months);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function parseIsoDate(isoDate: string) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(year, month - 1, day);
 }
