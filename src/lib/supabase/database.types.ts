@@ -150,6 +150,7 @@ export type Database = {
           name: string;
           category_id: string;
           current_amount: number;
+          billing_day: number;
           starts_on: string;
           ends_on: string | null;
           is_active: boolean;
@@ -164,6 +165,7 @@ export type Database = {
           name: string;
           category_id: string;
           current_amount: number;
+          billing_day?: number;
           starts_on: string;
           ends_on?: string | null;
           is_active?: boolean;
@@ -176,6 +178,7 @@ export type Database = {
           name?: string;
           category_id?: string;
           current_amount?: number;
+          billing_day?: number;
           starts_on?: string;
           ends_on?: string | null;
           is_active?: boolean;

@@ -33,9 +33,14 @@ succeeded:
 15. `15_v2_account_rls_transactions.sql`
 16. `16_v2_account_confirm_fixed.sql`
 17. `17_v2_account_views_grants.sql`
+18. `18_recurring_billing_day.sql`
 
 These chunks are non-destructive. They keep the current app working while adding
 the account/rekening layer needed for the v2 UI.
+
+Chunk 18 prepares the fixed-expense calendar by adding `billing_day` to
+`recurring_expenses`. Existing fixed expenses are backfilled from their
+`starts_on` day, with `1` as fallback.
 
 ## First household
 

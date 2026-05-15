@@ -22,7 +22,8 @@ zoveel mogelijk behouden. Wel krijgt het datamodel een nieuwe kern:
 - Transacties hangen aan een rekening, niet alleen aan een huishouden.
 - "Ingevoerd door" blijft apart van "van welke rekening".
 - Stortingen naar de gezamenlijke rekening worden transfers, geen gewone kosten.
-- Vaste lasten blijven een aparte terugkerende laag met maandelijkse bevestiging.
+- Vaste lasten worden een financiele agenda: automatisch verwacht per maand,
+  met afschrijfdag, kalender/tijdlijn en alleen handmatige actie bij afwijkingen.
 
 ### Roadmap
 
@@ -72,6 +73,19 @@ zoveel mogelijk behouden. Wel krijgt het datamodel een nieuwe kern:
 - [ ] Categorieen per persoon tonen voor gezamenlijke uitgaven.
 - [ ] Mijn rekening schoon houden: alleen prive-transacties, prive-categorieen en prive-maandoverzicht.
 - [ ] Maandoverzicht duidelijk labelen als gezamenlijk of prive.
+
+#### Fase 3B - Vaste lasten als financiele agenda
+
+- [x] `billing_day` voorbereiden in Supabase-migratie en SQL Editor chunk.
+- [ ] `billing_day` uitvoeren in Supabase.
+- [ ] Vaste-last formulier uitbreiden met afschrijfdag.
+- [ ] Bestaande bevestig/overslaan-flow uit het hoofdscherm verwijderen.
+- [ ] Vaste lasten automatisch tonen als verwacht voor de maand.
+- [ ] Desktop: compacte maandkalender met dagen waarop afschrijvingen vallen.
+- [ ] iPhone: Things 3-achtige tijdlijn met Vandaag, Komt eraan, Later deze maand en Geweest.
+- [ ] Totalen tonen: al geweest, komt nog, totaal vaste lasten.
+- [ ] Deactiveren vervangen door Verwijderen vanaf nu.
+- [ ] Later: Deze maand aanpassen/overslaan als uitzonderingsactie.
 
 #### Fase 4 - Inleg en cashflow
 
