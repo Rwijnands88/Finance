@@ -67,12 +67,17 @@ zoveel mogelijk behouden. Wel krijgt het datamodel een nieuwe kern:
 - [ ] Snelle invoer globaal en prominent houden.
 - [x] Vaste lasten beheer uit Mijn rekening halen.
 - [x] Vaste lasten behandelen als gezamenlijk beheer, standaard op gezamenlijke rekening.
-- [ ] Onderste uitlegblok "Mobiele PWA" verwijderen.
+- [x] Onderste uitlegblok "Mobiele PWA" verwijderen.
+- [x] Dashboard visuele hierarchie compacter maken.
 - [x] "Wie voerde wat in" vervangen door gezamenlijke kosten per persoon.
 - [ ] Gezamenlijke kosten per persoon tonen als donut/balk-grafiek.
 - [x] Categorieen per persoon tonen voor gezamenlijke uitgaven.
 - [ ] Mijn rekening schoon houden: alleen prive-transacties, prive-categorieen en prive-maandoverzicht.
 - [ ] Maandoverzicht duidelijk labelen als gezamenlijk of prive.
+
+**Volgende werksessie:** eerst Fase 3 afronden, daarna pas Fase 4 starten.
+Doel voor Fase 3-afronding: views echt scheiden, snelle invoer logisch
+positioneren, maandoverzicht beter labelen en Mijn rekening schoner maken.
 
 #### Fase 3B - Vaste lasten als financiele agenda
 
@@ -88,6 +93,8 @@ zoveel mogelijk behouden. Wel krijgt het datamodel een nieuwe kern:
 - [ ] Later: Deze maand aanpassen/overslaan als uitzonderingsactie.
 
 #### Fase 4 - Inleg en cashflow
+
+Start pas nadat Fase 3 is afgerond.
 
 - [ ] Inleg/stortingen toevoegen voor Ralph en Dorine.
 - [ ] Inleg als apart type behandelen, niet als gewone uitgave.
