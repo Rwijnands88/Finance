@@ -73,6 +73,44 @@ export function totalsByPerson(transactions: Transaction[], month: string) {
     );
 }
 
+export function categoryTotalsByPerson(
+  transactions: Transaction[],
+  categories: Category[],
+  month: string,
+) {
+  const labels = categoryById(categories);
+  const grouped = new Map<string, Map<string, number>>();
+
+  transactions
+    .filter((transaction) => transaction.date.startsWith(month))
+    .forEach((transaction) => {
+      const personTotals =
+        grouped.get(transaction.categoryId) ?? new Map<string, number>();
+      personTotals.set(
+        transaction.enteredBy,
+        (personTotals.get(transaction.enteredBy) ?? 0) + transaction.amount,
+      );
+      grouped.set(transaction.categoryId, personTotals);
+    });
+
+  return Array.from(grouped.entries())
+    .map(([categoryId, totals]) => {
+      const category = labels.get(categoryId);
+      const people = Array.from(totals.entries())
+        .map(([person, amount]) => ({ person, amount }))
+        .sort((a, b) => b.amount - a.amount);
+
+      return {
+        categoryId,
+        name: category?.name ?? "Onbekend",
+        color: category?.color ?? "#6366F1",
+        total: people.reduce((sum, item) => sum + item.amount, 0),
+        people,
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+}
+
 export function sixMonthTrend(transactions: Transaction[], currentMonth: string) {
   const currentMonthStart = `${currentMonth}-01`;
 

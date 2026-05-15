@@ -19,7 +19,6 @@ import {
   Power,
   ReceiptText,
   Save,
-  Smartphone,
   Trash2,
   WalletCards,
   X,
@@ -43,6 +42,7 @@ import {
 } from "@/lib/types";
 import {
   categoryById,
+  categoryTotalsByPerson,
   categoryTotals,
   sixMonthTrend,
   totalsByPerson,
@@ -159,6 +159,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     return tabs;
   }, [defaultAccount, personalAccount]);
   const selectedAccount = accountsById.get(selectedAccountId);
+  const isSharedView = selectedAccount?.kind === "shared";
   const selectedTransactions = useMemo(
     () =>
       selectedAccountId === "all"
@@ -180,6 +181,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const personTotals = useMemo(
     () => totalsByPerson(selectedTransactions, currentMonth),
     [currentMonth, selectedTransactions],
+  );
+  const categoryPersonRows = useMemo(
+    () =>
+      categoryTotalsByPerson(
+        selectedTransactions.filter((transaction) => transaction.type === "variable"),
+        initialData.categories,
+        currentMonth,
+      ),
+    [currentMonth, initialData.categories, selectedTransactions],
   );
   const selectedSixMonthTrend = useMemo(
     () => sixMonthTrend(selectedTransactions, currentMonth),
@@ -948,207 +958,173 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         </section>
 
         <section className="order-3 grid gap-4 lg:order-none lg:grid-cols-[1fr_1fr]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Terugkerende afschrijvingen</CardTitle>
-              <CardDescription>
-                Bevestig wat deze maand echt is afgeschreven.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2">
-              {fixedMessage && (
-                <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300 sm:col-span-2">
-                  {fixedMessage}
-                </p>
-              )}
-              {fixedInstances
-                .filter((expense) => expense.month === currentMonth)
-                .map((expense) => {
-                  const category = labels.get(expense.categoryId);
-                  const draft = fixedDrafts[expense.id];
-                  const amountValue = draft?.amount ?? expense.amount.toFixed(2);
-                  const noteValue = draft?.note ?? expense.note ?? "";
-                  const isPending = expense.status === "pending";
-                  const isSaving = savingFixedId === expense.id;
+          <PersonCostInsight
+            people={initialData.people}
+            personTotals={personTotals}
+            categoryRows={categoryPersonRows}
+            isSharedView={isSharedView}
+          />
 
-                  return (
-                    <div
-                      key={expense.id}
-                      className={cn(
-                        "rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4 transition",
-                        highlightedFixedInstanceId === expense.id &&
-                          "border-indigo-400/70 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.22)]",
-                      )}
-                    >
-                      <div className="mb-4 flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-zinc-100">
-                            {expense.name}
-                          </p>
-                          <p className="mt-1 text-xs text-zinc-500">
-                            {category?.name}
-                          </p>
-                        </div>
-                        <Badge
-                          className={cn(
-                            expense.status === "confirmed" &&
-                              "border-emerald-400/20 bg-emerald-500/10 text-emerald-300",
-                            expense.status === "adjusted" &&
-                              "border-indigo-400/25 bg-indigo-500/10 text-indigo-200",
-                            expense.status === "skipped" &&
-                              "border-red-400/20 bg-red-500/10 text-red-300",
-                            isPending &&
-                              "border-zinc-700 bg-zinc-900 text-zinc-300",
-                          )}
-                        >
-                          {fixedStatusLabel(expense.status)}
-                        </Badge>
-                      </div>
-                      {isPending ? (
-                        <div className="space-y-3">
-                          <div className="grid gap-2 sm:grid-cols-[0.8fr_1fr]">
-                            <Input
-                              inputMode="decimal"
-                              value={amountValue}
-                              onChange={(event) =>
-                                updateFixedDraft(
-                                  expense,
-                                  "amount",
-                                  event.target.value,
-                                )
-                              }
-                            />
-                            <Input
-                              placeholder="Notitie deze maand"
-                              value={noteValue}
-                              onChange={(event) =>
-                                updateFixedDraft(
-                                  expense,
-                                  "note",
-                                  event.target.value,
-                                )
-                              }
-                            />
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => submitFixedExpense(expense, "confirm")}
-                              disabled={isSaving}
-                            >
-                              {isSaving ? (
-                                <LoaderCircle className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Check className="h-4 w-4" />
-                              )}
-                              Bevestig
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => submitFixedExpense(expense, "skip")}
-                              disabled={isSaving}
-                            >
-                              <X className="h-4 w-4" />
-                              Sla over
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-end justify-between gap-3">
+          {isSharedView && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Terugkerende afschrijvingen</CardTitle>
+                <CardDescription>
+                  Bevestig wat deze maand echt is afgeschreven.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2">
+                {fixedMessage && (
+                  <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300 sm:col-span-2">
+                    {fixedMessage}
+                  </p>
+                )}
+                {fixedInstances
+                  .filter((expense) => expense.month === currentMonth)
+                  .map((expense) => {
+                    const category = labels.get(expense.categoryId);
+                    const draft = fixedDrafts[expense.id];
+                    const amountValue = draft?.amount ?? expense.amount.toFixed(2);
+                    const noteValue = draft?.note ?? expense.note ?? "";
+                    const isPending = expense.status === "pending";
+                    const isSaving = savingFixedId === expense.id;
+
+                    return (
+                      <div
+                        key={expense.id}
+                        className={cn(
+                          "rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4 transition",
+                          highlightedFixedInstanceId === expense.id &&
+                            "border-indigo-400/70 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.22)]",
+                        )}
+                      >
+                        <div className="mb-4 flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-xl font-semibold text-zinc-50">
-                              {currency(expense.amount)}
+                            <p className="text-sm font-medium text-zinc-100">
+                              {expense.name}
                             </p>
                             <p className="mt-1 text-xs text-zinc-500">
-                              {expense.note ??
-                                (expense.status === "skipped"
-                                  ? "Geen transactie aangemaakt"
-                                  : "Verwerkt")}
+                              {category?.name}
                             </p>
                           </div>
-                          {expense.confirmedBy && (
-                            <p className="text-xs text-zinc-500">
-                              {expense.confirmedBy}
-                            </p>
-                          )}
+                          <Badge
+                            className={cn(
+                              expense.status === "confirmed" &&
+                                "border-emerald-400/20 bg-emerald-500/10 text-emerald-300",
+                              expense.status === "adjusted" &&
+                                "border-indigo-400/25 bg-indigo-500/10 text-indigo-200",
+                              expense.status === "skipped" &&
+                                "border-red-400/20 bg-red-500/10 text-red-300",
+                              isPending &&
+                                "border-zinc-700 bg-zinc-900 text-zinc-300",
+                            )}
+                          >
+                            {fixedStatusLabel(expense.status)}
+                          </Badge>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </CardContent>
-          </Card>
-
-          <FixedExpenseManager
-            expenses={recurringExpenses}
-            categories={fixedCategories}
-            labels={labels}
-            name={recurringName}
-            amount={recurringAmount}
-            startsOn={recurringStartsOn}
-            category={recurringCategory}
-            editingId={editingRecurringId}
-            highlightedId={highlightedRecurringId}
-            message={manageMessage}
-            isSaving={isSavingRecurring}
-            onNameChange={setRecurringName}
-            onAmountChange={setRecurringAmount}
-            onStartsOnChange={setRecurringStartsOn}
-            onCategoryChange={setRecurringCategory}
-            onSave={saveRecurringExpense}
-            onEdit={startEditingRecurring}
-            onDeactivate={deactivateRecurringExpense}
-            onCancel={resetRecurringForm}
-          />
+                        {isPending ? (
+                          <div className="space-y-3">
+                            <div className="grid gap-2 sm:grid-cols-[0.8fr_1fr]">
+                              <Input
+                                inputMode="decimal"
+                                value={amountValue}
+                                onChange={(event) =>
+                                  updateFixedDraft(
+                                    expense,
+                                    "amount",
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                              <Input
+                                placeholder="Notitie deze maand"
+                                value={noteValue}
+                                onChange={(event) =>
+                                  updateFixedDraft(
+                                    expense,
+                                    "note",
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => submitFixedExpense(expense, "confirm")}
+                                disabled={isSaving}
+                              >
+                                {isSaving ? (
+                                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Check className="h-4 w-4" />
+                                )}
+                                Bevestig
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => submitFixedExpense(expense, "skip")}
+                                disabled={isSaving}
+                              >
+                                <X className="h-4 w-4" />
+                                Sla over
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-end justify-between gap-3">
+                            <div>
+                              <p className="text-xl font-semibold text-zinc-50">
+                                {currency(expense.amount)}
+                              </p>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                {expense.note ??
+                                  (expense.status === "skipped"
+                                    ? "Geen transactie aangemaakt"
+                                    : "Verwerkt")}
+                              </p>
+                            </div>
+                            {expense.confirmedBy && (
+                              <p className="text-xs text-zinc-500">
+                                {expense.confirmedBy}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </CardContent>
+            </Card>
+          )}
         </section>
 
-        <section className="order-5 lg:order-none">
-          <Card>
-            <CardHeader>
-              <CardTitle>Wie voerde wat in?</CardTitle>
-              <CardDescription>Gedeeld huishouden, gedeeld zicht.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {initialData.people.map((person) => {
-                const value = personTotals[person] ?? 0;
-                const max = Math.max(
-                  ...initialData.people.map((name) => personTotals[name] ?? 0),
-                  1,
-                );
-
-                return (
-                  <div key={person}>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <span className="text-zinc-300">{person}</span>
-                      <span className="font-medium text-zinc-50">
-                        {currency(value)}
-                      </span>
-                    </div>
-                    <Progress
-                      value={value}
-                      max={max}
-                      indicatorClassName={
-                        person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500"
-                      }
-                    />
-                  </div>
-                );
-              })}
-
-              <div className="rounded-[16px] border border-zinc-800 bg-zinc-950/50 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-zinc-100">
-                  <Smartphone className="h-4 w-4 text-indigo-300" />
-                  Mobiele PWA
-                </div>
-                <p className="text-sm leading-6 text-zinc-400">
-                  Op telefoon staat snelle invoer bovenaan, met een grote
-                  bevestig-knop en speciale tankvelden voor de gezinsauto.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
+        {isSharedView && (
+          <section className="order-5 lg:order-none">
+            <FixedExpenseManager
+              expenses={recurringExpenses}
+              categories={fixedCategories}
+              labels={labels}
+              name={recurringName}
+              amount={recurringAmount}
+              startsOn={recurringStartsOn}
+              category={recurringCategory}
+              editingId={editingRecurringId}
+              highlightedId={highlightedRecurringId}
+              message={manageMessage}
+              isSaving={isSavingRecurring}
+              onNameChange={setRecurringName}
+              onAmountChange={setRecurringAmount}
+              onStartsOnChange={setRecurringStartsOn}
+              onCategoryChange={setRecurringCategory}
+              onSave={saveRecurringExpense}
+              onEdit={startEditingRecurring}
+              onDeactivate={deactivateRecurringExpense}
+              onCancel={resetRecurringForm}
+            />
+          </section>
+        )}
       </div>
     </main>
   );
@@ -1363,6 +1339,114 @@ function FixedExpenseManager({
               </div>
             </div>
           )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PersonCostInsight({
+  people,
+  personTotals,
+  categoryRows,
+  isSharedView,
+}: {
+  people: string[];
+  personTotals: Record<string, number>;
+  categoryRows: ReturnType<typeof categoryTotalsByPerson>;
+  isSharedView: boolean;
+}) {
+  const maxPersonTotal = Math.max(
+    ...people.map((person) => personTotals[person] ?? 0),
+    1,
+  );
+  const title = isSharedView
+    ? "Gezamenlijke kosten per persoon"
+    : "Mijn toegevoegde kosten";
+  const description = isSharedView
+    ? "Wie voegde deze maand welke gezamenlijke uitgaven toe."
+    : "Prive-uitgaven op deze rekening, uitgesplitst waar mogelijk.";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="space-y-4">
+          {people.map((person) => {
+            const value = personTotals[person] ?? 0;
+
+            return (
+              <div key={person}>
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span className="text-zinc-300">{person}</span>
+                  <span className="font-medium text-zinc-50">
+                    {currency(value)}
+                  </span>
+                </div>
+                <Progress
+                  value={value}
+                  max={maxPersonTotal}
+                  indicatorClassName={
+                    person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500"
+                  }
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="space-y-3 border-t border-zinc-900 pt-4">
+          {categoryRows.length === 0 && (
+            <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
+              Nog geen variabele kosten om te verdelen.
+            </p>
+          )}
+
+          {categoryRows.slice(0, 5).map((row) => (
+            <div
+              key={row.categoryId}
+              className="rounded-[14px] border border-zinc-800 bg-zinc-950/45 p-4"
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: row.color }}
+                  />
+                  <p className="truncate text-sm font-medium text-zinc-100">
+                    {row.name}
+                  </p>
+                </div>
+                <p className="text-sm font-semibold text-zinc-50">
+                  {currency(row.total)}
+                </p>
+              </div>
+              <div className="space-y-2">
+                {row.people.map((personRow) => (
+                  <div key={personRow.person}>
+                    <div className="mb-1 flex items-center justify-between text-xs">
+                      <span className="text-zinc-500">{personRow.person}</span>
+                      <span className="text-zinc-300">
+                        {currency(personRow.amount)}
+                      </span>
+                    </div>
+                    <Progress
+                      value={personRow.amount}
+                      max={row.total}
+                      indicatorClassName={
+                        personRow.person === "Ralph"
+                          ? "bg-indigo-500"
+                          : "bg-emerald-500"
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>
