@@ -44,6 +44,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     categoriesResult,
     accountsResult,
     membersResult,
+    currentProfileResult,
     vehiclesResult,
     recurringResult,
     fixedInstancesResult,
@@ -63,6 +64,11 @@ export async function getDashboardData(): Promise<DashboardData> {
       .from("household_members")
       .select("user_id, profiles(display_name)")
       .eq("household_id", membership.household_id),
+    supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .maybeSingle(),
     supabase
       .from("vehicles")
       .select("*")
@@ -85,6 +91,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   throwIfError(categoriesResult.error);
   throwIfError(accountsResult.error);
   throwIfError(membersResult.error);
+  throwIfError(currentProfileResult.error);
   throwIfError(vehiclesResult.error);
   throwIfError(recurringResult.error);
   throwIfError(fixedInstancesResult.error);
@@ -136,6 +143,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       ) ?? [];
   const people = members.map((member) => member.displayName);
   const currentPerson =
+    currentProfileResult.data?.display_name ??
     members.find((member) => member.userId === user.id)?.displayName ??
     people[0] ??
     "Onbekend";
