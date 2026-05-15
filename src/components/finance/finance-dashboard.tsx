@@ -8,7 +8,6 @@ import {
   Camera,
   Car,
   Check,
-  CircleUserRound,
   FileSpreadsheet,
   Fuel,
   Landmark,
@@ -20,6 +19,7 @@ import {
   ReceiptText,
   Save,
   Smartphone,
+  Trash2,
   WalletCards,
   X,
 } from "lucide-react";
@@ -37,7 +37,6 @@ import {
 import {
   type DashboardData,
   type FixedExpenseInstance,
-  type Person,
   type RecurringExpense,
   type Transaction,
 } from "@/lib/types";
@@ -70,9 +69,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>(
     initialData.recurringExpenses,
   );
-  const [selectedPerson, setSelectedPerson] = useState<Person>(
-    initialData.currentPerson,
-  );
   const [quickCategory, setQuickCategory] = useState(
     initialData.categories.find((category) => category.kind === "variable")?.id ??
       initialData.categories[0]?.id ??
@@ -84,6 +80,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [fuelLiters, setFuelLiters] = useState("");
   const [scanMessage, setScanMessage] = useState("");
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
+  const [monthMessage, setMonthMessage] = useState("");
+  const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(
+    null,
+  );
   const [fixedMessage, setFixedMessage] = useState("");
   const [savingFixedId, setSavingFixedId] = useState<string | null>(null);
   const [fixedDrafts, setFixedDrafts] = useState<
@@ -197,7 +197,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       amount,
       date: quickDate,
       note: quickNote || undefined,
-      enteredBy: selectedPerson,
+      enteredBy: initialData.currentPerson,
       fuel:
         isFuel && initialData.vehicles[0]
           ? { vehicle: initialData.vehicles[0].name, liters }
@@ -316,7 +316,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setFixedInstances((items) =>
       items.map((item) =>
         item.id === expense.id && fixedInstance
-          ? { ...fixedInstance, confirmedBy: selectedPerson }
+          ? { ...fixedInstance, confirmedBy: initialData.currentPerson }
           : item
       ),
     );
@@ -330,7 +330,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           categoryId: expense.categoryId,
           amount: Number(result.transaction.amount),
           date: result.transaction.date,
-          enteredBy: selectedPerson,
+          enteredBy: initialData.currentPerson,
           note: result.transaction.note ?? undefined,
         },
         ...items,
@@ -345,6 +345,56 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setFixedMessage(
       action === "skip" ? "Vaste last overgeslagen." : "Vaste last verwerkt.",
     );
+  }
+
+  async function deleteTransaction(transaction: Transaction) {
+    const confirmed = window.confirm(
+      transaction.type === "fixed"
+        ? "Definitief verwijderen?\n\nDeze vaste-last transactie wordt verwijderd. De maandregel wordt daarna weer opengezet, zodat je hem opnieuw kunt bevestigen of aanpassen."
+        : "Definitief verwijderen?\n\nDeze ingevoerde uitgave wordt permanent uit het maandoverzicht verwijderd.",
+    );
+
+    if (!confirmed) return;
+
+    setDeletingTransactionId(transaction.id);
+    setMonthMessage("");
+
+    const response = await fetch("/api/transactions", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ transactionId: transaction.id }),
+    });
+    const result = await response.json();
+
+    setDeletingTransactionId(null);
+
+    if (!response.ok) {
+      setMonthMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Verwijderen lukte niet. Probeer het nog eens.",
+      );
+      return;
+    }
+
+    setTransactions((items) =>
+      items.filter((item) => item.id !== transaction.id),
+    );
+
+    if (result.fixedInstance) {
+      const fixedInstance = result.fixedInstance as FixedExpenseInstance;
+      setFixedInstances((items) =>
+        items.map((item) =>
+          item.id === fixedInstance.id ? fixedInstance : item,
+        ),
+      );
+      setHighlightedFixedInstanceId(fixedInstance.id);
+      setFixedMessage(`${fixedInstance.name} staat weer open.`);
+    }
+
+    setMonthMessage("Afschrijving verwijderd.");
   }
 
   function resetRecurringForm() {
@@ -540,21 +590,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 rounded-[16px] border border-zinc-800 bg-zinc-950/60 p-2">
-            {initialData.people.map((person) => (
-              <button
-                key={person}
-                className={cn(
-                  "flex h-11 items-center justify-center gap-2 rounded-[11px] px-4 text-sm font-medium text-zinc-400 transition",
-                  selectedPerson === person &&
-                    "bg-zinc-100 text-zinc-950 shadow-sm",
-                )}
-                onClick={() => setSelectedPerson(person)}
-              >
-                <CircleUserRound className="h-4 w-4" />
-                {person}
-              </button>
-            ))}
+          <div className="rounded-[16px] border border-zinc-800 bg-zinc-950/60 px-4 py-3 text-sm">
+            <p className="text-xs text-zinc-500">Ingelogd als</p>
+            <p className="mt-1 font-medium text-zinc-100">
+              {initialData.currentPerson}
+            </p>
           </div>
         </header>
 
@@ -623,13 +663,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
+              {monthMessage && (
+                <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300">
+                  {monthMessage}
+                </p>
+              )}
               {monthTransactions.map((transaction) => {
                 const category = labels.get(transaction.categoryId);
+                const isDeleting = deletingTransactionId === transaction.id;
 
                 return (
                   <div
                     key={transaction.id}
-                    className="grid grid-cols-[1fr_auto] gap-3 rounded-[14px] border border-zinc-800/80 bg-zinc-950/45 p-3"
+                    className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[14px] border border-zinc-800/80 bg-zinc-950/45 p-3"
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -654,9 +700,25 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                         {transaction.note ? ` · ${transaction.note}` : ""}
                       </p>
                     </div>
-                    <p className="text-sm font-semibold text-zinc-50">
-                      {preciseCurrency(transaction.amount)}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-zinc-50">
+                        {preciseCurrency(transaction.amount)}
+                      </p>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="Verwijder afschrijving"
+                        onClick={() => deleteTransaction(transaction)}
+                        disabled={isDeleting}
+                        className="h-9 w-9 text-zinc-500 hover:text-red-300"
+                      >
+                        {isDeleting ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 );
               })}

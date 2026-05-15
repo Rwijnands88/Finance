@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { FixedExpenseInstance } from "@/lib/types";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type CreateTransactionBody = {
@@ -12,6 +13,10 @@ type CreateTransactionBody = {
     vehicleName?: string;
     liters?: number;
   } | null;
+};
+
+type DeleteTransactionBody = {
+  transactionId?: string;
 };
 
 export async function POST(request: Request) {
@@ -78,4 +83,93 @@ export async function POST(request: Request) {
       enteredBy: user.id,
     },
   });
+}
+
+export async function DELETE(request: Request) {
+  const body = (await request.json()) as DeleteTransactionBody;
+
+  if (typeof body.transactionId !== "string") {
+    return NextResponse.json(
+      { error: "Afschrijving ontbreekt." },
+      { status: 400 },
+    );
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+
+  const { data: transaction, error: transactionError } = await supabase
+    .from("transactions")
+    .select("id, type, fixed_expense_instance_id")
+    .eq("id", body.transactionId)
+    .single();
+
+  if (transactionError) {
+    return NextResponse.json(
+      { error: transactionError.message },
+      { status: 400 },
+    );
+  }
+
+  const { error: deleteError } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("id", body.transactionId);
+
+  if (deleteError) {
+    return NextResponse.json({ error: deleteError.message }, { status: 400 });
+  }
+
+  if (transaction.type !== "fixed" || !transaction.fixed_expense_instance_id) {
+    return NextResponse.json({ fixedInstance: null });
+  }
+
+  const { data: fixedInstance, error: fixedError } = await supabase
+    .from("fixed_expense_instances")
+    .update({
+      status: "pending",
+      confirmed_by: null,
+      confirmed_at: null,
+      note: null,
+    })
+    .eq("id", transaction.fixed_expense_instance_id)
+    .select("*")
+    .single();
+
+  if (fixedError) {
+    return NextResponse.json({ error: fixedError.message }, { status: 400 });
+  }
+
+  return NextResponse.json({
+    fixedInstance: mapFixedInstance(fixedInstance),
+  });
+}
+
+function mapFixedInstance(row: {
+  id: string;
+  recurring_expense_id: string;
+  month: string;
+  name_snapshot: string;
+  category_id: string;
+  amount_snapshot: number;
+  status: "pending" | "confirmed" | "adjusted" | "skipped";
+  note: string | null;
+}): FixedExpenseInstance {
+  return {
+    id: row.id,
+    recurringExpenseId: row.recurring_expense_id,
+    month: row.month.slice(0, 7),
+    name: row.name_snapshot,
+    categoryId: row.category_id,
+    amount: Number(row.amount_snapshot),
+    status: row.status,
+    note: row.note ?? undefined,
+  };
 }
