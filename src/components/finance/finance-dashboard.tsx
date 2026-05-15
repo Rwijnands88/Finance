@@ -1028,6 +1028,10 @@ function FixedExpenseManager({
     });
   const inactiveExpenses = expenses.filter((expense) => !expense.isActive);
   const formTitle = editingId ? "Vaste last wijzigen" : "Nieuwe vaste last";
+  const monthlyTotal = activeExpenses.reduce(
+    (total, expense) => total + expense.currentAmount,
+    0,
+  );
 
   return (
     <Card className="h-full">
@@ -1112,42 +1116,77 @@ function FixedExpenseManager({
           </Button>
         </div>
 
-        <div className="grid gap-3">
-          {activeExpenses.map((expense) => (
-            <RecurringExpenseCard
-              key={expense.id}
-              expense={expense}
-              categoryName={labels.get(expense.categoryId)?.name ?? "Onbekend"}
-              isHighlighted={expense.id === highlightedId}
-              isSaving={isSaving}
-              onEdit={onEdit}
-              onDeactivate={onDeactivate}
-            />
-          ))}
-
-          {inactiveExpenses.map((expense) => (
-            <div
-              key={expense.id}
-              className="rounded-[16px] border border-zinc-900 bg-zinc-950/25 p-4 opacity-60"
-            >
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-zinc-100">
-                    {expense.name}
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    {labels.get(expense.categoryId)?.name ?? "Onbekend"}
-                  </p>
-                </div>
-                <Badge className="border-zinc-800 bg-zinc-900 text-zinc-400">
-                  uit
-                </Badge>
-              </div>
-              <p className="text-lg font-semibold text-zinc-50">
-                {currency(expense.currentAmount)}
+        <div className="rounded-[16px] border border-zinc-800 bg-zinc-950/35 p-4">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-zinc-100">
+                Overzicht vaste lasten
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">
+                {activeExpenses.length} actief per maand
               </p>
             </div>
-          ))}
+            <div className="text-right">
+              <p className="text-xs text-zinc-500">Totaal</p>
+              <p className="text-xl font-semibold text-zinc-50">
+                {currency(monthlyTotal)}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            {activeExpenses.length === 0 && (
+              <div className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
+                Nog geen vaste lasten toegevoegd. Voeg hierboven de eerste
+                terugkerende afschrijving toe.
+              </div>
+            )}
+
+            {activeExpenses.map((expense) => (
+              <RecurringExpenseCard
+                key={expense.id}
+                expense={expense}
+                categoryName={labels.get(expense.categoryId)?.name ?? "Onbekend"}
+                isHighlighted={expense.id === highlightedId}
+                isSaving={isSaving}
+                onEdit={onEdit}
+                onDeactivate={onDeactivate}
+              />
+            ))}
+          </div>
+
+          {inactiveExpenses.length > 0 && (
+            <div className="mt-5 border-t border-zinc-900 pt-4">
+              <p className="mb-3 text-xs font-medium text-zinc-500">
+                Gedeactiveerd
+              </p>
+              <div className="grid gap-3">
+                {inactiveExpenses.map((expense) => (
+                  <div
+                    key={expense.id}
+                    className="rounded-[14px] border border-zinc-900 bg-zinc-950/25 p-4 opacity-60"
+                  >
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-zinc-100">
+                          {expense.name}
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {labels.get(expense.categoryId)?.name ?? "Onbekend"}
+                        </p>
+                      </div>
+                      <Badge className="border-zinc-800 bg-zinc-900 text-zinc-400">
+                        uit
+                      </Badge>
+                    </div>
+                    <p className="text-lg font-semibold text-zinc-50">
+                      {currency(expense.currentAmount)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
