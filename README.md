@@ -37,44 +37,59 @@ zoveel mogelijk behouden. Wel krijgt het datamodel een nieuwe kern:
 #### Fase 1 - Supabase v2 fundament
 
 - [x] Non-destructive migration en SQL Editor chunks voorbereiden.
-- [ ] Nieuwe `accounts` tabel toevoegen.
-- [ ] Standaardrekeningen aanmaken: Gezamenlijk, Ralph prive, Dorine prive.
-- [ ] Eigenaarschap en zichtbaarheid per rekening vastleggen.
-- [ ] `transactions.account_id` toevoegen.
-- [ ] Bestaande transacties backfillen naar de gezamenlijke rekening.
-- [ ] `recurring_expenses` koppelen aan een rekening.
-- [ ] `fixed_expense_instances` rekeningbewust maken via de recurring item.
-- [ ] RLS herschrijven van household-based naar account-aware.
-- [ ] Views voor maandtotalen opnieuw maken per rekening.
-- [ ] Database types bijwerken.
+- [x] Nieuwe `accounts` tabel toevoegen.
+- [x] Standaardrekeningen aanmaken: Gezamenlijk, Ralph prive, Dorine prive.
+- [x] Eigenaarschap en zichtbaarheid per rekening vastleggen.
+- [x] `transactions.account_id` toevoegen.
+- [x] Bestaande transacties backfillen naar de gezamenlijke rekening.
+- [x] `recurring_expenses` koppelen aan een rekening.
+- [x] `fixed_expense_instances` rekeningbewust maken via de recurring item.
+- [x] RLS voorbereiden van household-based naar account-aware.
+- [x] Views voor maandtotalen per rekening toevoegen.
+- [x] Database types bijwerken.
 
 #### Fase 2 - App-data en API's
 
-- [ ] Dashboard-loader account-aware maken.
-- [ ] Transactie API verplicht `accountId` laten gebruiken.
-- [ ] Vaste-lasten API koppelen aan account.
+- [x] Dashboard-loader account-aware maken.
+- [x] Transactie API account-aware maken.
+- [x] Snelle invoer rekeningkeuze geven.
+- [x] Maandoverzicht rekeninglabels tonen.
+- [ ] Vaste-lasten API expliciet koppelen aan gezamenlijke rekening.
 - [ ] Delete/update flows controleren met accountrechten.
 - [ ] Bonnen-scan laten prefilling doen voor de gekozen rekening.
 - [ ] Transfers ondersteunen voor stortingen naar de gezamenlijke rekening.
 
-#### Fase 3 - Nieuwe navigatie en schermen
+#### Fase 3 - Dashboard herstructureren
 
-- [ ] Navigatie opdelen in: Vandaag, Gezamenlijk, Mijn rekening, Vaste lasten, Maand.
-- [ ] Gezamenlijk dashboard bouwen met cashflow: stortingen, vaste lasten, variabel, over.
-- [ ] Mijn rekening afhankelijk maken van login: Ralph ziet Ralph, Dorine ziet Dorine.
-- [ ] Vaste lasten apart en rustiger beheren.
-- [ ] Maandoverzicht filterbaar maken op rekening.
-- [ ] "Wie heeft wat ingevoerd" behouden als inzicht, niet als invoerkeuze.
+- [x] Eerste tabs toevoegen: Gezamenlijk en Mijn rekening.
+- [ ] Tabs herzien als views met eigen doel, niet als simpele filter over alles.
+- [ ] Snelle invoer globaal en prominent houden.
+- [ ] Vaste lasten beheer uit Mijn rekening halen.
+- [ ] Vaste lasten behandelen als gezamenlijk beheer, standaard op gezamenlijke rekening.
+- [ ] Onderste uitlegblok "Mobiele PWA" verwijderen.
+- [ ] "Wie voerde wat in" vervangen door gezamenlijke kosten per persoon.
+- [ ] Gezamenlijke kosten per persoon tonen als donut/balk-grafiek.
+- [ ] Categorieen per persoon tonen voor gezamenlijke uitgaven.
+- [ ] Mijn rekening schoon houden: alleen prive-transacties, prive-categorieen en prive-maandoverzicht.
+- [ ] Maandoverzicht duidelijk labelen als gezamenlijk of prive.
 
-#### Fase 4 - Mobiele invoer en scanner
+#### Fase 4 - Inleg en cashflow
 
-- [ ] Mobiele quick-entry starten met rekeningkeuze.
-- [ ] Bon scannen vult bedrag, datum en winkel in.
-- [ ] Gebruiker kiest categorie zelf.
-- [ ] Tanken-flow behouden met liters en auto.
+- [ ] Inleg/stortingen toevoegen voor Ralph en Dorine.
+- [ ] Inleg als apart type behandelen, niet als gewone uitgave.
+- [ ] Gezamenlijke maandcashflow tonen: inleg - vaste lasten - variabel = over/tekort.
+- [ ] Maandelijkse standaardinleg kunnen instellen.
+- [ ] Historie van inleg tonen in maandrapport.
+
+#### Fase 5 - Mobiele invoer en scanner
+
+- [x] Mobiele quick-entry met rekeningkeuze voorbereiden.
+- [x] Bon scannen vult bedrag, datum en winkel in.
+- [x] Gebruiker kiest categorie zelf.
+- [x] Tanken-flow behouden met liters en auto.
 - [ ] Duidelijke concept/bevestig-flow voor gescande bonnen.
 
-#### Fase 5 - Rapportage en polish
+#### Fase 6 - Rapportage en polish
 
 - [ ] Excel-export uitbreiden met rekening, type en transfer-info.
 - [ ] PDF maandrapport per rekening en gezamenlijk.
