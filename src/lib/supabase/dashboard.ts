@@ -1,4 +1,4 @@
-import type { DashboardData, Transaction } from "@/lib/types";
+import type { Account, DashboardData, Transaction } from "@/lib/types";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type SupabaseClient = Awaited<ReturnType<typeof getSupabaseServerClient>>;
@@ -42,16 +42,22 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const [
     categoriesResult,
+    accountsResult,
     membersResult,
     vehiclesResult,
     recurringResult,
     fixedInstancesResult,
-    historicalTransactionsResult,
   ] = await Promise.all([
     supabase
       .from("categories")
       .select("*")
       .eq("household_id", membership.household_id)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("accounts")
+      .select("*")
+      .eq("household_id", membership.household_id)
+      .eq("is_active", true)
       .order("sort_order", { ascending: true }),
     supabase
       .from("household_members")
@@ -74,19 +80,32 @@ export async function getDashboardData(): Promise<DashboardData> {
       .eq("household_id", membership.household_id)
       .eq("month", monthStart)
       .order("name_snapshot", { ascending: true }),
-    fetchTransactions(
-      supabase,
-      membership.household_id,
-      addMonths(monthStart, -5),
-      monthEnd,
-    ),
   ]);
 
   throwIfError(categoriesResult.error);
+  throwIfError(accountsResult.error);
   throwIfError(membersResult.error);
   throwIfError(vehiclesResult.error);
   throwIfError(recurringResult.error);
   throwIfError(fixedInstancesResult.error);
+
+  const accounts = (accountsResult.data ?? []).map((account) => ({
+    id: account.id,
+    name: account.name,
+    kind: account.kind,
+    ownerUserId: account.owner_user_id ?? undefined,
+  })) satisfies Account[];
+  const fallbackAccount =
+    accounts.find((account) => account.kind === "shared") ?? accounts[0];
+  const accountMap = new Map(accounts.map((account) => [account.id, account]));
+  const historicalTransactionsResult = await fetchTransactions(
+    supabase,
+    membership.household_id,
+    addMonths(monthStart, -5),
+    monthEnd,
+    accountMap,
+    fallbackAccount,
+  );
 
   const categories = (categoriesResult.data ?? []).map((category) => ({
     id: category.id,
@@ -127,6 +146,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     currentPerson,
     selectedMonth,
     people,
+    accounts,
     vehicles: (vehiclesResult.data ?? []).map((vehicle) => ({
       id: vehicle.id,
       name: vehicle.name,
@@ -134,6 +154,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     categories,
     recurringExpenses: (recurringResult.data ?? []).map((expense) => ({
       id: expense.id,
+      accountId: expense.account_id ?? undefined,
       name: expense.name,
       categoryId: expense.category_id,
       currentAmount: Number(expense.current_amount),
@@ -169,6 +190,8 @@ async function fetchTransactions(
   householdId: string,
   from: string,
   to: string,
+  accountMap: Map<string, Account>,
+  fallbackAccount?: Account,
 ) {
   const { data, error } = await supabase
     .from("transactions")
@@ -198,6 +221,13 @@ async function fetchTransactions(
     return {
       id: transaction.id,
       type: transaction.type,
+      accountId: transaction.account_id ?? fallbackAccount?.id,
+      accountName:
+        accountMap.get(transaction.account_id ?? "")?.name ??
+        fallbackAccount?.name,
+      accountKind:
+        accountMap.get(transaction.account_id ?? "")?.kind ??
+        fallbackAccount?.kind,
       categoryId: transaction.category_id,
       amount: Number(transaction.amount),
       date: transaction.transaction_date,

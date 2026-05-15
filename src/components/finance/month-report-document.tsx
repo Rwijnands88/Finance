@@ -55,7 +55,9 @@ export function MonthReportDocument({
                 {labels.get(transaction.categoryId)?.name ?? "Onbekend"}
               </Text>
               <Text style={styles.cellNote}>
-                {transaction.note ?? transaction.enteredBy}
+                {[transaction.accountName, transaction.note ?? transaction.enteredBy]
+                  .filter(Boolean)
+                  .join(" · ")}
               </Text>
               <Text style={styles.cellAmount}>{currency(transaction.amount)}</Text>
             </View>

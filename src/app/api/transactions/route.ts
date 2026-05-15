@@ -4,6 +4,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type CreateTransactionBody = {
   householdId?: string;
+  accountId?: string | null;
   categoryId?: string;
   amount?: number;
   date?: string;
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
     .from("transactions")
     .insert({
       household_id: body.householdId,
+      account_id: body.accountId || null,
       category_id: body.categoryId,
       amount,
       transaction_date: body.date,
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
       note: body.note || null,
       entered_by: user.id,
     })
-    .select("id")
+    .select("id, account_id")
     .single();
 
   if (transactionError) {
@@ -80,6 +82,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     transaction: {
       id: transaction.id,
+      accountId: transaction.account_id,
       enteredBy: user.id,
     },
   });

@@ -10,8 +10,16 @@ export type Category = {
   averageMonthly: number;
 };
 
+export type Account = {
+  id: string;
+  name: string;
+  kind: "shared" | "personal";
+  ownerUserId?: string;
+};
+
 export type RecurringExpense = {
   id: string;
+  accountId?: string;
   name: string;
   categoryId: string;
   currentAmount: number;
@@ -34,6 +42,9 @@ export type FixedExpenseInstance = {
 export type Transaction = {
   id: string;
   type: "fixed" | "variable";
+  accountId?: string;
+  accountName?: string;
+  accountKind?: Account["kind"];
   categoryId: string;
   amount: number;
   date: string;
@@ -57,6 +68,7 @@ export type DashboardData = {
   currentPerson: Person;
   selectedMonth: string;
   people: Person[];
+  accounts: Account[];
   vehicles: Vehicle[];
   categories: Category[];
   recurringExpenses: RecurringExpense[];

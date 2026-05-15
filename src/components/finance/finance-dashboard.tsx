@@ -62,6 +62,9 @@ import { Progress } from "@/components/ui/progress";
 import { MonthReportDocument } from "@/components/finance/month-report-document";
 
 export function FinanceDashboard({ initialData }: { initialData: DashboardData }) {
+  const defaultAccount =
+    initialData.accounts.find((account) => account.kind === "shared") ??
+    initialData.accounts[0];
   const [transactions, setTransactions] =
     useState<Transaction[]>(initialData.transactions);
   const [fixedInstances, setFixedInstances] = useState<FixedExpenseInstance[]>(
@@ -75,6 +78,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       initialData.categories[0]?.id ??
       "",
   );
+  const [quickAccount, setQuickAccount] = useState(defaultAccount?.id ?? "");
   const [quickAmount, setQuickAmount] = useState("");
   const [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10));
   const [quickNote, setQuickNote] = useState("");
@@ -121,6 +125,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     () => categoryById(initialData.categories),
     [initialData.categories],
   );
+  const accountsById = useMemo(
+    () => new Map(initialData.accounts.map((account) => [account.id, account])),
+    [initialData.accounts],
+  );
   const monthTotals = useMemo(
     () => totalsForMonth(transactions, currentMonth),
     [currentMonth, transactions],
@@ -155,8 +163,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const amount = Number(quickAmount);
     const liters = Number(fuelLiters);
     const isFuel = labels.get(quickCategory)?.name === "Tanken";
+    const selectedAccount = accountsById.get(quickAccount) ?? defaultAccount;
 
     if (!amount || amount <= 0) return;
+    if (!selectedAccount) return;
     if (isFuel && (!liters || liters <= 0)) return;
 
     const response = await fetch("/api/transactions", {
@@ -166,6 +176,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       },
       body: JSON.stringify({
         householdId: initialData.householdId,
+        accountId: selectedAccount.id,
         categoryId: quickCategory,
         amount,
         date: quickDate,
@@ -194,6 +205,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const transaction: Transaction = {
       id: result.transaction.id,
       type: "variable",
+      accountId: result.transaction.accountId ?? selectedAccount.id,
+      accountName: selectedAccount.name,
+      accountKind: selectedAccount.kind,
       categoryId: quickCategory,
       amount,
       date: quickDate,
@@ -540,6 +554,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   function exportExcel() {
     const rows = monthTransactions.map((transaction) => ({
       Datum: transaction.date,
+      Rekening: transaction.accountName ?? "",
       Type: transaction.type === "fixed" ? "Vaste last" : "Variabel",
       Categorie: labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
@@ -635,11 +650,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         <section className="order-1 grid gap-4 lg:order-none lg:grid-cols-[0.9fr_1.1fr]">
           <QuickEntryCard
             amount={quickAmount}
+            account={quickAccount}
             date={quickDate}
             note={quickNote}
             category={quickCategory}
             fuelLiters={fuelLiters}
             onAmountChange={setQuickAmount}
+            onAccountChange={setQuickAccount}
             onDateChange={setQuickDate}
             onNoteChange={setQuickNote}
             onCategoryChange={setQuickCategory}
@@ -648,6 +665,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             scanMessage={scanMessage}
             onScanReceipt={scanReceipt}
             categories={initialData.categories}
+            accounts={initialData.accounts}
             vehicles={initialData.vehicles}
             onSubmit={addVariableExpense}
           />
@@ -696,6 +714,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                         {transaction.type === "fixed" && (
                           <Badge className="h-6 border-indigo-400/20 bg-indigo-500/10 text-indigo-200">
                             vast
+                          </Badge>
+                        )}
+                        {transaction.accountName && (
+                          <Badge className="h-6 border-zinc-700 bg-zinc-900 text-zinc-300">
+                            {transaction.accountName}
                           </Badge>
                         )}
                       </div>
@@ -1351,13 +1374,16 @@ function FieldLabel({
 
 function QuickEntryCard({
   amount,
+  account,
   date,
   note,
   category,
   fuelLiters,
   categories,
+  accounts,
   vehicles,
   onAmountChange,
+  onAccountChange,
   onDateChange,
   onNoteChange,
   onCategoryChange,
@@ -1368,13 +1394,16 @@ function QuickEntryCard({
   onSubmit,
 }: {
   amount: string;
+  account: string;
   date: string;
   note: string;
   category: string;
   fuelLiters: string;
   categories: DashboardData["categories"];
+  accounts: DashboardData["accounts"];
   vehicles: DashboardData["vehicles"];
   onAmountChange: (value: string) => void;
+  onAccountChange: (value: string) => void;
   onDateChange: (value: string) => void;
   onNoteChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
@@ -1459,6 +1488,19 @@ function QuickEntryCard({
             </button>
           ))}
         </div>
+
+        <FieldLabel label="Rekening">
+          <Select
+            value={account}
+            onChange={(event) => onAccountChange(event.target.value)}
+          >
+            {accounts.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </Select>
+        </FieldLabel>
 
         <Input
           inputMode="decimal"
