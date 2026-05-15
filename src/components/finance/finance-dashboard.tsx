@@ -366,10 +366,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }
 
   async function saveRecurringExpense() {
-    const amount = Number(recurringAmount);
+    const amount = parseCurrencyInput(recurringAmount);
 
     if (!recurringName.trim() || !recurringCategory || !amount || amount <= 0) {
-      setManageMessage("Vul naam, categorie en maandbedrag in.");
+      setManageMessage("Vul naam, categorie en een geldig maandbedrag in.");
       return;
     }
 
@@ -1488,7 +1488,7 @@ const tooltipStyle = {
 };
 
 function parseCurrencyInput(value: string) {
-  return Number(value.replace(",", "."));
+  return Number(value.trim().replace(/\s/g, "").replace(",", "."));
 }
 
 function fixedStatusLabel(status: FixedExpenseInstance["status"]) {
