@@ -13,6 +13,7 @@ import {
   Landmark,
   ListChecks,
   LoaderCircle,
+  LogOut,
   Pencil,
   Plus,
   Power,
@@ -595,6 +596,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             <p className="mt-1 font-medium text-zinc-100">
               {initialData.currentPerson}
             </p>
+            <form action="/auth/sign-out" method="post" className="mt-3">
+              <Button type="submit" size="sm" variant="secondary" className="w-full">
+                <LogOut className="h-4 w-4" />
+                Uitloggen
+              </Button>
+            </form>
           </div>
         </header>
 
