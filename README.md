@@ -36,6 +36,7 @@ zoveel mogelijk behouden. Wel krijgt het datamodel een nieuwe kern:
 
 #### Fase 1 - Supabase v2 fundament
 
+- [x] Non-destructive migration en SQL Editor chunks voorbereiden.
 - [ ] Nieuwe `accounts` tabel toevoegen.
 - [ ] Standaardrekeningen aanmaken: Gezamenlijk, Ralph prive, Dorine prive.
 - [ ] Eigenaarschap en zichtbaarheid per rekening vastleggen.

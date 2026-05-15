@@ -6,8 +6,10 @@ Run the SQL files in order:
 
 1. `migrations/20260511000000_household_finance.sql`
 2. `migrations/20260513000000_supabase_bootstrap.sql`
+3. `migrations/20260513001000_api_grants.sql`
+4. `migrations/20260515000000_v2_accounts_foundation.sql`
 
-For the SQL Editor route, open each file locally and paste its full contents into Supabase SQL Editor. Run file 1 first, then file 2.
+For the SQL Editor route, open each file locally and paste its full contents into Supabase SQL Editor. Run the files in the order above.
 
 With Supabase CLI later this becomes:
 
@@ -15,6 +17,25 @@ With Supabase CLI later this becomes:
 supabase link --project-ref your-project-ref
 supabase db push
 ```
+
+## SQL Editor chunks
+
+If Supabase only allows smaller pasted queries, run the files in
+`sql-editor-chunks` in numeric order.
+
+For the v2 account foundation, run these after chunks 01 through 10 have
+succeeded:
+
+11. `11_v2_accounts_table.sql`
+12. `12_v2_account_defaults_backfill.sql`
+13. `13_v2_account_columns_backfill.sql`
+14. `14_v2_account_rls_core.sql`
+15. `15_v2_account_rls_transactions.sql`
+16. `16_v2_account_confirm_fixed.sql`
+17. `17_v2_account_views_grants.sql`
+
+These chunks are non-destructive. They keep the current app working while adding
+the account/rekening layer needed for the v2 UI.
 
 ## First household
 
@@ -72,5 +93,19 @@ values ('HOUSEHOLD_ID_FROM_BOOTSTRAP', 'DORINE_AUTH_USER_ID');
 
 - `monthly_category_totals`
 - `monthly_person_totals`
+- `monthly_account_category_totals`
+- `monthly_account_person_totals`
 
 Both views use `security_invoker = true`, so RLS stays active.
+
+## V2 account model
+
+The v2 foundation adds `accounts`:
+
+- `Gezamenlijke rekening`: shared account for the household.
+- `{Naam} prive`: personal account for each household member.
+
+Existing `transactions` and `recurring_expenses` receive a nullable `account_id`.
+Existing rows are backfilled to the shared account. The column stays nullable for
+now so the current app can keep working until the UI and API flows become fully
+account-aware.

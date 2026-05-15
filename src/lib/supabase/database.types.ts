@@ -59,6 +59,41 @@ export type Database = {
         };
         Relationships: [];
       };
+      accounts: {
+        Row: {
+          id: string;
+          household_id: string;
+          name: string;
+          kind: "shared" | "personal";
+          owner_user_id: string | null;
+          opening_balance: number;
+          is_active: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          household_id: string;
+          name: string;
+          kind: "shared" | "personal";
+          owner_user_id?: string | null;
+          opening_balance?: number;
+          is_active?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          name?: string;
+          kind?: "shared" | "personal";
+          owner_user_id?: string | null;
+          opening_balance?: number;
+          is_active?: boolean;
+          sort_order?: number;
+        };
+        Relationships: [];
+      };
       categories: {
         Row: {
           id: string;
@@ -111,6 +146,7 @@ export type Database = {
         Row: {
           id: string;
           household_id: string;
+          account_id: string | null;
           name: string;
           category_id: string;
           current_amount: number;
@@ -124,6 +160,7 @@ export type Database = {
         Insert: {
           id?: string;
           household_id: string;
+          account_id?: string | null;
           name: string;
           category_id: string;
           current_amount: number;
@@ -135,6 +172,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          account_id?: string | null;
           name?: string;
           category_id?: string;
           current_amount?: number;
@@ -190,6 +228,7 @@ export type Database = {
         Row: {
           id: string;
           household_id: string;
+          account_id: string | null;
           fixed_expense_instance_id: string | null;
           category_id: string;
           amount: number;
@@ -203,6 +242,7 @@ export type Database = {
         Insert: {
           id?: string;
           household_id: string;
+          account_id?: string | null;
           fixed_expense_instance_id?: string | null;
           category_id: string;
           amount: number;
@@ -214,6 +254,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          account_id?: string | null;
           amount?: number;
           transaction_date?: string;
           note?: string | null;
@@ -262,8 +303,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      monthly_account_category_totals: {
+        Row: {
+          household_id: string;
+          account_id: string;
+          account_name: string;
+          account_kind: "shared" | "personal";
+          month: string;
+          category_id: string;
+          category_name: string;
+          category_kind: "fixed" | "variable" | "both";
+          category_color: string;
+          total_amount: number;
+        };
+        Relationships: [];
+      };
+      monthly_account_person_totals: {
+        Row: {
+          household_id: string;
+          account_id: string;
+          account_name: string;
+          account_kind: "shared" | "personal";
+          month: string;
+          entered_by: string;
+          display_name: string;
+          total_amount: number;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
+      can_access_account: {
+        Args: {
+          target_account_id: string;
+        };
+        Returns: boolean;
+      };
       create_fixed_instances_for_month: {
         Args: {
           target_household_id: string;
@@ -278,6 +353,12 @@ export type Database = {
           target_note?: string | null;
         };
         Returns: Database["public"]["Tables"]["transactions"]["Row"];
+      };
+      seed_default_accounts: {
+        Args: {
+          target_household_id: string;
+        };
+        Returns: undefined;
       };
     };
     Enums: Record<string, never>;
