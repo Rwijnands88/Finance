@@ -166,6 +166,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       name: expense.name,
       categoryId: expense.category_id,
       currentAmount: Number(expense.current_amount),
+      billingDay: expense.billing_day,
       startsOn: expense.starts_on,
       isActive: expense.is_active,
     })),

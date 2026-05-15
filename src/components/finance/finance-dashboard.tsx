@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import {
   ArrowDownToLine,
   Camera,
+  CalendarDays,
   Car,
   Check,
   FileSpreadsheet,
@@ -16,7 +17,6 @@ import {
   LogOut,
   Pencil,
   Plus,
-  Power,
   ReceiptText,
   Save,
   Trash2,
@@ -98,10 +98,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     null,
   );
   const [fixedMessage, setFixedMessage] = useState("");
-  const [savingFixedId, setSavingFixedId] = useState<string | null>(null);
-  const [fixedDrafts, setFixedDrafts] = useState<
-    Record<string, { amount: string; note: string }>
-  >({});
   const [manageMessage, setManageMessage] = useState("");
   const [isSavingRecurring, setIsSavingRecurring] = useState(false);
   const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
@@ -111,6 +107,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     useState<string | null>(null);
   const [recurringName, setRecurringName] = useState("");
   const [recurringAmount, setRecurringAmount] = useState("");
+  const [recurringBillingDay, setRecurringBillingDay] = useState("1");
   const [recurringStartsOn, setRecurringStartsOn] = useState(
     new Date().toISOString().slice(0, 10),
   );
@@ -202,8 +199,25 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .sort((a, b) => b.date.localeCompare(a.date)),
     [currentMonth, selectedTransactions],
   );
-  const pendingFixed = fixedInstances.filter(
-    (expense) => expense.month === currentMonth && expense.status === "pending",
+  const fixedAgendaItems = useMemo(
+    () =>
+      buildFixedAgendaItems(
+        recurringExpenses,
+        fixedInstances,
+        currentMonth,
+        labels,
+      ),
+    [currentMonth, fixedInstances, labels, recurringExpenses],
+  );
+  const openFixedAgendaItems = fixedAgendaItems.filter(
+    (item) =>
+      item.state === "overdue" ||
+      item.state === "today" ||
+      item.state === "upcoming",
+  );
+  const openFixedTotal = openFixedAgendaItems.reduce(
+    (total, item) => total + item.amount,
+    0,
   );
   const fixedCategories = useMemo(
     () =>
@@ -326,97 +340,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
   }
 
-  function updateFixedDraft(
-    expense: FixedExpenseInstance,
-    field: "amount" | "note",
-    value: string,
-  ) {
-    setFixedDrafts((drafts) => ({
-      ...drafts,
-      [expense.id]: {
-        amount: drafts[expense.id]?.amount ?? expense.amount.toFixed(2),
-        note: drafts[expense.id]?.note ?? "",
-        [field]: value,
-      },
-    }));
-  }
-
-  async function submitFixedExpense(
-    expense: FixedExpenseInstance,
-    action: "confirm" | "skip",
-  ) {
-    const draft = fixedDrafts[expense.id];
-    const amount = parseCurrencyInput(draft?.amount ?? expense.amount.toFixed(2));
-    const note = draft?.note.trim() || null;
-
-    if (action === "confirm" && (!amount || amount <= 0)) {
-      setFixedMessage("Vul een geldig maandbedrag in.");
-      return;
-    }
-
-    setSavingFixedId(expense.id);
-    setFixedMessage("");
-
-    const response = await fetch("/api/fixed-expenses/confirm", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        instanceId: expense.id,
-        action,
-        amount: action === "confirm" ? amount : null,
-        note,
-      }),
-    });
-    const result = await response.json();
-    setSavingFixedId(null);
-
-    if (!response.ok) {
-      setFixedMessage(
-        typeof result.error === "string"
-          ? result.error
-          : "Verwerken lukte niet. Probeer het nog eens.",
-      );
-      return;
-    }
-
-    const fixedInstance = result.fixedInstance as FixedExpenseInstance | null;
-
-    setFixedInstances((items) =>
-      items.map((item) =>
-        item.id === expense.id && fixedInstance
-          ? { ...fixedInstance, confirmedBy: initialData.currentPerson }
-          : item
-      ),
-    );
-
-    if (result.transaction) {
-      setTransactions((items) => [
-        {
-          id: result.transaction.id,
-          type: "fixed",
-          fixedInstanceId: expense.id,
-          categoryId: expense.categoryId,
-          amount: Number(result.transaction.amount),
-          date: result.transaction.date,
-          enteredBy: initialData.currentPerson,
-          note: result.transaction.note ?? undefined,
-        },
-        ...items,
-      ]);
-    }
-
-    setFixedDrafts((drafts) => {
-      const nextDrafts = { ...drafts };
-      delete nextDrafts[expense.id];
-      return nextDrafts;
-    });
-    setFixedMessage(
-      action === "skip" ? "Vaste last overgeslagen." : "Vaste last verwerkt.",
-    );
-  }
-
   async function deleteTransaction(transaction: Transaction) {
     const confirmed = window.confirm(
       transaction.type === "fixed"
@@ -471,6 +394,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setEditingRecurringId(null);
     setRecurringName("");
     setRecurringAmount("");
+    setRecurringBillingDay("1");
     setRecurringStartsOn(new Date().toISOString().slice(0, 10));
     setRecurringCategory(fixedCategories[0]?.id ?? "");
   }
@@ -480,6 +404,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setHighlightedRecurringId(expense.id);
     setRecurringName(expense.name);
     setRecurringAmount(String(expense.currentAmount.toFixed(2)));
+    setRecurringBillingDay(String(expense.billingDay));
     setRecurringStartsOn(expense.startsOn);
     setRecurringCategory(expense.categoryId);
     setManageMessage("");
@@ -487,9 +412,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   async function saveRecurringExpense() {
     const amount = parseCurrencyInput(recurringAmount);
+    const billingDay = Number(recurringBillingDay);
 
-    if (!recurringName.trim() || !recurringCategory || !amount || amount <= 0) {
-      setManageMessage("Vul naam, categorie en een geldig maandbedrag in.");
+    if (
+      !recurringName.trim() ||
+      !recurringCategory ||
+      !amount ||
+      amount <= 0 ||
+      !Number.isInteger(billingDay) ||
+      billingDay < 1 ||
+      billingDay > 31
+    ) {
+      setManageMessage(
+        "Vul naam, categorie, maandbedrag en afschrijfdag in.",
+      );
       return;
     }
 
@@ -507,6 +443,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         name: recurringName.trim(),
         categoryId: recurringCategory,
         currentAmount: amount,
+        billingDay,
         startsOn: recurringStartsOn,
       }),
     });
@@ -563,19 +500,24 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     );
   }
 
-  async function deactivateRecurringExpense(expense: RecurringExpense) {
+  async function deleteRecurringExpense(expense: RecurringExpense) {
+    const confirmed = window.confirm(
+      `${expense.name} verwijderen vanaf nu?\n\nHistorische maanden blijven bewaard.`,
+    );
+
+    if (!confirmed) return;
+
     setIsSavingRecurring(true);
     setManageMessage("");
 
     const response = await fetch("/api/recurring-expenses", {
-      method: "PATCH",
+      method: "DELETE",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         id: expense.id,
         householdId: initialData.householdId,
-        isActive: false,
       }),
     });
     const result = await response.json();
@@ -586,16 +528,23 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       setManageMessage(
         typeof result.error === "string"
           ? result.error
-          : "Deactiveren lukte niet. Probeer het nog eens.",
+          : "Verwijderen lukte niet. Probeer het nog eens.",
       );
       return;
     }
 
     const recurringExpense = result.recurringExpense as RecurringExpense;
+    const removedInstanceIds = Array.isArray(result.removedInstanceIds)
+      ? (result.removedInstanceIds as string[])
+      : [];
+
     setRecurringExpenses((items) =>
       items.map((item) =>
         item.id === recurringExpense.id ? recurringExpense : item,
       ),
+    );
+    setFixedInstances((items) =>
+      items.filter((item) => !removedInstanceIds.includes(item.id)),
     );
 
     if (editingRecurringId === expense.id) {
@@ -603,7 +552,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
 
     setHighlightedRecurringId(recurringExpense.id);
-    setManageMessage(`${recurringExpense.name} is gedeactiveerd.`);
+    setFixedMessage(`${recurringExpense.name} staat niet meer in de agenda.`);
+    setManageMessage(`${recurringExpense.name} is verwijderd vanaf nu.`);
   }
 
   function exportExcel() {
@@ -723,9 +673,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           />
           <MetricCard
             icon={<ListChecks className="h-5 w-5" />}
-            label="Nog te bevestigen"
-            value={`${pendingFixed.length}`}
-            tone={pendingFixed.length ? "red" : "emerald"}
+            label="Open vast"
+            value={currency(openFixedTotal)}
+            tone={
+              fixedAgendaItems.some((item) => item.state === "overdue")
+                ? "red"
+                : openFixedTotal > 0
+                  ? "indigo"
+                  : "emerald"
+            }
           />
         </section>
 
@@ -966,137 +922,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           />
 
           {isSharedView && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Terugkerende afschrijvingen</CardTitle>
-                <CardDescription>
-                  Bevestig wat deze maand echt is afgeschreven.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 sm:grid-cols-2">
-                {fixedMessage && (
-                  <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300 sm:col-span-2">
-                    {fixedMessage}
-                  </p>
-                )}
-                {fixedInstances
-                  .filter((expense) => expense.month === currentMonth)
-                  .map((expense) => {
-                    const category = labels.get(expense.categoryId);
-                    const draft = fixedDrafts[expense.id];
-                    const amountValue = draft?.amount ?? expense.amount.toFixed(2);
-                    const noteValue = draft?.note ?? expense.note ?? "";
-                    const isPending = expense.status === "pending";
-                    const isSaving = savingFixedId === expense.id;
-
-                    return (
-                      <div
-                        key={expense.id}
-                        className={cn(
-                          "rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4 transition",
-                          highlightedFixedInstanceId === expense.id &&
-                            "border-indigo-400/70 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.22)]",
-                        )}
-                      >
-                        <div className="mb-4 flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-medium text-zinc-100">
-                              {expense.name}
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-500">
-                              {category?.name}
-                            </p>
-                          </div>
-                          <Badge
-                            className={cn(
-                              expense.status === "confirmed" &&
-                                "border-emerald-400/20 bg-emerald-500/10 text-emerald-300",
-                              expense.status === "adjusted" &&
-                                "border-indigo-400/25 bg-indigo-500/10 text-indigo-200",
-                              expense.status === "skipped" &&
-                                "border-red-400/20 bg-red-500/10 text-red-300",
-                              isPending &&
-                                "border-zinc-700 bg-zinc-900 text-zinc-300",
-                            )}
-                          >
-                            {fixedStatusLabel(expense.status)}
-                          </Badge>
-                        </div>
-                        {isPending ? (
-                          <div className="space-y-3">
-                            <div className="grid gap-2 sm:grid-cols-[0.8fr_1fr]">
-                              <Input
-                                inputMode="decimal"
-                                value={amountValue}
-                                onChange={(event) =>
-                                  updateFixedDraft(
-                                    expense,
-                                    "amount",
-                                    event.target.value,
-                                  )
-                                }
-                              />
-                              <Input
-                                placeholder="Notitie deze maand"
-                                value={noteValue}
-                                onChange={(event) =>
-                                  updateFixedDraft(
-                                    expense,
-                                    "note",
-                                    event.target.value,
-                                  )
-                                }
-                              />
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => submitFixedExpense(expense, "confirm")}
-                                disabled={isSaving}
-                              >
-                                {isSaving ? (
-                                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Check className="h-4 w-4" />
-                                )}
-                                Bevestig
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => submitFixedExpense(expense, "skip")}
-                                disabled={isSaving}
-                              >
-                                <X className="h-4 w-4" />
-                                Sla over
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-end justify-between gap-3">
-                            <div>
-                              <p className="text-xl font-semibold text-zinc-50">
-                                {currency(expense.amount)}
-                              </p>
-                              <p className="mt-1 text-xs text-zinc-500">
-                                {expense.note ??
-                                  (expense.status === "skipped"
-                                    ? "Geen transactie aangemaakt"
-                                    : "Verwerkt")}
-                              </p>
-                            </div>
-                            {expense.confirmedBy && (
-                              <p className="text-xs text-zinc-500">
-                                {expense.confirmedBy}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-              </CardContent>
-            </Card>
+            <FixedExpenseAgenda
+              items={fixedAgendaItems}
+              currentMonth={currentMonth}
+              message={fixedMessage}
+              highlightedId={highlightedFixedInstanceId}
+            />
           )}
         </section>
 
@@ -1108,6 +939,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               labels={labels}
               name={recurringName}
               amount={recurringAmount}
+              billingDay={recurringBillingDay}
               startsOn={recurringStartsOn}
               category={recurringCategory}
               editingId={editingRecurringId}
@@ -1116,11 +948,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               isSaving={isSavingRecurring}
               onNameChange={setRecurringName}
               onAmountChange={setRecurringAmount}
+              onBillingDayChange={setRecurringBillingDay}
               onStartsOnChange={setRecurringStartsOn}
               onCategoryChange={setRecurringCategory}
               onSave={saveRecurringExpense}
               onEdit={startEditingRecurring}
-              onDeactivate={deactivateRecurringExpense}
+              onDelete={deleteRecurringExpense}
               onCancel={resetRecurringForm}
             />
           </section>
@@ -1130,12 +963,321 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   );
 }
 
+type FixedAgendaState =
+  | "processed"
+  | "changed"
+  | "skipped"
+  | "overdue"
+  | "today"
+  | "upcoming";
+
+type FixedAgendaItem = {
+  id: string;
+  recurringExpenseId: string;
+  name: string;
+  categoryName: string;
+  categoryColor: string;
+  amount: number;
+  date: string;
+  day: number;
+  state: FixedAgendaState;
+  note?: string;
+};
+
+function FixedExpenseAgenda({
+  items,
+  currentMonth,
+  message,
+  highlightedId,
+}: {
+  items: FixedAgendaItem[];
+  currentMonth: string;
+  message?: string;
+  highlightedId?: string | null;
+}) {
+  const monthlyTotal = items.reduce((total, item) => total + item.amount, 0);
+  const openTotal = items
+    .filter(
+      (item) =>
+        item.state === "overdue" ||
+        item.state === "today" ||
+        item.state === "upcoming",
+    )
+    .reduce((total, item) => total + item.amount, 0);
+  const processedTotal = items
+    .filter((item) => item.state === "processed" || item.state === "changed")
+    .reduce((total, item) => total + item.amount, 0);
+  const [year, month] = currentMonth.split("-").map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const firstDay = new Date(year, month - 1, 1).getDay();
+  const leadingEmptyDays = (firstDay + 6) % 7;
+  const itemsByDay = new Map<number, FixedAgendaItem[]>();
+
+  items.forEach((item) => {
+    const dayItems = itemsByDay.get(item.day) ?? [];
+    dayItems.push(item);
+    itemsByDay.set(item.day, dayItems);
+  });
+
+  const upcomingItems = items.filter(
+    (item) =>
+      item.state === "overdue" ||
+      item.state === "today" ||
+      item.state === "upcoming",
+  );
+  const pastItems = items.filter(
+    (item) => item.state === "processed" || item.state === "changed",
+  );
+  const skippedItems = items.filter((item) => item.state === "skipped");
+  const calendarCells = [
+    ...Array.from({ length: leadingEmptyDays }, (_, index) => ({
+      key: `empty-${index}`,
+      day: null,
+    })),
+    ...Array.from({ length: daysInMonth }, (_, index) => ({
+      key: `day-${index + 1}`,
+      day: index + 1,
+    })),
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+        <div>
+          <CardTitle>Vaste lasten agenda</CardTitle>
+          <CardDescription>
+            Een maandbeeld van wat automatisch afgeschreven wordt.
+          </CardDescription>
+        </div>
+        <Badge className="w-fit border-indigo-400/25 bg-indigo-500/10 text-indigo-200">
+          {monthLabel(currentMonth)}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {message && (
+          <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300">
+            {message}
+          </p>
+        )}
+
+        <div className="grid grid-cols-3 gap-2">
+          <AgendaTotal label="Deze maand" value={monthlyTotal} tone="indigo" />
+          <AgendaTotal label="Open" value={openTotal} tone="zinc" />
+          <AgendaTotal label="Verwerkt" value={processedTotal} tone="emerald" />
+        </div>
+
+        {items.length === 0 ? (
+          <div className="rounded-[16px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
+            Nog geen vaste lasten in de agenda.
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3 lg:hidden">
+              {upcomingItems.length > 0 && (
+                <AgendaSection
+                  title="Komt eraan"
+                  items={upcomingItems}
+                  highlightedId={highlightedId}
+                />
+              )}
+              {pastItems.length > 0 && (
+                <AgendaSection
+                  title="Verwerkt"
+                  items={pastItems}
+                  highlightedId={highlightedId}
+                />
+              )}
+              {skippedItems.length > 0 && (
+                <AgendaSection
+                  title="Overgeslagen"
+                  items={skippedItems}
+                  highlightedId={highlightedId}
+                />
+              )}
+            </div>
+
+            <div className="hidden gap-5 lg:grid lg:grid-cols-[1fr_320px]">
+              <div className="rounded-[18px] border border-zinc-800 bg-zinc-950/35 p-3">
+                <div className="mb-3 grid grid-cols-7 gap-2 text-center text-xs font-medium text-zinc-600">
+                  {["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"].map((day) => (
+                    <span key={day}>{day}</span>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-2">
+                  {calendarCells.map((cell) => {
+                    const dayItems = cell.day ? itemsByDay.get(cell.day) ?? [] : [];
+
+                    return (
+                      <div
+                        key={cell.key}
+                        className={cn(
+                          "min-h-28 rounded-[14px] border border-zinc-900 bg-zinc-950/40 p-2",
+                          cell.day && "border-zinc-800/70",
+                        )}
+                      >
+                        {cell.day && (
+                          <>
+                            <p className="mb-2 text-xs font-medium text-zinc-500">
+                              {cell.day}
+                            </p>
+                            <div className="space-y-1.5">
+                              {dayItems.slice(0, 2).map((item) => (
+                                <div
+                                  key={item.id}
+                                  className={cn(
+                                    "rounded-[10px] border border-zinc-800 bg-zinc-900/70 px-2 py-1.5",
+                                    highlightedId === item.id &&
+                                      "border-indigo-400/70 bg-indigo-500/15",
+                                  )}
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <span
+                                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                      style={{ backgroundColor: item.categoryColor }}
+                                    />
+                                    <p className="truncate text-[11px] font-medium text-zinc-100">
+                                      {item.name}
+                                    </p>
+                                  </div>
+                                  <p className="mt-0.5 text-[11px] text-zinc-500">
+                                    {currency(item.amount)}
+                                  </p>
+                                </div>
+                              ))}
+                              {dayItems.length > 2 && (
+                                <p className="px-1 text-[11px] text-zinc-500">
+                                  +{dayItems.length - 2} meer
+                                </p>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+                  <CalendarDays className="h-4 w-4 text-indigo-300" />
+                  Eerstvolgend
+                </div>
+                {(upcomingItems.length > 0 ? upcomingItems : items).slice(0, 6).map(
+                  (item) => (
+                    <AgendaRow
+                      key={item.id}
+                      item={item}
+                      isHighlighted={highlightedId === item.id}
+                    />
+                  ),
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AgendaTotal({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "indigo" | "emerald" | "zinc";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-[14px] border p-3",
+        tone === "indigo" && "border-indigo-400/20 bg-indigo-500/10",
+        tone === "emerald" && "border-emerald-400/20 bg-emerald-500/10",
+        tone === "zinc" && "border-zinc-800 bg-zinc-950/55",
+      )}
+    >
+      <p className="text-[11px] font-medium uppercase text-zinc-500">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-zinc-50 sm:text-base">
+        {currency(value)}
+      </p>
+    </div>
+  );
+}
+
+function AgendaSection({
+  title,
+  items,
+  highlightedId,
+}: {
+  title: string;
+  items: FixedAgendaItem[];
+  highlightedId?: string | null;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-zinc-500">{title}</p>
+      {items.map((item) => (
+        <AgendaRow
+          key={item.id}
+          item={item}
+          isHighlighted={highlightedId === item.id}
+        />
+      ))}
+    </div>
+  );
+}
+
+function AgendaRow({
+  item,
+  isHighlighted,
+}: {
+  item: FixedAgendaItem;
+  isHighlighted: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-3 transition",
+        isHighlighted &&
+          "border-indigo-400/70 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.22)]",
+      )}
+    >
+      <div className="flex h-12 w-12 flex-col items-center justify-center rounded-[14px] bg-zinc-900 text-zinc-100">
+        <span className="text-[10px] uppercase text-zinc-500">
+          {monthShort(item.date)}
+        </span>
+        <span className="text-base font-semibold">{item.day}</span>
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: item.categoryColor }}
+          />
+          <p className="truncate text-sm font-medium text-zinc-100">
+            {item.name}
+          </p>
+        </div>
+        <p className="mt-1 truncate text-xs text-zinc-500">
+          {item.categoryName} · {agendaStateLabel(item.state)}
+          {item.note ? ` · ${item.note}` : ""}
+        </p>
+      </div>
+      <p className="text-sm font-semibold text-zinc-50">{currency(item.amount)}</p>
+    </div>
+  );
+}
+
 function FixedExpenseManager({
   expenses,
   categories,
   labels,
   name,
   amount,
+  billingDay,
   startsOn,
   category,
   editingId,
@@ -1144,11 +1286,12 @@ function FixedExpenseManager({
   isSaving,
   onNameChange,
   onAmountChange,
+  onBillingDayChange,
   onStartsOnChange,
   onCategoryChange,
   onSave,
   onEdit,
-  onDeactivate,
+  onDelete,
   onCancel,
 }: {
   expenses: RecurringExpense[];
@@ -1156,6 +1299,7 @@ function FixedExpenseManager({
   labels: Map<string, DashboardData["categories"][number]>;
   name: string;
   amount: string;
+  billingDay: string;
   startsOn: string;
   category: string;
   editingId: string | null;
@@ -1164,11 +1308,12 @@ function FixedExpenseManager({
   isSaving: boolean;
   onNameChange: (value: string) => void;
   onAmountChange: (value: string) => void;
+  onBillingDayChange: (value: string) => void;
   onStartsOnChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onSave: () => void;
   onEdit: (expense: RecurringExpense) => void;
-  onDeactivate: (expense: RecurringExpense) => void;
+  onDelete: (expense: RecurringExpense) => void;
   onCancel: () => void;
 }) {
   const activeExpenses = expenses
@@ -1176,9 +1321,11 @@ function FixedExpenseManager({
     .sort((first, second) => {
       if (first.id === highlightedId) return -1;
       if (second.id === highlightedId) return 1;
-      return first.name.localeCompare(second.name, "nl");
+      return (
+        first.billingDay - second.billingDay ||
+        first.name.localeCompare(second.name, "nl")
+      );
     });
-  const inactiveExpenses = expenses.filter((expense) => !expense.isActive);
   const formTitle = editingId ? "Vaste last wijzigen" : "Nieuwe vaste last";
   const monthlyTotal = activeExpenses.reduce(
     (total, expense) => total + expense.currentAmount,
@@ -1191,7 +1338,7 @@ function FixedExpenseManager({
         <div>
           <CardTitle>Vaste lasten beheren</CardTitle>
           <CardDescription>
-            Toevoegen of aanpassen, direct zichtbaar in deze maand.
+            Bedrag, categorie en afschrijfdag. De agenda werkt daarna vanzelf.
           </CardDescription>
         </div>
         {editingId && (
@@ -1226,7 +1373,7 @@ function FixedExpenseManager({
               />
             </FieldLabel>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <FieldLabel label="Categorie">
               <Select
                 value={category}
@@ -1238,6 +1385,16 @@ function FixedExpenseManager({
                   </option>
                 ))}
               </Select>
+            </FieldLabel>
+            <FieldLabel label="Afschrijfdag">
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={31}
+                value={billingDay}
+                onChange={(event) => onBillingDayChange(event.target.value)}
+              />
             </FieldLabel>
             <FieldLabel label="Startdatum">
               <Input
@@ -1275,7 +1432,7 @@ function FixedExpenseManager({
                 Overzicht vaste lasten
               </p>
               <p className="mt-1 text-xs text-zinc-500">
-                {activeExpenses.length} actief per maand
+                {activeExpenses.length} actief, gesorteerd op afschrijfdag
               </p>
             </div>
             <div className="text-right">
@@ -1302,43 +1459,10 @@ function FixedExpenseManager({
                 isHighlighted={expense.id === highlightedId}
                 isSaving={isSaving}
                 onEdit={onEdit}
-                onDeactivate={onDeactivate}
+                onDelete={onDelete}
               />
             ))}
           </div>
-
-          {inactiveExpenses.length > 0 && (
-            <div className="mt-5 border-t border-zinc-900 pt-4">
-              <p className="mb-3 text-xs font-medium text-zinc-500">
-                Gedeactiveerd
-              </p>
-              <div className="grid gap-3">
-                {inactiveExpenses.map((expense) => (
-                  <div
-                    key={expense.id}
-                    className="rounded-[14px] border border-zinc-900 bg-zinc-950/25 p-4 opacity-60"
-                  >
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-zinc-100">
-                          {expense.name}
-                        </p>
-                        <p className="mt-1 text-xs text-zinc-500">
-                          {labels.get(expense.categoryId)?.name ?? "Onbekend"}
-                        </p>
-                      </div>
-                      <Badge className="border-zinc-800 bg-zinc-900 text-zinc-400">
-                        uit
-                      </Badge>
-                    </div>
-                    <p className="text-lg font-semibold text-zinc-50">
-                      {currency(expense.currentAmount)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </CardContent>
     </Card>
@@ -1459,14 +1583,14 @@ function RecurringExpenseCard({
   isHighlighted,
   isSaving,
   onEdit,
-  onDeactivate,
+  onDelete,
 }: {
   expense: RecurringExpense;
   categoryName: string;
   isHighlighted: boolean;
   isSaving: boolean;
   onEdit: (expense: RecurringExpense) => void;
-  onDeactivate: (expense: RecurringExpense) => void;
+  onDelete: (expense: RecurringExpense) => void;
 }) {
   return (
     <div
@@ -1482,7 +1606,7 @@ function RecurringExpenseCard({
             {expense.name}
           </p>
           <p className="mt-1 truncate text-xs text-zinc-500">
-            {categoryName} · vanaf {expense.startsOn}
+            Dag {expense.billingDay} · {categoryName} · vanaf {expense.startsOn}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -1513,11 +1637,12 @@ function RecurringExpenseCard({
           <Button
             size="icon"
             variant="ghost"
-            title="Deactiveer vaste last"
-            onClick={() => onDeactivate(expense)}
+            title="Verwijder vanaf nu"
+            onClick={() => onDelete(expense)}
             disabled={isSaving}
+            className="text-zinc-500 hover:text-red-300"
           >
-            <Power className="h-4 w-4" />
+            <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -1770,13 +1895,95 @@ function parseCurrencyInput(value: string) {
   return Number(value.trim().replace(/\s/g, "").replace(",", "."));
 }
 
-function fixedStatusLabel(status: FixedExpenseInstance["status"]) {
-  const labels = {
-    pending: "open",
-    confirmed: "bevestigd",
-    adjusted: "aangepast",
+function buildFixedAgendaItems(
+  recurringExpenses: RecurringExpense[],
+  fixedInstances: FixedExpenseInstance[],
+  currentMonth: string,
+  labels: Map<string, DashboardData["categories"][number]>,
+) {
+  const currentMonthInstances = new Map(
+    fixedInstances
+      .filter((instance) => instance.month === currentMonth)
+      .map((instance) => [instance.recurringExpenseId, instance]),
+  );
+  const today = new Date().toISOString().slice(0, 10);
+
+  return recurringExpenses
+    .filter((expense) => expense.isActive)
+    .map((expense) => {
+      const instance = currentMonthInstances.get(expense.id);
+      const date = dateForBillingDay(currentMonth, expense.billingDay);
+      const category = labels.get(expense.categoryId);
+      const state = agendaState(instance?.status, date, today);
+
+      return {
+        id: instance?.id ?? expense.id,
+        recurringExpenseId: expense.id,
+        name: instance?.name ?? expense.name,
+        categoryName: category?.name ?? "Onbekend",
+        categoryColor: category?.color ?? "#6366F1",
+        amount: instance?.amount ?? expense.currentAmount,
+        date,
+        day: Number(date.slice(8, 10)),
+        state,
+        note: instance?.note,
+      } satisfies FixedAgendaItem;
+    })
+    .sort(
+      (first, second) =>
+        first.date.localeCompare(second.date) ||
+        first.name.localeCompare(second.name, "nl"),
+    );
+}
+
+function agendaState(
+  status: FixedExpenseInstance["status"] | undefined,
+  date: string,
+  today: string,
+): FixedAgendaState {
+  if (status === "confirmed") return "processed";
+  if (status === "adjusted") return "changed";
+  if (status === "skipped") return "skipped";
+  if (date < today) return "overdue";
+  if (date === today) return "today";
+  return "upcoming";
+}
+
+function agendaStateLabel(state: FixedAgendaState) {
+  const labels: Record<FixedAgendaState, string> = {
+    processed: "verwerkt",
+    changed: "aangepast",
     skipped: "overgeslagen",
+    overdue: "verwacht geweest",
+    today: "vandaag",
+    upcoming: "komt eraan",
   };
 
-  return labels[status];
+  return labels[state];
+}
+
+function dateForBillingDay(month: string, billingDay: number) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const daysInMonth = new Date(year, monthNumber, 0).getDate();
+  const safeDay = Math.min(Math.max(billingDay, 1), daysInMonth);
+
+  return `${month}-${String(safeDay).padStart(2, "0")}`;
+}
+
+function monthShort(date: string) {
+  const month = Number(date.slice(5, 7));
+  return [
+    "jan",
+    "feb",
+    "mrt",
+    "apr",
+    "mei",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "okt",
+    "nov",
+    "dec",
+  ][month - 1];
 }

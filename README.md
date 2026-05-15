@@ -65,26 +65,26 @@ zoveel mogelijk behouden. Wel krijgt het datamodel een nieuwe kern:
 - [x] Eerste tabs toevoegen: Gezamenlijk en Mijn rekening.
 - [ ] Tabs herzien als views met eigen doel, niet als simpele filter over alles.
 - [ ] Snelle invoer globaal en prominent houden.
-- [ ] Vaste lasten beheer uit Mijn rekening halen.
-- [ ] Vaste lasten behandelen als gezamenlijk beheer, standaard op gezamenlijke rekening.
+- [x] Vaste lasten beheer uit Mijn rekening halen.
+- [x] Vaste lasten behandelen als gezamenlijk beheer, standaard op gezamenlijke rekening.
 - [ ] Onderste uitlegblok "Mobiele PWA" verwijderen.
-- [ ] "Wie voerde wat in" vervangen door gezamenlijke kosten per persoon.
+- [x] "Wie voerde wat in" vervangen door gezamenlijke kosten per persoon.
 - [ ] Gezamenlijke kosten per persoon tonen als donut/balk-grafiek.
-- [ ] Categorieen per persoon tonen voor gezamenlijke uitgaven.
+- [x] Categorieen per persoon tonen voor gezamenlijke uitgaven.
 - [ ] Mijn rekening schoon houden: alleen prive-transacties, prive-categorieen en prive-maandoverzicht.
 - [ ] Maandoverzicht duidelijk labelen als gezamenlijk of prive.
 
 #### Fase 3B - Vaste lasten als financiele agenda
 
 - [x] `billing_day` voorbereiden in Supabase-migratie en SQL Editor chunk.
-- [ ] `billing_day` uitvoeren in Supabase.
-- [ ] Vaste-last formulier uitbreiden met afschrijfdag.
-- [ ] Bestaande bevestig/overslaan-flow uit het hoofdscherm verwijderen.
-- [ ] Vaste lasten automatisch tonen als verwacht voor de maand.
-- [ ] Desktop: compacte maandkalender met dagen waarop afschrijvingen vallen.
-- [ ] iPhone: Things 3-achtige tijdlijn met Vandaag, Komt eraan, Later deze maand en Geweest.
-- [ ] Totalen tonen: al geweest, komt nog, totaal vaste lasten.
-- [ ] Deactiveren vervangen door Verwijderen vanaf nu.
+- [x] `billing_day` uitvoeren in Supabase.
+- [x] Vaste-last formulier uitbreiden met afschrijfdag.
+- [x] Bestaande bevestig/overslaan-flow uit het hoofdscherm verwijderen.
+- [x] Vaste lasten automatisch tonen als verwacht voor de maand.
+- [x] Desktop: compacte maandkalender met dagen waarop afschrijvingen vallen.
+- [x] iPhone: Things 3-achtige tijdlijn met open, verwerkt en overgeslagen.
+- [x] Totalen tonen: verwerkt, open en totaal vaste lasten.
+- [x] Deactiveren vervangen door Verwijderen vanaf nu.
 - [ ] Later: Deze maand aanpassen/overslaan als uitzonderingsactie.
 
 #### Fase 4 - Inleg en cashflow

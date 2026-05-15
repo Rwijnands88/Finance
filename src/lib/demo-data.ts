@@ -21,14 +21,14 @@ export const categories: Category[] = [
 ];
 
 export const recurringExpenses: RecurringExpense[] = [
-  { id: "rec-1", name: "Hypotheek", categoryId: "mortgage", currentAmount: 1840, startsOn: "2026-01-01", isActive: true },
-  { id: "rec-2", name: "Internet + TV", categoryId: "internet", currentAmount: 74, startsOn: "2026-01-01", isActive: true },
-  { id: "rec-3", name: "Water en elektra voorschot", categoryId: "utilities", currentAmount: 256, startsOn: "2026-01-01", isActive: true },
-  { id: "rec-4", name: "Kinderopvang", categoryId: "childcare", currentAmount: 645, startsOn: "2026-01-01", isActive: true },
-  { id: "rec-5", name: "BSO", categoryId: "childcare", currentAmount: 265, startsOn: "2026-01-01", isActive: true },
-  { id: "rec-6", name: "Verzekeringen pakket", categoryId: "insurance", currentAmount: 315, startsOn: "2026-01-01", isActive: true },
-  { id: "rec-7", name: "Telefoon Ralph", categoryId: "subscriptions", currentAmount: 31, startsOn: "2026-01-01", isActive: true },
-  { id: "rec-8", name: "Telefoon Dorine", categoryId: "subscriptions", currentAmount: 29, startsOn: "2026-01-01", isActive: true },
+  { id: "rec-1", name: "Hypotheek", categoryId: "mortgage", currentAmount: 1840, billingDay: 1, startsOn: "2026-01-01", isActive: true },
+  { id: "rec-2", name: "Internet + TV", categoryId: "internet", currentAmount: 74, billingDay: 3, startsOn: "2026-01-01", isActive: true },
+  { id: "rec-3", name: "Water en elektra voorschot", categoryId: "utilities", currentAmount: 256, billingDay: 8, startsOn: "2026-01-01", isActive: true },
+  { id: "rec-4", name: "Kinderopvang", categoryId: "childcare", currentAmount: 645, billingDay: 5, startsOn: "2026-01-01", isActive: true },
+  { id: "rec-5", name: "BSO", categoryId: "childcare", currentAmount: 265, billingDay: 15, startsOn: "2026-01-01", isActive: true },
+  { id: "rec-6", name: "Verzekeringen pakket", categoryId: "insurance", currentAmount: 315, billingDay: 7, startsOn: "2026-01-01", isActive: true },
+  { id: "rec-7", name: "Telefoon Ralph", categoryId: "subscriptions", currentAmount: 31, billingDay: 18, startsOn: "2026-01-01", isActive: true },
+  { id: "rec-8", name: "Telefoon Dorine", categoryId: "subscriptions", currentAmount: 29, billingDay: 18, startsOn: "2026-01-01", isActive: true },
 ];
 
 export const fixedInstances: FixedExpenseInstance[] = [

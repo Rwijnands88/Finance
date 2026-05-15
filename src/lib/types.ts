@@ -23,6 +23,7 @@ export type RecurringExpense = {
   name: string;
   categoryId: string;
   currentAmount: number;
+  billingDay: number;
   startsOn: string;
   isActive: boolean;
 };

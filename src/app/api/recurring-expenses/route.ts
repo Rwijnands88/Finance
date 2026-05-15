@@ -8,6 +8,7 @@ type RecurringExpenseBody = {
   name?: string;
   categoryId?: string;
   currentAmount?: number;
+  billingDay?: number;
   startsOn?: string;
   isActive?: boolean;
 };
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
       name: body.name!.trim(),
       category_id: body.categoryId!,
       current_amount: Number(body.currentAmount),
+      billing_day: body.billingDay ?? dayFromIsoDate(body.startsOn!),
       starts_on: body.startsOn!,
       is_active: true,
       created_by: user.id,
@@ -109,6 +111,7 @@ export async function PATCH(request: Request) {
     name?: string;
     category_id?: string;
     current_amount?: number;
+    billing_day?: number;
     starts_on?: string;
     is_active?: boolean;
   } = {};
@@ -123,6 +126,10 @@ export async function PATCH(request: Request) {
 
   if (typeof body.currentAmount === "number") {
     updates.current_amount = Number(body.currentAmount);
+  }
+
+  if (typeof body.billingDay === "number") {
+    updates.billing_day = body.billingDay;
   }
 
   if (typeof body.startsOn === "string") {
@@ -158,6 +165,55 @@ export async function PATCH(request: Request) {
   });
 }
 
+export async function DELETE(request: Request) {
+  const body = (await request.json()) as RecurringExpenseBody;
+
+  if (!body.id || !body.householdId) {
+    return NextResponse.json(
+      { error: "Vaste last ontbreekt." },
+      { status: 400 },
+    );
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+
+  const { data: recurringExpense, error } = await supabase
+    .from("recurring_expenses")
+    .update({
+      is_active: false,
+      ends_on: new Date().toISOString().slice(0, 10),
+    })
+    .eq("id", body.id)
+    .eq("household_id", body.householdId)
+    .select("*")
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  const { data: removedInstances } = await supabase
+    .from("fixed_expense_instances")
+    .delete()
+    .eq("recurring_expense_id", body.id)
+    .eq("status", "pending")
+    .gte("month", currentMonthStart())
+    .select("id");
+
+  return NextResponse.json({
+    recurringExpense: mapRecurringExpense(recurringExpense),
+    removedInstanceIds: (removedInstances ?? []).map((item) => item.id),
+  });
+}
+
 function validateRecurringInput(
   body: RecurringExpenseBody,
   requireAllFields: boolean,
@@ -166,6 +222,7 @@ function validateRecurringInput(
     typeof body.name === "string" ||
     typeof body.categoryId === "string" ||
     typeof body.currentAmount === "number" ||
+    typeof body.billingDay === "number" ||
     typeof body.startsOn === "string" ||
     typeof body.isActive === "boolean";
 
@@ -202,6 +259,18 @@ function validateRecurringInput(
     !/^\d{4}-\d{2}-\d{2}$/.test(body.startsOn)
   ) {
     return NextResponse.json({ error: "Startdatum is ongeldig." }, { status: 400 });
+  }
+
+  if (
+    typeof body.billingDay === "number" &&
+    (!Number.isInteger(body.billingDay) ||
+      body.billingDay < 1 ||
+      body.billingDay > 31)
+  ) {
+    return NextResponse.json(
+      { error: "Afschrijfdag moet tussen 1 en 31 liggen." },
+      { status: 400 },
+    );
   }
 
   if (
@@ -296,6 +365,7 @@ function mapRecurringExpense(row: {
   name: string;
   category_id: string;
   current_amount: number;
+  billing_day: number;
   starts_on: string;
   is_active: boolean;
 }): RecurringExpense {
@@ -304,9 +374,14 @@ function mapRecurringExpense(row: {
     name: row.name,
     categoryId: row.category_id,
     currentAmount: Number(row.current_amount),
+    billingDay: row.billing_day,
     startsOn: row.starts_on,
     isActive: row.is_active,
   };
+}
+
+function dayFromIsoDate(isoDate: string) {
+  return Number(isoDate.slice(8, 10));
 }
 
 function mapFixedInstance(row: {
