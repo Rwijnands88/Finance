@@ -594,30 +594,21 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   return (
     <main className="min-h-dvh bg-[#09090B] text-zinc-50">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-zinc-900 pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="mb-3 flex items-center gap-2">
-              <Badge className="border-indigo-400/25 bg-indigo-500/10 text-indigo-200">
-                PWA dashboard
-              </Badge>
-              <Badge>{initialData.people.join(" & ") || "Huishouden"}</Badge>
-            </div>
-            <h1 className="max-w-2xl text-3xl font-semibold tracking-normal text-zinc-50 sm:text-5xl">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
+        <header className="flex flex-col gap-3 border-b border-zinc-900 pb-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-normal text-zinc-50 sm:text-3xl">
               Finance
             </h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400 sm:text-base">
-              Familie Wijnands
-            </p>
+            <p className="mt-1 text-sm text-zinc-500">Familie Wijnands</p>
           </div>
 
-          <div className="rounded-[16px] border border-zinc-800 bg-zinc-950/60 px-4 py-3 text-sm">
-            <p className="text-xs text-zinc-500">Ingelogd als</p>
-            <p className="mt-1 font-medium text-zinc-100">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Badge className="border-zinc-800 bg-zinc-950/70 text-zinc-300">
               {initialData.currentPerson}
-            </p>
-            <form action="/auth/sign-out" method="post" className="mt-3">
-              <Button type="submit" size="sm" variant="secondary" className="w-full">
+            </Badge>
+            <form action="/auth/sign-out" method="post">
+              <Button type="submit" size="sm" variant="ghost">
                 <LogOut className="h-4 w-4" />
                 Uitloggen
               </Button>
@@ -625,8 +616,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </div>
         </header>
 
-        <section className="order-1 rounded-[18px] border border-zinc-800 bg-zinc-950/45 p-2 lg:order-none">
-          <div className="grid gap-2 sm:grid-cols-2">
+        <section className="order-1 lg:order-none">
+          <div className="inline-grid w-full gap-1 rounded-[14px] border border-zinc-800 bg-zinc-950/55 p-1 sm:w-auto sm:grid-flow-col">
             {accountTabs.map((tab) => {
               const isActive = selectedAccountId === tab.id;
 
@@ -636,14 +627,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   type="button"
                   onClick={() => setSelectedAccountId(tab.id)}
                   className={cn(
-                    "rounded-[14px] border px-4 py-3 text-left transition",
+                    "rounded-[10px] border px-3 py-2 text-left transition sm:min-w-44",
                     isActive
-                      ? "border-indigo-400/60 bg-indigo-500/15 text-zinc-50"
-                      : "border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-900/70 hover:text-zinc-100",
+                      ? "border-zinc-700 bg-zinc-900 text-zinc-50"
+                      : "border-transparent text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200",
                   )}
                 >
                   <span className="block text-sm font-semibold">{tab.label}</span>
-                  <span className="mt-1 block text-xs text-zinc-500">
+                  <span className="mt-0.5 block truncate text-xs text-zinc-600">
                     {tab.description}
                   </span>
                 </button>
@@ -652,7 +643,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </div>
         </section>
 
-        <section className="order-2 grid gap-4 lg:order-none lg:grid-cols-4">
+        <section className="order-2 grid gap-3 lg:order-none lg:grid-cols-4">
           <MetricCard
             icon={<Landmark className="h-5 w-5" />}
             label="Vaste lasten"
@@ -685,7 +676,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           />
         </section>
 
-        <section className="order-1 grid gap-4 lg:order-none lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="order-1 grid gap-4 lg:order-none lg:grid-cols-[0.78fr_1.22fr]">
           <QuickEntryCard
             amount={quickAmount}
             account={quickAccount}
@@ -726,7 +717,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="max-h-[520px] space-y-2 overflow-auto">
               {monthMessage && (
                 <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300">
                   {monthMessage}
@@ -739,7 +730,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 return (
                   <div
                     key={transaction.id}
-                    className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[14px] border border-zinc-800/80 bg-zinc-950/45 p-3"
+                    className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[12px] border border-zinc-800/70 bg-zinc-950/35 px-3 py-2.5"
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -807,8 +798,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               <CardTitle>Categorieen</CardTitle>
               <CardDescription>Verdeling van deze maand.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-[0.9fr_1fr]">
-              <div className="h-64">
+            <CardContent className="grid gap-4 md:grid-cols-[0.8fr_1.2fr]">
+              <div className="h-48">
                 {chartsReady && (
                   <ResponsiveContainer
                     width="100%"
@@ -878,7 +869,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               <CardTitle>Laatste 6 maanden</CardTitle>
               <CardDescription>Vast versus variabel.</CardDescription>
             </CardHeader>
-            <CardContent className="h-80">
+            <CardContent className="h-56">
               {chartsReady && (
                 <ResponsiveContainer
                   width="100%"
@@ -1007,18 +998,6 @@ function FixedExpenseAgenda({
   const processedTotal = items
     .filter((item) => item.state === "processed" || item.state === "changed")
     .reduce((total, item) => total + item.amount, 0);
-  const [year, month] = currentMonth.split("-").map(Number);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const firstDay = new Date(year, month - 1, 1).getDay();
-  const leadingEmptyDays = (firstDay + 6) % 7;
-  const itemsByDay = new Map<number, FixedAgendaItem[]>();
-
-  items.forEach((item) => {
-    const dayItems = itemsByDay.get(item.day) ?? [];
-    dayItems.push(item);
-    itemsByDay.set(item.day, dayItems);
-  });
-
   const upcomingItems = items.filter(
     (item) =>
       item.state === "overdue" ||
@@ -1029,16 +1008,6 @@ function FixedExpenseAgenda({
     (item) => item.state === "processed" || item.state === "changed",
   );
   const skippedItems = items.filter((item) => item.state === "skipped");
-  const calendarCells = [
-    ...Array.from({ length: leadingEmptyDays }, (_, index) => ({
-      key: `empty-${index}`,
-      day: null,
-    })),
-    ...Array.from({ length: daysInMonth }, (_, index) => ({
-      key: `day-${index + 1}`,
-      day: index + 1,
-    })),
-  ];
 
   return (
     <Card>
@@ -1066,13 +1035,25 @@ function FixedExpenseAgenda({
           <AgendaTotal label="Verwerkt" value={processedTotal} tone="emerald" />
         </div>
 
-        {items.length === 0 ? (
-          <div className="rounded-[16px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-            Nog geen vaste lasten in de agenda.
+        <div className="rounded-[18px] border border-zinc-800 bg-zinc-950/35 p-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+              <CalendarDays className="h-4 w-4 text-indigo-300" />
+              Planning deze maand
+            </div>
+            <p className="text-xs text-zinc-500">
+              {items.length} {items.length === 1 ? "afschrijving" : "afschrijvingen"}
+            </p>
           </div>
-        ) : (
-          <>
-            <div className="space-y-3 lg:hidden">
+
+          {items.length === 0 ? (
+            <div className="rounded-[16px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm leading-6 text-zinc-400">
+              Nog geen actieve vaste lasten. Voeg onderaan je hypotheek,
+              verzekeringen of abonnementen toe; daarna verschijnen ze hier
+              automatisch op afschrijfdag.
+            </div>
+          ) : (
+            <div className="space-y-4">
               {upcomingItems.length > 0 && (
                 <AgendaSection
                   title="Komt eraan"
@@ -1095,87 +1076,8 @@ function FixedExpenseAgenda({
                 />
               )}
             </div>
-
-            <div className="hidden gap-5 lg:grid lg:grid-cols-[1fr_320px]">
-              <div className="rounded-[18px] border border-zinc-800 bg-zinc-950/35 p-3">
-                <div className="mb-3 grid grid-cols-7 gap-2 text-center text-xs font-medium text-zinc-600">
-                  {["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"].map((day) => (
-                    <span key={day}>{day}</span>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-2">
-                  {calendarCells.map((cell) => {
-                    const dayItems = cell.day ? itemsByDay.get(cell.day) ?? [] : [];
-
-                    return (
-                      <div
-                        key={cell.key}
-                        className={cn(
-                          "min-h-28 rounded-[14px] border border-zinc-900 bg-zinc-950/40 p-2",
-                          cell.day && "border-zinc-800/70",
-                        )}
-                      >
-                        {cell.day && (
-                          <>
-                            <p className="mb-2 text-xs font-medium text-zinc-500">
-                              {cell.day}
-                            </p>
-                            <div className="space-y-1.5">
-                              {dayItems.slice(0, 2).map((item) => (
-                                <div
-                                  key={item.id}
-                                  className={cn(
-                                    "rounded-[10px] border border-zinc-800 bg-zinc-900/70 px-2 py-1.5",
-                                    highlightedId === item.id &&
-                                      "border-indigo-400/70 bg-indigo-500/15",
-                                  )}
-                                >
-                                  <div className="flex items-center gap-1.5">
-                                    <span
-                                      className="h-1.5 w-1.5 shrink-0 rounded-full"
-                                      style={{ backgroundColor: item.categoryColor }}
-                                    />
-                                    <p className="truncate text-[11px] font-medium text-zinc-100">
-                                      {item.name}
-                                    </p>
-                                  </div>
-                                  <p className="mt-0.5 text-[11px] text-zinc-500">
-                                    {currency(item.amount)}
-                                  </p>
-                                </div>
-                              ))}
-                              {dayItems.length > 2 && (
-                                <p className="px-1 text-[11px] text-zinc-500">
-                                  +{dayItems.length - 2} meer
-                                </p>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-                  <CalendarDays className="h-4 w-4 text-indigo-300" />
-                  Eerstvolgend
-                </div>
-                {(upcomingItems.length > 0 ? upcomingItems : items).slice(0, 6).map(
-                  (item) => (
-                    <AgendaRow
-                      key={item.id}
-                      item={item}
-                      isHighlighted={highlightedId === item.id}
-                    />
-                  ),
-                )}
-              </div>
-            </div>
-          </>
-        )}
+          )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -1240,12 +1142,12 @@ function AgendaRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-3 transition",
+        "grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[13px] border border-zinc-800 bg-zinc-950/40 p-3 transition",
         isHighlighted &&
-          "border-indigo-400/70 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.22)]",
+          "border-indigo-400/35 bg-indigo-500/10",
       )}
     >
-      <div className="flex h-12 w-12 flex-col items-center justify-center rounded-[14px] bg-zinc-900 text-zinc-100">
+      <div className="flex h-11 w-11 flex-col items-center justify-center rounded-[12px] bg-zinc-900 text-zinc-100">
         <span className="text-[10px] uppercase text-zinc-500">
           {monthShort(item.date)}
         </span>
@@ -1336,9 +1238,9 @@ function FixedExpenseManager({
     <Card className="h-full">
       <CardHeader className="grid gap-2 lg:grid-cols-[1fr_auto] lg:items-start">
         <div>
-          <CardTitle>Vaste lasten beheren</CardTitle>
+          <CardTitle>Vaste lasten</CardTitle>
           <CardDescription>
-            Bedrag, categorie en afschrijfdag. De agenda werkt daarna vanzelf.
+            Terugkerende afschrijvingen op de gezamenlijke rekening.
           </CardDescription>
         </div>
         {editingId && (
@@ -1349,82 +1251,6 @@ function FixedExpenseManager({
         )}
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="space-y-3 rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-zinc-100">{formTitle}</p>
-            <Badge className="border-zinc-700 bg-zinc-900 text-zinc-300">
-              {activeExpenses.length} actief
-            </Badge>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FieldLabel label="Naam">
-              <Input
-                placeholder="Bijv. Hypotheek"
-                value={name}
-                onChange={(event) => onNameChange(event.target.value)}
-              />
-            </FieldLabel>
-            <FieldLabel label="Maandbedrag">
-              <Input
-                inputMode="decimal"
-                placeholder="Bijv. 1840,00"
-                value={amount}
-                onChange={(event) => onAmountChange(event.target.value)}
-              />
-            </FieldLabel>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <FieldLabel label="Categorie">
-              <Select
-                value={category}
-                onChange={(event) => onCategoryChange(event.target.value)}
-              >
-                {categories.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
-            </FieldLabel>
-            <FieldLabel label="Afschrijfdag">
-              <Input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={31}
-                value={billingDay}
-                onChange={(event) => onBillingDayChange(event.target.value)}
-              />
-            </FieldLabel>
-            <FieldLabel label="Startdatum">
-              <Input
-                type="date"
-                value={startsOn}
-                onChange={(event) => onStartsOnChange(event.target.value)}
-              />
-            </FieldLabel>
-          </div>
-
-          {message && (
-            <div
-              className="flex items-start gap-2 rounded-[12px] border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-200"
-              aria-live="polite"
-            >
-              <Check className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>{message}</p>
-            </div>
-          )}
-
-          <Button className="w-full" onClick={onSave} disabled={isSaving}>
-            {isSaving ? (
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {editingId ? "Wijziging opslaan" : "Vaste last toevoegen"}
-          </Button>
-        </div>
-
         <div className="rounded-[16px] border border-zinc-800 bg-zinc-950/35 p-4">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
@@ -1464,6 +1290,90 @@ function FixedExpenseManager({
             ))}
           </div>
         </div>
+
+        <details
+          className="group rounded-[16px] border border-zinc-800 bg-zinc-950/30"
+          open={Boolean(editingId) || activeExpenses.length === 0}
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-zinc-100">
+            {formTitle}
+            <Plus className="h-4 w-4 text-zinc-500 transition group-open:rotate-45" />
+          </summary>
+          <div className="space-y-3 border-t border-zinc-900 p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FieldLabel label="Naam">
+                <Input
+                  placeholder="Bijv. Hypotheek"
+                  value={name}
+                  className="h-10"
+                  onChange={(event) => onNameChange(event.target.value)}
+                />
+              </FieldLabel>
+              <FieldLabel label="Maandbedrag">
+                <Input
+                  inputMode="decimal"
+                  placeholder="Bijv. 1840,00"
+                  value={amount}
+                  className="h-10"
+                  onChange={(event) => onAmountChange(event.target.value)}
+                />
+              </FieldLabel>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <FieldLabel label="Categorie">
+                <Select
+                  value={category}
+                  className="h-10"
+                  onChange={(event) => onCategoryChange(event.target.value)}
+                >
+                  {categories.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+              </FieldLabel>
+              <FieldLabel label="Afschrijfdag">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={31}
+                  value={billingDay}
+                  className="h-10"
+                  onChange={(event) => onBillingDayChange(event.target.value)}
+                />
+              </FieldLabel>
+              <FieldLabel label="Startdatum">
+                <Input
+                  type="date"
+                  value={startsOn}
+                  className="h-10"
+                  onChange={(event) => onStartsOnChange(event.target.value)}
+                />
+              </FieldLabel>
+            </div>
+
+            {message && (
+              <div
+                className="flex items-start gap-2 rounded-[12px] border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-200"
+                aria-live="polite"
+              >
+                <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{message}</p>
+              </div>
+            )}
+
+            <Button className="w-full sm:w-auto" onClick={onSave} disabled={isSaving}>
+              {isSaving ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {editingId ? "Wijziging opslaan" : "Vaste last toevoegen"}
+            </Button>
+          </div>
+        </details>
       </CardContent>
     </Card>
   );
@@ -1532,9 +1442,9 @@ function PersonCostInsight({
           {categoryRows.slice(0, 5).map((row) => (
             <div
               key={row.categoryId}
-              className="rounded-[14px] border border-zinc-800 bg-zinc-950/45 p-4"
+              className="rounded-[12px] border border-zinc-800/70 bg-zinc-950/35 p-3"
             >
-              <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -1595,12 +1505,12 @@ function RecurringExpenseCard({
   return (
     <div
       className={cn(
-        "rounded-[16px] border border-zinc-800 bg-zinc-950/45 p-4 transition",
+        "rounded-[12px] border border-zinc-800/80 bg-zinc-950/35 px-3 py-2.5 transition",
         isHighlighted &&
           "border-indigo-400/70 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.22)]",
       )}
     >
-      <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-zinc-100">
             {expense.name}
@@ -1621,7 +1531,7 @@ function RecurringExpenseCard({
         </div>
       </div>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xl font-semibold text-zinc-50">
+        <p className="text-base font-semibold text-zinc-50">
           {currency(expense.currentAmount)}
         </p>
         <div className="flex gap-2">
@@ -1631,6 +1541,7 @@ function RecurringExpenseCard({
             title="Wijzig vaste last"
             onClick={() => onEdit(expense)}
             disabled={isSaving}
+            className="h-8 w-8"
           >
             <Pencil className="h-4 w-4" />
           </Button>
@@ -1640,7 +1551,7 @@ function RecurringExpenseCard({
             title="Verwijder vanaf nu"
             onClick={() => onDelete(expense)}
             disabled={isSaving}
-            className="text-zinc-500 hover:text-red-300"
+            className="h-8 w-8 text-zinc-500 hover:text-red-300"
           >
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -1718,10 +1629,10 @@ function QuickEntryCard({
       <CardHeader>
         <CardTitle>Snelle invoer</CardTitle>
         <CardDescription>
-          Groot, mobiel en zonder spreadsheet-gevoel.
+          Bedrag erin, categorie kiezen, klaar.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         <label className="flex min-h-20 cursor-pointer items-center justify-center gap-3 rounded-[16px] border border-indigo-400/30 bg-indigo-500/15 px-4 text-base font-semibold text-indigo-100 transition hover:bg-indigo-500/20 sm:hidden">
           {isScanningReceipt ? (
             <LoaderCircle className="h-7 w-7 animate-spin" />
@@ -1764,7 +1675,7 @@ function QuickEntryCard({
             <button
               key={item.id}
               className={cn(
-                "flex min-h-20 flex-col items-center justify-center gap-2 rounded-[16px] border border-zinc-800 bg-zinc-950/50 p-2 text-sm font-medium text-zinc-400 transition",
+                "flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-[13px] border border-zinc-800 bg-zinc-950/45 p-2 text-xs font-medium text-zinc-400 transition sm:min-h-14",
                 category === item.id &&
                   "border-indigo-400/70 bg-indigo-500/15 text-zinc-50",
               )}
@@ -1785,6 +1696,7 @@ function QuickEntryCard({
         <FieldLabel label="Rekening">
           <Select
             value={account}
+            className="h-10"
             onChange={(event) => onAccountChange(event.target.value)}
           >
             {accounts.map((item) => (
@@ -1799,6 +1711,7 @@ function QuickEntryCard({
           inputMode="decimal"
           placeholder="Bedrag"
           value={amount}
+          className="h-11 text-base font-semibold"
           onChange={(event) => onAmountChange(event.target.value)}
         />
 
@@ -1808,9 +1721,10 @@ function QuickEntryCard({
               inputMode="decimal"
               placeholder="Liters"
               value={fuelLiters}
+              className="h-10"
               onChange={(event) => onFuelLitersChange(event.target.value)}
             />
-            <div className="flex h-12 items-center gap-2 rounded-[12px] border border-zinc-800 bg-zinc-950/70 px-3 text-sm text-zinc-300">
+            <div className="flex h-10 items-center gap-2 rounded-[12px] border border-zinc-800 bg-zinc-950/70 px-3 text-sm text-zinc-300">
               <Car className="h-4 w-4 text-sky-300" />
               {vehicleName}
             </div>
@@ -1821,10 +1735,12 @@ function QuickEntryCard({
           <Input
             type="date"
             value={date}
+            className="h-10"
             onChange={(event) => onDateChange(event.target.value)}
           />
           <Select
             value={category}
+            className="h-10"
             onChange={(event) => onCategoryChange(event.target.value)}
           >
             {variableCategories.map((item) => (
@@ -1838,11 +1754,12 @@ function QuickEntryCard({
         <Textarea
           placeholder="Notitie optioneel"
           value={note}
+          className="min-h-16"
           onChange={(event) => onNoteChange(event.target.value)}
         />
 
         <div className="sticky bottom-3 z-10 pt-2">
-          <Button className="h-14 w-full text-base" onClick={onSubmit}>
+          <Button className="h-12 w-full text-sm sm:h-11" onClick={onSubmit}>
             <Plus className="h-5 w-5" />
             Afschrijving toevoegen
           </Button>
@@ -1864,10 +1781,10 @@ function MetricCard({
   tone: "indigo" | "emerald" | "red" | "zinc";
 }) {
   return (
-    <Card className="p-5">
+    <Card className="grid grid-cols-[auto_1fr] items-center gap-3 p-3 sm:p-4">
       <div
         className={cn(
-          "mb-5 flex h-11 w-11 items-center justify-center rounded-[14px]",
+          "flex h-9 w-9 items-center justify-center rounded-[12px]",
           tone === "indigo" && "bg-indigo-500/15 text-indigo-300",
           tone === "emerald" && "bg-emerald-500/15 text-emerald-300",
           tone === "red" && "bg-red-500/15 text-red-300",
@@ -1876,10 +1793,12 @@ function MetricCard({
       >
         {icon}
       </div>
-      <p className="text-sm text-zinc-500">{label}</p>
-      <p className="mt-2 text-3xl font-semibold tracking-normal text-zinc-50">
-        {value}
-      </p>
+      <div className="min-w-0">
+        <p className="text-xs text-zinc-500">{label}</p>
+        <p className="mt-0.5 truncate text-xl font-semibold tracking-normal text-zinc-50">
+          {value}
+        </p>
+      </div>
     </Card>
   );
 }
