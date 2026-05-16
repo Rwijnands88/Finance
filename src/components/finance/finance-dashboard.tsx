@@ -7,9 +7,7 @@ import {
   ArrowDownToLine,
   Camera,
   CalendarDays,
-  Car,
   FileSpreadsheet,
-  Fuel,
   ListChecks,
   LoaderCircle,
   LogOut,
@@ -111,7 +109,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [quickAmount, setQuickAmount] = useState("");
   const [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10));
   const [quickNote, setQuickNote] = useState("");
-  const [fuelLiters, setFuelLiters] = useState("");
   const [contributionAmount, setContributionAmount] = useState("");
   const [contributionDate, setContributionDate] = useState(
     new Date().toISOString().slice(0, 10),
@@ -330,8 +327,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   async function addVariableExpense() {
     const amount = parseCurrencyInput(quickAmount);
-    const liters = parseCurrencyInput(fuelLiters);
-    const isFuel = labels.get(quickCategory)?.name === "Tanken";
     const selectedAccount = accountsById.get(quickAccount) ?? defaultAccount;
 
     if (!amount || amount <= 0) {
@@ -349,11 +344,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       return;
     }
 
-    if (isFuel && (!liters || liters <= 0)) {
-      setScanMessage("Vul liters in, of kies een andere categorie.");
-      return;
-    }
-
     const response = await fetch("/api/transactions", {
       method: "POST",
       headers: {
@@ -366,14 +356,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         amount,
         date: quickDate,
         note: quickNote || null,
-        fuel:
-          isFuel && initialData.vehicles[0]
-            ? {
-                vehicleId: initialData.vehicles[0].id,
-                vehicleName: initialData.vehicles[0].name,
-                liters,
-              }
-            : null,
       }),
     });
     const result = await response.json();
@@ -399,17 +381,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       note: quickNote || undefined,
       enteredById: initialData.currentUserId,
       enteredBy: initialData.currentPerson,
-      fuel:
-        isFuel && initialData.vehicles[0]
-          ? { vehicle: initialData.vehicles[0].name, liters }
-          : undefined,
     };
 
     setTransactions((items) => [transaction, ...items]);
     setSelectedAccountId(selectedAccount.id);
     setQuickAmount("");
     setQuickNote("");
-    setFuelLiters("");
     setScanMessage("Afschrijving toegevoegd.");
     setReceiptDraft(null);
   }
@@ -854,8 +831,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       Bedrag: transaction.amount,
       IngevoerdDoor: transaction.type === "fixed" ? "" : transaction.enteredBy,
       Notitie: transaction.note ?? "",
-      Liters: transaction.fuel?.liters ?? "",
-      Auto: transaction.fuel?.vehicle ?? "",
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -1014,13 +989,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             date={quickDate}
             note={quickNote}
             category={quickCategory}
-            fuelLiters={fuelLiters}
             onAmountChange={setQuickAmount}
             onAccountChange={setQuickAccount}
             onDateChange={setQuickDate}
             onNoteChange={setQuickNote}
             onCategoryChange={setQuickCategory}
-            onFuelLitersChange={setFuelLiters}
             isScanningReceipt={isScanningReceipt}
             scanMessage={scanMessage}
             receiptDraft={receiptDraft}
@@ -1028,7 +1001,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onDismissReceiptDraft={dismissReceiptDraft}
             categories={initialData.categories}
             accounts={initialData.accounts}
-            vehicles={initialData.vehicles}
             onSubmit={addVariableExpense}
           />
 
@@ -1057,14 +1029,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 const category = labels.get(transaction.categoryId);
                 const isDeleting = deletingTransactionId === transaction.id;
                 const isContribution = transaction.type === "contribution";
-                const transactionMetadata = [
-                  transaction.date,
-                  transaction.type === "fixed" ? null : transaction.enteredBy,
-                  transaction.fuel
-                    ? `${transaction.fuel.liters} liter · ${transaction.fuel.vehicle}`
-                    : null,
-                  transaction.note,
-                ]
+                  const transactionMetadata = [
+                    transaction.date,
+                    transaction.type === "fixed" ? null : transaction.enteredBy,
+                    transaction.note,
+                  ]
                   .filter(Boolean)
                   .join(" · ");
 
@@ -2201,16 +2170,13 @@ function QuickEntryCard({
   date,
   note,
   category,
-  fuelLiters,
   categories,
   accounts,
-  vehicles,
   onAmountChange,
   onAccountChange,
   onDateChange,
   onNoteChange,
   onCategoryChange,
-  onFuelLitersChange,
   isScanningReceipt,
   scanMessage,
   receiptDraft,
@@ -2224,16 +2190,13 @@ function QuickEntryCard({
   date: string;
   note: string;
   category: string;
-  fuelLiters: string;
   categories: DashboardData["categories"];
   accounts: DashboardData["accounts"];
-  vehicles: DashboardData["vehicles"];
   onAmountChange: (value: string) => void;
   onAccountChange: (value: string) => void;
   onDateChange: (value: string) => void;
   onNoteChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
-  onFuelLitersChange: (value: string) => void;
   isScanningReceipt: boolean;
   scanMessage: string;
   receiptDraft: ReceiptDraft | null;
@@ -2245,9 +2208,6 @@ function QuickEntryCard({
     (item) =>
       (item.kind === "variable" || item.kind === "both") && item.name !== "Inleg",
   );
-  const isFuel =
-    variableCategories.find((item) => item.id === category)?.name === "Tanken";
-  const vehicleName = vehicles[0]?.name ?? "Gezinsauto";
 
   return (
     <Card className="overflow-hidden">
@@ -2354,13 +2314,7 @@ function QuickEntryCard({
               )}
               onClick={() => onCategoryChange(item.id)}
             >
-              {item.id === "fuel" ? (
-                <Fuel className="h-5 w-5" />
-              ) : item.id === "groceries" ? (
-                <WalletCards className="h-5 w-5" />
-              ) : (
-                <ReceiptText className="h-5 w-5" />
-              )}
+              <ReceiptText className="h-5 w-5" />
               {item.name}
             </button>
           ))}
@@ -2387,22 +2341,6 @@ function QuickEntryCard({
           className="h-11 text-base font-semibold"
           onChange={(event) => onAmountChange(event.target.value)}
         />
-
-        {isFuel && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input
-              inputMode="decimal"
-              placeholder="Liters"
-              value={fuelLiters}
-              className="h-10"
-              onChange={(event) => onFuelLitersChange(event.target.value)}
-            />
-            <div className="flex h-10 items-center gap-2 rounded-[12px] border border-zinc-800 bg-zinc-950/70 px-3 text-sm text-zinc-300">
-              <Car className="h-4 w-4 text-sky-300" />
-              {vehicleName}
-            </div>
-          </div>
-        )}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Input

@@ -111,7 +111,7 @@ concept/bevestig-flow.
 - [x] Mobiele quick-entry met rekeningkeuze voorbereiden.
 - [x] Bon scannen vult bedrag, datum en winkel in.
 - [x] Gebruiker kiest categorie zelf.
-- [x] Tanken-flow behouden met liters en auto.
+- [x] Tanken invoeren met alleen bedrag en categorie.
 - [x] Duidelijke concept/bevestig-flow voor gescande bonnen.
 
 **Status:** Fase 5 is afgerond voor de bestaande scanner-scope. Een scan vult
@@ -171,7 +171,7 @@ Belangrijk datamodel:
 - `fixed_expense_instances` is de maandelijkse snapshot.
 - bevestigde vaste lasten verschijnen als normale regels in `transactions` met `type = fixed`.
 - variabele kosten verschijnen in `transactions` met `type = variable`.
-- tankgegevens staan extra in `fuel_details`, gekoppeld aan de transactie.
+- tanken is een gewone variabele kostenpost met bedrag en categorie.
 
 Historische snapshots worden niet overschreven wanneer een vast maandbedrag verandert.
 

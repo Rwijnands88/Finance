@@ -47,7 +47,7 @@ export const transactions: Transaction[] = [
   { id: "txn-3", type: "fixed", fixedInstanceId: "fix-4", categoryId: "childcare", amount: 645, date: "2026-05-05", enteredBy: "Dorine", note: "Automatisch terugkerend" },
   { id: "txn-4", type: "fixed", fixedInstanceId: "fix-6", categoryId: "insurance", amount: 315, date: "2026-05-07", enteredBy: "Ralph", note: "Automatisch terugkerend" },
   { id: "txn-5", type: "variable", categoryId: "groceries", amount: 126.35, date: "2026-05-02", enteredBy: "Dorine", note: "Weekboodschappen" },
-  { id: "txn-6", type: "variable", categoryId: "fuel", amount: 82.1, date: "2026-05-04", enteredBy: "Ralph", fuel: { vehicle: "Gezinsauto", liters: 42.6 } },
+  { id: "txn-6", type: "variable", categoryId: "fuel", amount: 82.1, date: "2026-05-04", enteredBy: "Ralph", note: "Tanken" },
   { id: "txn-7", type: "variable", categoryId: "groceries", amount: 54.8, date: "2026-05-08", enteredBy: "Ralph", note: "Aanvulling" },
   { id: "txn-8", type: "variable", categoryId: "other", amount: 39.95, date: "2026-05-09", enteredBy: "Dorine", note: "Cadeau" },
   { id: "txn-9", type: "contribution", categoryId: "contribution", amount: 1600, date: "2026-05-01", enteredBy: "Ralph", note: "Maandelijkse inleg" },

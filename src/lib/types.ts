@@ -53,10 +53,6 @@ export type Transaction = {
   enteredById?: string;
   enteredBy: Person;
   fixedInstanceId?: string;
-  fuel?: {
-    vehicle: string;
-    liters: number;
-  };
 };
 
 export type ContributionPlan = {
@@ -69,11 +65,6 @@ export type ContributionPlan = {
   isActive: boolean;
 };
 
-export type Vehicle = {
-  id: string;
-  name: string;
-};
-
 export type DashboardData = {
   householdId: string;
   currentUserId: string;
@@ -81,7 +72,6 @@ export type DashboardData = {
   selectedMonth: string;
   people: Person[];
   accounts: Account[];
-  vehicles: Vehicle[];
   categories: Category[];
   contributionPlans: ContributionPlan[];
   recurringExpenses: RecurringExpense[];

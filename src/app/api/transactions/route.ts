@@ -10,11 +10,6 @@ type CreateTransactionBody = {
   date?: string;
   note?: string | null;
   type?: "variable" | "contribution";
-  fuel?: {
-    vehicleId?: string;
-    vehicleName?: string;
-    liters?: number;
-  } | null;
 };
 
 type DeleteTransactionBody = {
@@ -101,18 +96,6 @@ export async function POST(request: Request) {
       { error: transactionError.message },
       { status: 400 },
     );
-  }
-
-  if (transactionType === "variable" && body.fuel?.vehicleId && body.fuel.liters) {
-    const { error: fuelError } = await supabase.from("fuel_details").insert({
-      transaction_id: transaction.id,
-      vehicle_id: body.fuel.vehicleId,
-      liters: body.fuel.liters,
-    });
-
-    if (fuelError) {
-      return NextResponse.json({ error: fuelError.message }, { status: 400 });
-    }
   }
 
   return NextResponse.json({

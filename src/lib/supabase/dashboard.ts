@@ -50,7 +50,6 @@ export async function getDashboardData(): Promise<DashboardData> {
     accountsResult,
     membersResult,
     currentProfileResult,
-    vehiclesResult,
     contributionPlansResult,
     recurringResult,
     fixedInstancesResult,
@@ -76,12 +75,6 @@ export async function getDashboardData(): Promise<DashboardData> {
       .eq("id", user.id)
       .maybeSingle(),
     supabase
-      .from("vehicles")
-      .select("*")
-      .eq("household_id", membership.household_id)
-      .eq("is_active", true)
-      .order("created_at", { ascending: true }),
-    supabase
       .from("contribution_plans")
       .select("*")
       .eq("household_id", membership.household_id)
@@ -104,7 +97,6 @@ export async function getDashboardData(): Promise<DashboardData> {
   throwIfError(accountsResult.error);
   throwIfError(membersResult.error);
   throwIfError(currentProfileResult.error);
-  throwIfError(vehiclesResult.error);
   throwIfErrorUnlessMissingContributionPlans(contributionPlansResult.error);
   throwIfError(recurringResult.error);
   throwIfError(fixedInstancesResult.error);
@@ -171,10 +163,6 @@ export async function getDashboardData(): Promise<DashboardData> {
     selectedMonth,
     people,
     accounts,
-    vehicles: (vehiclesResult.data ?? []).map((vehicle) => ({
-      id: vehicle.id,
-      name: vehicle.name,
-    })),
     contributionPlans: mapContributionPlans(
       contributionPlansResult.data ?? [],
       memberNameByUserId,
@@ -224,9 +212,7 @@ async function fetchTransactions(
 ) {
   const { data, error } = await supabase
     .from("transactions")
-    .select(
-      "*, profiles(display_name), fuel_details(liters, vehicles(name))",
-    )
+    .select("*, profiles(display_name)")
     .eq("household_id", householdId)
     .gte("transaction_date", from)
     .lt("transaction_date", to)
@@ -238,14 +224,6 @@ async function fetchTransactions(
     const profile = Array.isArray(transaction.profiles)
       ? transaction.profiles[0]
       : transaction.profiles;
-    const fuelDetails = Array.isArray(transaction.fuel_details)
-      ? transaction.fuel_details[0]
-      : transaction.fuel_details;
-    const vehicle = fuelDetails?.vehicles
-      ? Array.isArray(fuelDetails.vehicles)
-        ? fuelDetails.vehicles[0]
-        : fuelDetails.vehicles
-      : null;
 
     return {
       id: transaction.id,
@@ -264,12 +242,6 @@ async function fetchTransactions(
       enteredById: transaction.entered_by,
       enteredBy: profile?.display_name ?? "Onbekend",
       fixedInstanceId: transaction.fixed_expense_instance_id ?? undefined,
-      fuel: fuelDetails
-        ? {
-            vehicle: vehicle?.name ?? "Gezinsauto",
-            liters: Number(fuelDetails.liters),
-          }
-        : undefined,
     } satisfies Transaction;
   });
 }
