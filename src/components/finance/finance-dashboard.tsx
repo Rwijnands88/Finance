@@ -62,6 +62,12 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { MonthReportDocument } from "@/components/finance/month-report-document";
 
+type ReceiptDraft = {
+  amount: number | null;
+  date: string | null;
+  merchant: string | null;
+};
+
 export function FinanceDashboard({ initialData }: { initialData: DashboardData }) {
   const defaultAccount =
     initialData.accounts.find((account) => account.kind === "shared") ??
@@ -119,6 +125,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     string | null
   >(null);
   const [scanMessage, setScanMessage] = useState("");
+  const [receiptDraft, setReceiptDraft] = useState<ReceiptDraft | null>(null);
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [monthMessage, setMonthMessage] = useState("");
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(
@@ -389,6 +396,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setQuickNote("");
     setFuelLiters("");
     setScanMessage("");
+    setReceiptDraft(null);
   }
 
   async function addContribution() {
@@ -537,6 +545,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   async function scanReceipt(file: File) {
     setIsScanningReceipt(true);
     setScanMessage("Bon wordt gelezen...");
+    setReceiptDraft(null);
 
     try {
       const formData = new FormData();
@@ -557,19 +566,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         return;
       }
 
-      if (typeof result.amount === "number") {
-        setQuickAmount(String(result.amount.toFixed(2)));
-      }
-
-      if (typeof result.date === "string") {
-        setQuickDate(result.date);
-      }
-
-      if (typeof result.merchant === "string" && result.merchant.trim()) {
-        setQuickNote(result.merchant.trim());
-      }
-
-      setScanMessage("Bon gelezen. Controleer de gegevens en sla op.");
+      setReceiptDraft({
+        amount: typeof result.amount === "number" ? result.amount : null,
+        date: typeof result.date === "string" ? result.date : null,
+        merchant:
+          typeof result.merchant === "string" && result.merchant.trim()
+            ? result.merchant.trim()
+            : null,
+      });
+      setScanMessage("Bon gelezen. Controleer het concept voordat je hem overneemt.");
     } catch {
       setScanMessage(
         "Deze bon kon niet gelezen worden. Je kunt handmatig verder.",
@@ -577,6 +582,30 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     } finally {
       setIsScanningReceipt(false);
     }
+  }
+
+  function applyReceiptDraft() {
+    if (!receiptDraft) return;
+
+    if (typeof receiptDraft.amount === "number") {
+      setQuickAmount(receiptDraft.amount.toFixed(2));
+    }
+
+    if (receiptDraft.date) {
+      setQuickDate(receiptDraft.date);
+    }
+
+    if (receiptDraft.merchant) {
+      setQuickNote(receiptDraft.merchant);
+    }
+
+    setReceiptDraft(null);
+    setScanMessage("Gegevens overgenomen. Kies categorie en sla op.");
+  }
+
+  function dismissReceiptDraft() {
+    setReceiptDraft(null);
+    setScanMessage("Concept genegeerd. Je kunt handmatig verder.");
   }
 
   async function deleteTransaction(transaction: Transaction) {
@@ -981,7 +1010,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onFuelLitersChange={setFuelLiters}
             isScanningReceipt={isScanningReceipt}
             scanMessage={scanMessage}
+            receiptDraft={receiptDraft}
             onScanReceipt={scanReceipt}
+            onApplyReceiptDraft={applyReceiptDraft}
+            onDismissReceiptDraft={dismissReceiptDraft}
             categories={initialData.categories}
             accounts={initialData.accounts}
             vehicles={initialData.vehicles}
@@ -2140,6 +2172,17 @@ function ContributionStat({
   );
 }
 
+function ReceiptDraftValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-[12px] border border-zinc-800/80 bg-zinc-950/45 p-2">
+      <p className="text-[11px] font-medium uppercase tracking-normal text-zinc-500">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-sm font-semibold text-zinc-50">{value}</p>
+    </div>
+  );
+}
+
 function QuickEntryCard({
   title,
   amount,
@@ -2159,7 +2202,10 @@ function QuickEntryCard({
   onFuelLitersChange,
   isScanningReceipt,
   scanMessage,
+  receiptDraft,
   onScanReceipt,
+  onApplyReceiptDraft,
+  onDismissReceiptDraft,
   onSubmit,
 }: {
   title: string;
@@ -2180,7 +2226,10 @@ function QuickEntryCard({
   onFuelLitersChange: (value: string) => void;
   isScanningReceipt: boolean;
   scanMessage: string;
+  receiptDraft: ReceiptDraft | null;
   onScanReceipt: (file: File) => void;
+  onApplyReceiptDraft: () => void;
+  onDismissReceiptDraft: () => void;
   onSubmit: () => void;
 }) {
   const variableCategories = categories.filter(
@@ -2235,6 +2284,61 @@ function QuickEntryCard({
           >
             {scanMessage}
           </p>
+        )}
+
+        {receiptDraft && (
+          <div className="grid gap-3 rounded-[16px] border border-indigo-400/25 bg-indigo-500/10 p-3 sm:hidden">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-zinc-50">
+                  Concept bon
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  Controleer, kies straks zelf de categorie.
+                </p>
+              </div>
+              <Badge className="border-indigo-400/25 bg-indigo-500/15 text-indigo-100">
+                scan
+              </Badge>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <ReceiptDraftValue
+                label="Bedrag"
+                value={
+                  typeof receiptDraft.amount === "number"
+                    ? preciseCurrency(receiptDraft.amount)
+                    : "onduidelijk"
+                }
+              />
+              <ReceiptDraftValue
+                label="Datum"
+                value={receiptDraft.date ?? "onduidelijk"}
+              />
+              <ReceiptDraftValue
+                label="Winkel"
+                value={receiptDraft.merchant ?? "onduidelijk"}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={onDismissReceiptDraft}
+                className="h-10"
+              >
+                <X className="h-4 w-4" />
+                Negeren
+              </Button>
+              <Button
+                size="sm"
+                onClick={onApplyReceiptDraft}
+                className="h-10"
+              >
+                <Check className="h-4 w-4" />
+                Overnemen
+              </Button>
+            </div>
+          </div>
         )}
 
         <div className="grid grid-cols-3 gap-2">

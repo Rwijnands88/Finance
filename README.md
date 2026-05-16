@@ -57,7 +57,7 @@ zoveel mogelijk behouden. Wel krijgt het datamodel een nieuwe kern:
 - [x] Maandoverzicht rekeninglabels tonen.
 - [ ] Vaste-lasten API expliciet koppelen aan gezamenlijke rekening.
 - [ ] Delete/update flows controleren met accountrechten.
-- [ ] Bonnen-scan laten prefilling doen voor de gekozen rekening.
+- [x] Bonnen-scan laten prefilling doen voor de gekozen rekening.
 - [ ] Transfers ondersteunen voor stortingen naar de gezamenlijke rekening.
 
 #### Fase 3 - Dashboard herstructureren
@@ -112,7 +112,11 @@ concept/bevestig-flow.
 - [x] Bon scannen vult bedrag, datum en winkel in.
 - [x] Gebruiker kiest categorie zelf.
 - [x] Tanken-flow behouden met liters en auto.
-- [ ] Duidelijke concept/bevestig-flow voor gescande bonnen.
+- [x] Duidelijke concept/bevestig-flow voor gescande bonnen.
+
+**Status:** Fase 5 is afgerond voor de bestaande scanner-scope. Een scan komt
+eerst als conceptkaart terug; pas na "Overnemen" worden bedrag, datum en winkel
+in het invoerformulier gezet.
 
 #### Fase 6 - Rapportage en polish
 
