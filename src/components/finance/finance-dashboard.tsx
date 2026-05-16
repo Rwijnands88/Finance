@@ -112,11 +112,20 @@ function sectionNavItems() {
 }
 
 function scrollToFinanceSection(section: ActiveSection) {
+  const mainPanel = document.querySelector<HTMLElement>("[data-finance-main]");
+  const contextPanel = document.querySelector<HTMLElement>("[data-finance-context]");
+  const mainPanelVisible =
+    mainPanel && window.getComputedStyle(mainPanel).display !== "none";
+
   if (section === "dashboard") {
-    document
-      .querySelector<HTMLElement>("[data-finance-context]")
-      ?.scrollTo({ top: 0, behavior: "auto" });
-    window.scrollTo({ top: 0, behavior: "auto" });
+    contextPanel?.scrollTo({ top: 0, behavior: "auto" });
+
+    if (mainPanelVisible) {
+      mainPanel.scrollTo({ top: 0, behavior: "auto" });
+    } else {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+
     return;
   }
 
@@ -140,12 +149,24 @@ function scrollToFinanceSection(section: ActiveSection) {
         ),
         behavior: "auto",
       });
-      window.scrollTo({ top: 0, behavior: "auto" });
-      window.requestAnimationFrame(() => {
-        window.scrollTo({ top: 0, behavior: "auto" });
-      });
+      mainPanel?.scrollTo({ top: 0, behavior: "auto" });
       return;
     }
+  }
+
+  if (mainPanelVisible && mainPanel.contains(target)) {
+    const panelRect = mainPanel.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+
+    mainPanel.scrollTo({
+      top: Math.max(
+        0,
+        Math.round(mainPanel.scrollTop + targetRect.top - panelRect.top),
+      ),
+      behavior: "auto",
+    });
+    contextPanel?.scrollTo({ top: 0, behavior: "auto" });
+    return;
   }
 
   const top = window.scrollY + target.getBoundingClientRect().top - 16;
@@ -1766,8 +1787,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           />
         </section>
 
-        <div className="hidden gap-4 lg:grid lg:grid-cols-[220px_minmax(0,1fr)_320px] xl:grid-cols-[232px_minmax(0,1fr)_340px] 2xl:grid-cols-[240px_minmax(0,1fr)_360px]">
-          <aside className="sticky top-4 self-start">
+        <div className="hidden gap-4 lg:grid lg:h-[calc(100dvh-2rem)] lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)_320px] lg:overflow-hidden xl:grid-cols-[232px_minmax(0,1fr)_340px] 2xl:grid-cols-[240px_minmax(0,1fr)_360px]">
+          <aside className="h-full min-h-0 self-start overflow-hidden">
             <AccountRail
               tabs={accountTabs}
               selectedAccountId={selectedAccountId}
@@ -1781,83 +1802,88 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             />
           </aside>
 
-          <section className="grid min-w-0 content-start gap-4">
-            <section id="finance-dashboard">
-              <DashboardHero
-                label={viewCopy.label}
-                value={dashboardPrimaryValue}
-                subtext={dashboardPrimarySubtext}
-                metrics={dashboardMetrics.slice(0, 3)}
-              />
-            </section>
+          <section
+            data-finance-main
+            className="scrollbar-hidden min-h-0 overflow-y-auto pr-1"
+          >
+            <div className="grid min-w-0 content-start gap-4 pb-4">
+              <section id="finance-dashboard">
+                <DashboardHero
+                  label={viewCopy.label}
+                  value={dashboardPrimaryValue}
+                  subtext={dashboardPrimarySubtext}
+                  metrics={dashboardMetrics.slice(0, 3)}
+                />
+              </section>
 
-            <MonthInsightsSection
-              currentMonth={currentMonth}
-              monthTitle={viewCopy.monthTitle}
-              monthDescription={viewCopy.monthDescription}
-              monthTransactions={monthTransactions}
-              labels={labels}
-              selectedAccountId={selectedAccountId}
-              monthMessage={monthMessage}
-              deletingTransactionId={deletingTransactionId}
-              categoryRows={categoryRows}
-              selectedSixMonthTrend={selectedSixMonthTrend}
-              chartsReady={chartsReady}
-              monthOptions={monthOptions}
-              onMonthChange={changeCurrentMonth}
-              onDeleteTransaction={deleteTransaction}
-              onExportExcel={() => setIsExportDialogOpen(true)}
-              onExportPdf={() => setIsExportDialogOpen(true)}
-              onDownloadReceipts={() => setIsExportDialogOpen(true)}
-              onOpenReceipt={setReceiptViewer}
-            />
-
-            {isSharedView && (
-              <PersonCostInsight
-                people={initialData.people}
-                personTotals={personTotals}
-                categoryRows={categoryPersonRows}
-                isSharedView={isSharedView}
-              />
-            )}
-
-            <section id="finance-fixed" className="scroll-mt-4 grid gap-4">
-              <FixedExpenseAgenda
-                items={fixedAgendaItems}
+              <MonthInsightsSection
                 currentMonth={currentMonth}
-                message={fixedMessage}
-                highlightedId={highlightedFixedInstanceId}
-              />
-              <FixedExpenseManager
-                expenses={selectedRecurringExpenses}
-                categories={fixedCategories}
+                monthTitle={viewCopy.monthTitle}
+                monthDescription={viewCopy.monthDescription}
+                monthTransactions={monthTransactions}
                 labels={labels}
-                accountName={selectedAccount?.name ?? viewCopy.label}
-                name={recurringName}
-                amount={recurringAmount}
-                billingDay={recurringBillingDay}
-                startsOn={recurringStartsOn}
-                category={recurringCategory}
-                editingId={editingRecurringId}
-                highlightedId={highlightedRecurringId}
-                message={manageMessage}
-                isSaving={isSavingRecurring}
-                onNameChange={setRecurringName}
-                onAmountChange={setRecurringAmount}
-                onBillingDayChange={setRecurringBillingDay}
-                onStartsOnChange={setRecurringStartsOn}
-                onCategoryChange={setRecurringCategory}
-                onSave={saveRecurringExpense}
-                onEdit={startEditingRecurring}
-                onDelete={deleteRecurringExpense}
-                onCancel={resetRecurringForm}
+                selectedAccountId={selectedAccountId}
+                monthMessage={monthMessage}
+                deletingTransactionId={deletingTransactionId}
+                categoryRows={categoryRows}
+                selectedSixMonthTrend={selectedSixMonthTrend}
+                chartsReady={chartsReady}
+                monthOptions={monthOptions}
+                onMonthChange={changeCurrentMonth}
+                onDeleteTransaction={deleteTransaction}
+                onExportExcel={() => setIsExportDialogOpen(true)}
+                onExportPdf={() => setIsExportDialogOpen(true)}
+                onDownloadReceipts={() => setIsExportDialogOpen(true)}
+                onOpenReceipt={setReceiptViewer}
               />
-            </section>
+
+              {isSharedView && (
+                <PersonCostInsight
+                  people={initialData.people}
+                  personTotals={personTotals}
+                  categoryRows={categoryPersonRows}
+                  isSharedView={isSharedView}
+                />
+              )}
+
+              <section id="finance-fixed" className="scroll-mt-4 grid gap-4">
+                <FixedExpenseAgenda
+                  items={fixedAgendaItems}
+                  currentMonth={currentMonth}
+                  message={fixedMessage}
+                  highlightedId={highlightedFixedInstanceId}
+                />
+                <FixedExpenseManager
+                  expenses={selectedRecurringExpenses}
+                  categories={fixedCategories}
+                  labels={labels}
+                  accountName={selectedAccount?.name ?? viewCopy.label}
+                  name={recurringName}
+                  amount={recurringAmount}
+                  billingDay={recurringBillingDay}
+                  startsOn={recurringStartsOn}
+                  category={recurringCategory}
+                  editingId={editingRecurringId}
+                  highlightedId={highlightedRecurringId}
+                  message={manageMessage}
+                  isSaving={isSavingRecurring}
+                  onNameChange={setRecurringName}
+                  onAmountChange={setRecurringAmount}
+                  onBillingDayChange={setRecurringBillingDay}
+                  onStartsOnChange={setRecurringStartsOn}
+                  onCategoryChange={setRecurringCategory}
+                  onSave={saveRecurringExpense}
+                  onEdit={startEditingRecurring}
+                  onDelete={deleteRecurringExpense}
+                  onCancel={resetRecurringForm}
+                />
+              </section>
+            </div>
           </section>
 
           <aside
             data-finance-context
-            className="scrollbar-hidden sticky top-4 grid max-h-[calc(100dvh-2rem)] gap-4 overflow-auto"
+            className="scrollbar-hidden grid h-full min-h-0 content-start gap-4 overflow-y-auto pr-1"
           >
             <AccountBalanceCard
               accountName={selectedAccount?.name ?? viewCopy.label}
@@ -2344,8 +2370,8 @@ function AccountRail({
   const items = sectionNavItems();
 
   return (
-    <Card className="flex min-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-[var(--bg-surface)]">
-      <CardContent className="flex flex-1 flex-col gap-5 p-3">
+    <Card className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-surface)]">
+      <CardContent className="scrollbar-hidden flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-3">
         <div className="px-2 pt-2">
           <p className="text-xl font-semibold text-[var(--text-primary)]">
             Finance
