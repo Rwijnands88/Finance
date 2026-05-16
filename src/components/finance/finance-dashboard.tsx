@@ -65,6 +65,13 @@ type ReceiptDraft = {
   merchant: string | null;
 };
 
+type DashboardMetric = {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone: "indigo" | "emerald" | "red" | "zinc";
+};
+
 export function FinanceDashboard({ initialData }: { initialData: DashboardData }) {
   const defaultAccount =
     initialData.accounts.find((account) => account.kind === "shared") ??
@@ -317,6 +324,63 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     (total, item) => total + item.amount,
     0,
   );
+  const dashboardMetrics: DashboardMetric[] = isSharedView
+    ? [
+        {
+          icon: <ArrowDownToLine className="h-5 w-5" />,
+          label: "Inleg",
+          value: currency(monthTotals.contributionTotal),
+          tone: "emerald" as const,
+        },
+        {
+          icon: <WalletCards className="h-5 w-5" />,
+          label: "Uitgaven",
+          value: currency(monthTotals.expenseTotal),
+          tone: "zinc" as const,
+        },
+        {
+          icon: <ReceiptText className="h-5 w-5" />,
+          label: "Over / tekort",
+          value: currency(monthTotals.netTotal),
+          tone: monthTotals.netTotal < 0 ? "red" : "zinc",
+        },
+        {
+          icon: <ListChecks className="h-5 w-5" />,
+          label: "Open vast",
+          value: currency(openFixedTotal),
+          tone: fixedAgendaItems.some((item) => item.state === "overdue")
+            ? "red"
+            : openFixedTotal > 0
+              ? "indigo"
+              : "emerald",
+        },
+      ]
+    : [
+        {
+          icon: <WalletCards className="h-5 w-5" />,
+          label: "Prive totaal",
+          value: currency(monthTotals.total),
+          tone: "indigo" as const,
+        },
+        {
+          icon: <WalletCards className="h-5 w-5" />,
+          label: "Variabel prive",
+          value: currency(monthTotals.variableTotal),
+          tone: "emerald" as const,
+        },
+        {
+          icon: <ReceiptText className="h-5 w-5" />,
+          label: "Transacties",
+          value: `${monthTransactions.length}`,
+          tone: "zinc" as const,
+        },
+        {
+          icon: <ListChecks className="h-5 w-5" />,
+          label: "Grootste categorie",
+          value: topCategory ? topCategory.name : "-",
+          tone: "zinc" as const,
+        },
+      ];
   const fixedCategories = useMemo(
     () =>
       initialData.categories.filter(
@@ -858,7 +922,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   return (
     <main className="min-h-dvh bg-[#09090B] text-zinc-50">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8 2xl:px-10">
         <header className="flex flex-col gap-3 border-b border-zinc-900 pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-normal text-zinc-50 sm:text-3xl">
@@ -880,7 +944,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </div>
         </header>
 
-        <section className="order-1 lg:order-none">
+        <section className="order-1 lg:hidden">
           <div className="inline-grid w-full gap-1 rounded-[14px] border border-zinc-800 bg-zinc-950/55 p-1 sm:w-auto sm:grid-flow-col">
             {accountTabs.map((tab) => {
               const isActive = selectedAccountId === tab.id;
@@ -910,78 +974,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </div>
         </section>
 
-        <section className="order-1 rounded-[16px] border border-zinc-800/70 bg-zinc-950/35 px-4 py-3 lg:order-none">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-zinc-100">
-                {viewCopy.label}
-              </p>
-              <p className="mt-0.5 text-xs leading-5 text-zinc-500">
-                {viewCopy.description}
-              </p>
-            </div>
-            <Badge className="w-fit border-zinc-800 bg-zinc-950/70 text-zinc-400">
-              {monthLabel(currentMonth)}
-            </Badge>
-          </div>
-        </section>
-
-        <section className="order-2 grid gap-3 lg:order-none lg:grid-cols-4">
-          {isSharedView ? (
-            <MetricCard
-              icon={<ArrowDownToLine className="h-5 w-5" />}
-              label="Inleg"
-              value={currency(monthTotals.contributionTotal)}
-              tone="emerald"
-            />
-          ) : (
-            <MetricCard
-              icon={<WalletCards className="h-5 w-5" />}
-              label="Prive totaal"
-              value={currency(monthTotals.total)}
-              tone="indigo"
-            />
-          )}
-          <MetricCard
-            icon={<WalletCards className="h-5 w-5" />}
-            label={isSharedView ? "Uitgaven" : "Variabel prive"}
-            value={currency(isSharedView ? monthTotals.expenseTotal : monthTotals.variableTotal)}
-            tone={isSharedView ? "zinc" : "emerald"}
-          />
-          <MetricCard
-            icon={<ReceiptText className="h-5 w-5" />}
-            label={isSharedView ? "Over / tekort" : "Transacties"}
-            value={
-              isSharedView
-                ? currency(monthTotals.netTotal)
-                : `${monthTransactions.length}`
-            }
-            tone={isSharedView && monthTotals.netTotal < 0 ? "red" : "zinc"}
-          />
-          {isSharedView ? (
-            <MetricCard
-              icon={<ListChecks className="h-5 w-5" />}
-              label="Open vast"
-              value={currency(openFixedTotal)}
-              tone={
-                fixedAgendaItems.some((item) => item.state === "overdue")
-                  ? "red"
-                  : openFixedTotal > 0
-                    ? "indigo"
-                    : "emerald"
-              }
-            />
-          ) : (
-            <MetricCard
-              icon={<ListChecks className="h-5 w-5" />}
-              label="Grootste categorie"
-              value={topCategory ? topCategory.name : "-"}
-              tone="zinc"
-            />
-          )}
-        </section>
-
-        <section className="order-1 grid gap-4 lg:order-none lg:grid-cols-[0.78fr_1.22fr]">
+        <section className="lg:hidden">
           <QuickEntryCard
             title={viewCopy.quickTitle}
             amount={quickAmount}
@@ -1003,23 +996,52 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             accounts={initialData.accounts}
             onSubmit={addVariableExpense}
           />
+        </section>
 
-          <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-4">
-              <div>
-                <CardTitle>{viewCopy.monthTitle}</CardTitle>
-                <CardDescription>{viewCopy.monthDescription}</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button size="icon" variant="secondary" onClick={exportExcel} title="Exporteer Excel">
-                  <FileSpreadsheet className="h-4 w-4" />
-                </Button>
-                <Button size="icon" variant="secondary" onClick={exportPdf} title="Exporteer PDF">
-                  <ArrowDownToLine className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="max-h-[520px] space-y-2 overflow-auto">
+        <div className="grid gap-4 lg:grid-cols-[230px_minmax(0,1fr)_360px] xl:grid-cols-[250px_minmax(0,1fr)_390px] 2xl:grid-cols-[260px_minmax(0,1fr)_420px]">
+          <aside className="sticky top-4 hidden self-start lg:block">
+            <AccountRail
+              tabs={accountTabs}
+              selectedAccountId={selectedAccountId}
+              currentMonth={currentMonth}
+              currentPerson={initialData.currentPerson}
+              metrics={dashboardMetrics}
+              onSelect={(accountId) => {
+                setSelectedAccountId(accountId);
+                setQuickAccount(accountId);
+              }}
+            />
+          </aside>
+
+          <section className="grid min-w-0 gap-4">
+            <ViewSummary
+              label={viewCopy.label}
+              description={viewCopy.description}
+              currentMonth={currentMonth}
+            />
+
+            <section className="order-2 grid gap-3 sm:grid-cols-2 lg:hidden">
+              {dashboardMetrics.map((metric) => (
+                <MetricCard key={metric.label} {...metric} />
+              ))}
+            </section>
+
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between gap-4">
+                <div>
+                  <CardTitle>{viewCopy.monthTitle}</CardTitle>
+                  <CardDescription>{viewCopy.monthDescription}</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="icon" variant="secondary" onClick={exportExcel} title="Exporteer Excel">
+                    <FileSpreadsheet className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="secondary" onClick={exportPdf} title="Exporteer PDF">
+                    <ArrowDownToLine className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="max-h-[560px] space-y-2 overflow-auto xl:max-h-[640px]">
               {monthMessage && (
                 <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300">
                   {monthMessage}
@@ -1107,188 +1129,218 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   {monthLabel(currentMonth)}.
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </section>
+              </CardContent>
+            </Card>
 
-        <section className="order-4 grid gap-4 lg:order-none lg:grid-cols-[1fr_1fr]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Categorieen</CardTitle>
-              <CardDescription>Verdeling van deze maand.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-[0.8fr_1.2fr]">
-              <div className="h-48">
-                {chartsReady && (
-                  <ResponsiveContainer
-                    width="100%"
-                    height="100%"
-                    minWidth={1}
-                    minHeight={1}
-                  >
-                    <PieChart>
-                      <Pie
-                        data={categoryRows}
-                        dataKey="amount"
-                        nameKey="name"
-                        innerRadius={58}
-                        outerRadius={88}
-                        paddingAngle={3}
+            <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Categorieen</CardTitle>
+                  <CardDescription>Verdeling van deze maand.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-[0.72fr_1.28fr] xl:grid-cols-1 2xl:grid-cols-[0.72fr_1.28fr]">
+                  <div className="h-52 overflow-visible">
+                    {chartsReady && (
+                      <ResponsiveContainer
+                        width="100%"
+                        height="100%"
+                        minWidth={1}
+                        minHeight={1}
                       >
-                        {categoryRows.map((entry) => (
-                          <Cell key={entry.categoryId} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value) => currency(Number(value))}
-                        contentStyle={tooltipStyle}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-              <div className="space-y-3">
-                {categoryRows.length === 0 && (
-                  <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-                    Nog geen categorieen voor deze rekening.
-                  </p>
-                )}
-                {categoryRows.map((row) => {
-                  const overBudget = row.average > 0 && row.amount > row.average;
+                        <PieChart>
+                          <Pie
+                            data={categoryRows}
+                            dataKey="amount"
+                            nameKey="name"
+                            innerRadius={48}
+                            outerRadius={70}
+                            paddingAngle={3}
+                            stroke="transparent"
+                          >
+                            {categoryRows.map((entry) => (
+                              <Cell key={entry.categoryId} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={(value) => currency(Number(value))}
+                            contentStyle={tooltipStyle}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    {categoryRows.length === 0 && (
+                      <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
+                        Nog geen categorieen voor deze rekening.
+                      </p>
+                    )}
+                    {categoryRows.map((row) => {
+                      const overBudget = row.average > 0 && row.amount > row.average;
 
-                  return (
-                    <div key={row.categoryId}>
-                      <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                        <span className="text-zinc-300">{row.name}</span>
-                        <span
-                          className={cn(
-                            "font-medium",
-                            overBudget ? "text-red-400" : "text-emerald-400",
-                          )}
-                        >
-                          {currency(row.amount)} / {currency(row.average)}
-                        </span>
-                      </div>
-                      <Progress
-                        value={row.amount}
-                        max={row.average || row.amount}
-                        indicatorClassName={
-                          overBudget ? "bg-red-500" : "bg-emerald-500"
-                        }
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+                      return (
+                        <div key={row.categoryId}>
+                          <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                            <span className="text-zinc-300">{row.name}</span>
+                            <span
+                              className={cn(
+                                "font-medium",
+                                overBudget ? "text-red-400" : "text-emerald-400",
+                              )}
+                            >
+                              {currency(row.amount)} / {currency(row.average)}
+                            </span>
+                          </div>
+                          <Progress
+                            value={row.amount}
+                            max={row.average || row.amount}
+                            indicatorClassName={
+                              overBudget ? "bg-red-500" : "bg-emerald-500"
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Laatste 6 maanden</CardTitle>
-              <CardDescription>Vast versus variabel.</CardDescription>
-            </CardHeader>
-            <CardContent className="h-56">
-              {chartsReady && (
-                <ResponsiveContainer
-                  width="100%"
-                  height="100%"
-                  minWidth={1}
-                  minHeight={1}
-                >
-                  <BarChart data={selectedSixMonthTrend} barGap={8}>
-                    <XAxis
-                      dataKey="month"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#A1A1AA", fontSize: 12 }}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#71717A", fontSize: 12 }}
-                      tickFormatter={(value) => `${Number(value) / 1000}k`}
-                    />
-                    <Tooltip
-                      formatter={(value) => currency(Number(value))}
-                      contentStyle={tooltipStyle}
-                      cursor={{ fill: "rgba(99, 102, 241, 0.08)" }}
-                    />
-                    <Bar dataKey="fixed" fill="#6366F1" radius={[8, 8, 3, 3]} />
-                    <Bar dataKey="variable" fill="#10B981" radius={[8, 8, 3, 3]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        </section>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Laatste 6 maanden</CardTitle>
+                  <CardDescription>Vast versus variabel.</CardDescription>
+                </CardHeader>
+                <CardContent className="h-56">
+                  {chartsReady && (
+                    <ResponsiveContainer
+                      width="100%"
+                      height="100%"
+                      minWidth={1}
+                      minHeight={1}
+                    >
+                      <BarChart data={selectedSixMonthTrend} barGap={8}>
+                        <XAxis
+                          dataKey="month"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#A1A1AA", fontSize: 12 }}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#71717A", fontSize: 12 }}
+                          tickFormatter={(value) => `${Number(value) / 1000}k`}
+                        />
+                        <Tooltip
+                          formatter={(value) => currency(Number(value))}
+                          contentStyle={tooltipStyle}
+                          cursor={{ fill: "rgba(99, 102, 241, 0.08)" }}
+                        />
+                        <Bar dataKey="fixed" fill="#6366F1" radius={[8, 8, 3, 3]} />
+                        <Bar dataKey="variable" fill="#10B981" radius={[8, 8, 3, 3]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
 
-        {isSharedView && (
-          <section className="order-3 grid gap-4 lg:order-none lg:grid-cols-[1fr_1fr]">
-            <PersonCostInsight
-              people={initialData.people}
-              personTotals={personTotals}
-              categoryRows={categoryPersonRows}
-              isSharedView={isSharedView}
-            />
-            <FixedExpenseAgenda
-              items={fixedAgendaItems}
-              currentMonth={currentMonth}
-              message={fixedMessage}
-              highlightedId={highlightedFixedInstanceId}
-            />
+            {isSharedView && (
+              <PersonCostInsight
+                people={initialData.people}
+                personTotals={personTotals}
+                categoryRows={categoryPersonRows}
+                isSharedView={isSharedView}
+              />
+            )}
+
+            {isSharedView && (
+              <FixedExpenseManager
+                expenses={recurringExpenses}
+                categories={fixedCategories}
+                labels={labels}
+                name={recurringName}
+                amount={recurringAmount}
+                billingDay={recurringBillingDay}
+                startsOn={recurringStartsOn}
+                category={recurringCategory}
+                editingId={editingRecurringId}
+                highlightedId={highlightedRecurringId}
+                message={manageMessage}
+                isSaving={isSavingRecurring}
+                onNameChange={setRecurringName}
+                onAmountChange={setRecurringAmount}
+                onBillingDayChange={setRecurringBillingDay}
+                onStartsOnChange={setRecurringStartsOn}
+                onCategoryChange={setRecurringCategory}
+                onSave={saveRecurringExpense}
+                onEdit={startEditingRecurring}
+                onDelete={deleteRecurringExpense}
+                onCancel={resetRecurringForm}
+              />
+            )}
           </section>
-        )}
 
-        {isSharedView && (
-          <section className="order-5 grid gap-4 lg:order-none lg:grid-cols-[0.72fr_1.28fr]">
-            <ContributionCard
-              amount={contributionAmount}
-              date={contributionDate}
-              note={contributionNote}
-              person={initialData.currentPerson}
-              plans={contributionPlanRows}
-              planDrafts={contributionPlanDrafts}
-              planMessage={contributionPlanMessage}
-              savingPlanId={savingContributionPlanId}
-              plannedTotal={plannedContributionTotal}
-              receivedTotal={monthTotals.contributionTotal}
-              remainingTotal={remainingContributionTotal}
-              projectedNetTotal={projectedNetTotal}
-              message={contributionMessage}
-              isSaving={isSavingContribution}
-              onAmountChange={setContributionAmount}
-              onDateChange={setContributionDate}
-              onNoteChange={setContributionNote}
-              onPlanDraftChange={updateContributionPlanDraft}
-              onPlanSave={saveContributionPlan}
-              onSubmit={addContribution}
-            />
-            <FixedExpenseManager
-              expenses={recurringExpenses}
-              categories={fixedCategories}
-              labels={labels}
-              name={recurringName}
-              amount={recurringAmount}
-              billingDay={recurringBillingDay}
-              startsOn={recurringStartsOn}
-              category={recurringCategory}
-              editingId={editingRecurringId}
-              highlightedId={highlightedRecurringId}
-              message={manageMessage}
-              isSaving={isSavingRecurring}
-              onNameChange={setRecurringName}
-              onAmountChange={setRecurringAmount}
-              onBillingDayChange={setRecurringBillingDay}
-              onStartsOnChange={setRecurringStartsOn}
-              onCategoryChange={setRecurringCategory}
-              onSave={saveRecurringExpense}
-              onEdit={startEditingRecurring}
-              onDelete={deleteRecurringExpense}
-              onCancel={resetRecurringForm}
-            />
-          </section>
-        )}
+          <aside className="grid gap-4 lg:sticky lg:top-4 lg:self-start">
+            <div className="hidden lg:block">
+              <QuickEntryCard
+                title={viewCopy.quickTitle}
+                amount={quickAmount}
+                account={quickAccount}
+                date={quickDate}
+                note={quickNote}
+                category={quickCategory}
+                onAmountChange={setQuickAmount}
+                onAccountChange={setQuickAccount}
+                onDateChange={setQuickDate}
+                onNoteChange={setQuickNote}
+                onCategoryChange={setQuickCategory}
+                isScanningReceipt={isScanningReceipt}
+                scanMessage={scanMessage}
+                receiptDraft={receiptDraft}
+                onScanReceipt={scanReceipt}
+                onDismissReceiptDraft={dismissReceiptDraft}
+                categories={initialData.categories}
+                accounts={initialData.accounts}
+                onSubmit={addVariableExpense}
+              />
+            </div>
+
+            {isSharedView && (
+              <>
+                <FixedExpenseAgenda
+                  items={fixedAgendaItems}
+                  currentMonth={currentMonth}
+                  message={fixedMessage}
+                  highlightedId={highlightedFixedInstanceId}
+                  compact
+                />
+                <ContributionCard
+                  amount={contributionAmount}
+                  date={contributionDate}
+                  note={contributionNote}
+                  person={initialData.currentPerson}
+                  plans={contributionPlanRows}
+                  planDrafts={contributionPlanDrafts}
+                  planMessage={contributionPlanMessage}
+                  savingPlanId={savingContributionPlanId}
+                  plannedTotal={plannedContributionTotal}
+                  receivedTotal={monthTotals.contributionTotal}
+                  remainingTotal={remainingContributionTotal}
+                  projectedNetTotal={projectedNetTotal}
+                  message={contributionMessage}
+                  isSaving={isSavingContribution}
+                  onAmountChange={setContributionAmount}
+                  onDateChange={setContributionDate}
+                  onNoteChange={setContributionNote}
+                  onPlanDraftChange={updateContributionPlanDraft}
+                  onPlanSave={saveContributionPlan}
+                  onSubmit={addContribution}
+                />
+              </>
+            )}
+          </aside>
+        </div>
       </div>
     </main>
   );
@@ -1315,16 +1367,147 @@ type FixedAgendaItem = {
   note?: string;
 };
 
+function AccountRail({
+  tabs,
+  selectedAccountId,
+  currentMonth,
+  currentPerson,
+  metrics,
+  onSelect,
+}: {
+  tabs: Array<{ id: string; label: string; description: string }>;
+  selectedAccountId: string;
+  currentMonth: string;
+  currentPerson: string;
+  metrics: Array<{
+    icon: React.ReactNode;
+    label: string;
+    value: string;
+    tone: "indigo" | "emerald" | "red" | "zinc";
+  }>;
+  onSelect: (accountId: string) => void;
+}) {
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader className="pb-0">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>Overzicht</CardTitle>
+            <CardDescription>{monthLabel(currentMonth)}</CardDescription>
+          </div>
+          <Badge className="border-zinc-800 bg-zinc-950/70 text-zinc-400">
+            {currentPerson}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-1 rounded-[14px] border border-zinc-800 bg-zinc-950/55 p-1">
+          {tabs.map((tab) => {
+            const isActive = selectedAccountId === tab.id;
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onSelect(tab.id)}
+                className={cn(
+                  "rounded-[10px] border px-3 py-2 text-left transition",
+                  isActive
+                    ? "border-zinc-700 bg-zinc-900 text-zinc-50"
+                    : "border-transparent text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200",
+                )}
+              >
+                <span className="block text-sm font-semibold">{tab.label}</span>
+                <span className="mt-0.5 block truncate text-xs text-zinc-600">
+                  {tab.description}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="grid gap-2">
+          {metrics.map((metric) => (
+            <RailMetric key={metric.label} {...metric} />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ViewSummary({
+  label,
+  description,
+  currentMonth,
+}: {
+  label: string;
+  description: string;
+  currentMonth: string;
+}) {
+  return (
+    <section className="rounded-[16px] border border-zinc-800/70 bg-zinc-950/35 px-4 py-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-zinc-100">{label}</p>
+          <p className="mt-0.5 text-xs leading-5 text-zinc-500">
+            {description}
+          </p>
+        </div>
+        <Badge className="w-fit border-zinc-800 bg-zinc-950/70 text-zinc-400">
+          {monthLabel(currentMonth)}
+        </Badge>
+      </div>
+    </section>
+  );
+}
+
+function RailMetric({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone: "indigo" | "emerald" | "red" | "zinc";
+}) {
+  return (
+    <div className="grid grid-cols-[auto_1fr] items-center gap-3 rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-2.5">
+      <div
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-[10px]",
+          tone === "indigo" && "bg-indigo-500/15 text-indigo-300",
+          tone === "emerald" && "bg-emerald-500/15 text-emerald-300",
+          tone === "red" && "bg-red-500/15 text-red-300",
+          tone === "zinc" && "bg-zinc-900 text-zinc-300",
+        )}
+      >
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] text-zinc-500">{label}</p>
+        <p className="mt-0.5 truncate text-base font-semibold tracking-normal text-zinc-50">
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function FixedExpenseAgenda({
   items,
   currentMonth,
   message,
   highlightedId,
+  compact = false,
 }: {
   items: FixedAgendaItem[];
   currentMonth: string;
   message?: string;
   highlightedId?: string | null;
+  compact?: boolean;
 }) {
   const monthlyTotal = items.reduce((total, item) => total + item.amount, 0);
   const openTotal = items
@@ -1355,21 +1538,23 @@ function FixedExpenseAgenda({
         <div>
           <CardTitle>Vaste lasten agenda</CardTitle>
           <CardDescription>
-            Een maandbeeld van wat automatisch afgeschreven wordt.
+            {compact
+              ? "Wat er nog automatisch aankomt."
+              : "Een maandbeeld van wat automatisch afgeschreven wordt."}
           </CardDescription>
         </div>
         <Badge className="w-fit border-indigo-400/25 bg-indigo-500/10 text-indigo-200">
           {monthLabel(currentMonth)}
         </Badge>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className={cn("space-y-5", compact && "space-y-4")}>
         {message && (
           <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300">
             {message}
           </p>
         )}
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className={cn("grid grid-cols-3 gap-2", compact && "grid-cols-1")}>
           <AgendaTotal label="Deze maand" value={monthlyTotal} tone="indigo" />
           <AgendaTotal label="Open" value={openTotal} tone="zinc" />
           <AgendaTotal label="Verwerkt" value={processedTotal} tone="emerald" />
@@ -1397,18 +1582,18 @@ function FixedExpenseAgenda({
               {upcomingItems.length > 0 && (
                 <AgendaSection
                   title="Komt eraan"
-                  items={upcomingItems}
+                  items={compact ? upcomingItems.slice(0, 4) : upcomingItems}
                   highlightedId={highlightedId}
                 />
               )}
-              {pastItems.length > 0 && (
+              {!compact && pastItems.length > 0 && (
                 <AgendaSection
                   title="Verwerkt"
                   items={pastItems}
                   highlightedId={highlightedId}
                 />
               )}
-              {skippedItems.length > 0 && (
+              {!compact && skippedItems.length > 0 && (
                 <AgendaSection
                   title="Overgeslagen"
                   items={skippedItems}
@@ -1739,51 +1924,73 @@ function PersonCostInsight({
   const description = isSharedView
     ? "Wie voegde deze maand welke gezamenlijke uitgaven toe."
     : "Prive-uitgaven op deze rekening, uitgesplitst waar mogelijk.";
+  const topRows = categoryRows.slice(0, 3);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+    <Card className="bg-[#141416]">
+      <CardHeader className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+        <div>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+        <Badge className="w-fit border-zinc-800 bg-zinc-950/60 text-zinc-400">
+          variabel
+        </Badge>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="space-y-4">
+      <CardContent className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
           {people.map((person) => {
             const value = personTotals[person] ?? 0;
+            const percentage = maxPersonTotal > 0 ? (value / maxPersonTotal) * 100 : 0;
 
             return (
-              <div key={person}>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span className="text-zinc-300">{person}</span>
-                  <span className="font-medium text-zinc-50">
+              <div
+                key={person}
+                className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className={cn(
+                        "h-2.5 w-2.5 rounded-full",
+                        person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
+                      )}
+                    />
+                    <span className="truncate text-sm text-zinc-300">
+                      {person}
+                    </span>
+                  </div>
+                  <span className="text-sm font-semibold text-zinc-50">
                     {currency(value)}
                   </span>
                 </div>
-                <Progress
-                  value={value}
-                  max={maxPersonTotal}
-                  indicatorClassName={
-                    person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500"
-                  }
-                />
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-900">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
+                    )}
+                    style={{ width: `${percentage}%` }}
+                  />
+                </div>
               </div>
             );
           })}
         </div>
 
-        <div className="space-y-3 border-t border-zinc-900 pt-4">
+        <div className="space-y-2">
           {categoryRows.length === 0 && (
             <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
               Nog geen variabele kosten om te verdelen.
             </p>
           )}
 
-          {categoryRows.slice(0, 5).map((row) => (
+          {topRows.map((row) => (
             <div
               key={row.categoryId}
-              className="rounded-[12px] border border-zinc-800/70 bg-zinc-950/35 p-3"
+              className="grid gap-2 rounded-[13px] border border-zinc-800/60 bg-zinc-950/25 p-3"
             >
-              <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -1797,15 +2004,15 @@ function PersonCostInsight({
                   {currency(row.total)}
                 </p>
               </div>
-              <div className="space-y-2">
+              <div className="grid gap-1.5">
                 {row.people.map((personRow) => (
-                  <div key={personRow.person}>
-                    <div className="mb-1 flex items-center justify-between text-xs">
-                      <span className="text-zinc-500">{personRow.person}</span>
-                      <span className="text-zinc-300">
-                        {currency(personRow.amount)}
-                      </span>
-                    </div>
+                  <div
+                    key={personRow.person}
+                    className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-2 text-xs"
+                  >
+                    <span className="truncate text-zinc-500">
+                      {personRow.person}
+                    </span>
                     <Progress
                       value={personRow.amount}
                       max={row.total}
@@ -1815,6 +2022,9 @@ function PersonCostInsight({
                           : "bg-emerald-500"
                       }
                     />
+                    <span className="text-zinc-300">
+                      {currency(personRow.amount)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -2307,7 +2517,7 @@ function QuickEntryCard({
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2 sm:hidden">
           {variableCategories.map((item) => (
             <button
               type="button"
@@ -2325,19 +2535,35 @@ function QuickEntryCard({
           ))}
         </div>
 
-        <FieldLabel label="Rekening">
-          <Select
-            value={account}
-            className="h-10"
-            onChange={(event) => onAccountChange(event.target.value)}
-          >
-            {accounts.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </Select>
-        </FieldLabel>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+          <FieldLabel label="Rekening">
+            <Select
+              value={account}
+              className="h-10"
+              onChange={(event) => onAccountChange(event.target.value)}
+            >
+              {accounts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </Select>
+          </FieldLabel>
+
+          <FieldLabel label="Categorie">
+            <Select
+              value={category}
+              className="h-10"
+              onChange={(event) => onCategoryChange(event.target.value)}
+            >
+              {variableCategories.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </Select>
+          </FieldLabel>
+        </div>
 
         <Input
           inputMode="decimal"
@@ -2347,24 +2573,13 @@ function QuickEntryCard({
           onChange={(event) => onAmountChange(event.target.value)}
         />
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3">
           <Input
             type="date"
             value={date}
             className="h-10"
             onChange={(event) => onDateChange(event.target.value)}
           />
-          <Select
-            value={category}
-            className="h-10"
-            onChange={(event) => onCategoryChange(event.target.value)}
-          >
-            {variableCategories.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </Select>
         </div>
 
         <Textarea
@@ -2374,8 +2589,8 @@ function QuickEntryCard({
           onChange={(event) => onNoteChange(event.target.value)}
         />
 
-        <div className="sticky bottom-3 z-10 pt-2">
-          <Button className="h-12 w-full text-sm sm:h-11" onClick={onSubmit}>
+        <div className="sticky bottom-3 z-10 flex justify-end pt-2 sm:static">
+          <Button className="h-12 w-full text-sm sm:h-11 sm:w-auto" onClick={onSubmit}>
             <Plus className="h-5 w-5" />
             Afschrijving toevoegen
           </Button>
