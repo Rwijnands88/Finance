@@ -11,6 +11,7 @@ Run the SQL files in order:
 5. `migrations/20260515001000_recurring_billing_day.sql`
 6. `migrations/20260516000000_contributions_cashflow.sql`
 7. `migrations/20260516001000_contribution_plans.sql`
+8. `migrations/20260516002000_receipts_storage.sql`
 
 For the SQL Editor route, open each file locally and paste its full contents into Supabase SQL Editor. Run the files in the order above.
 
@@ -40,6 +41,8 @@ succeeded:
 19. `19_contributions_cashflow.sql`
 20. `20_contribution_plans.sql`
 21. `21_account_balances_income.sql`
+22a. `22a_receipts_storage_base.sql`
+22b. `22b_receipts_storage_update_delete.sql`
 
 These chunks are non-destructive. They keep the current app working while adding
 the account/rekening layer needed for the v2 UI.
@@ -53,6 +56,9 @@ Chunk 20 adds monthly contribution plans per household member for the shared
 account, so the app can show planned, received and remaining inleg.
 Chunk 21 adds saldo snapshots per account and enables `income` transactions
 for salary and extra private income.
+Chunks 22a and 22b add private receipt storage: `transactions.receipt_url`, a
+private `receipts` Storage bucket and Storage policies scoped through account
+access. They are split for the SQL Editor line limit.
 
 ## First household
 

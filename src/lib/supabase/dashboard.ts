@@ -277,6 +277,7 @@ async function fetchTransactions(
       amount: Number(transaction.amount),
       date: transaction.transaction_date,
       note: transaction.note ?? undefined,
+      receiptUrl: transaction.receipt_url ?? undefined,
       enteredById: transaction.entered_by,
       enteredBy: profile?.display_name ?? "Onbekend",
       fixedInstanceId: transaction.fixed_expense_instance_id ?? undefined,

@@ -9,6 +9,7 @@ type CreateTransactionBody = {
   amount?: number;
   date?: string;
   note?: string | null;
+  receiptUrl?: string | null;
   type?: "variable" | "contribution" | "income";
   incomeKind?: "salary" | "extra";
 };
@@ -107,9 +108,13 @@ export async function POST(request: Request) {
       transaction_date: body.date,
       type: transactionType,
       note: body.note || null,
+      receipt_url:
+        typeof body.receiptUrl === "string" && body.receiptUrl.trim()
+          ? body.receiptUrl.trim()
+          : null,
       entered_by: user.id,
     })
-    .select("id, account_id, category_id, type")
+    .select("id, account_id, category_id, type, receipt_url")
     .single();
 
   if (transactionError) {
@@ -125,6 +130,7 @@ export async function POST(request: Request) {
       accountId: transaction.account_id,
       categoryId: transaction.category_id,
       type: transaction.type,
+      receiptUrl: transaction.receipt_url,
       enteredBy: user.id,
     },
   });
@@ -229,7 +235,7 @@ export async function DELETE(request: Request) {
 
   const { data: transaction, error: transactionError } = await supabase
     .from("transactions")
-    .select("id, type, fixed_expense_instance_id")
+    .select("id, type, fixed_expense_instance_id, receipt_url")
     .eq("id", body.transactionId)
     .single();
 
@@ -238,6 +244,10 @@ export async function DELETE(request: Request) {
       { error: transactionError.message },
       { status: 400 },
     );
+  }
+
+  if (transaction.receipt_url) {
+    await supabase.storage.from("receipts").remove([transaction.receipt_url]);
   }
 
   const { error: deleteError } = await supabase

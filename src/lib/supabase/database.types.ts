@@ -270,6 +270,7 @@ export type Database = {
           transaction_date: string;
           type: "fixed" | "variable" | "contribution" | "income";
           note: string | null;
+          receipt_url: string | null;
           entered_by: string;
           created_at: string;
           updated_at: string;
@@ -284,6 +285,7 @@ export type Database = {
           transaction_date: string;
           type: "fixed" | "variable" | "contribution" | "income";
           note?: string | null;
+          receipt_url?: string | null;
           entered_by: string;
           created_at?: string;
           updated_at?: string;
@@ -293,6 +295,7 @@ export type Database = {
           amount?: number;
           transaction_date?: string;
           note?: string | null;
+          receipt_url?: string | null;
           category_id?: string;
         };
         Relationships: [];

@@ -50,6 +50,7 @@ export type Transaction = {
   amount: number;
   date: string;
   note?: string;
+  receiptUrl?: string;
   enteredById?: string;
   enteredBy: Person;
   fixedInstanceId?: string;

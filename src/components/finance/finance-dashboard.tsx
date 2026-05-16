@@ -59,12 +59,21 @@ import {
 } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { MonthReportDocument } from "@/components/finance/month-report-document";
+import {
+  MonthReportDocument,
+  type MonthReportFixedItem,
+} from "@/components/finance/month-report-document";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type ReceiptDraft = {
   amount: number | null;
   date: string | null;
   merchant: string | null;
+};
+
+type ReceiptViewerState = {
+  url: string;
+  title: string;
 };
 
 type DashboardMetric = {
@@ -209,6 +218,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   >(null);
   const [scanMessage, setScanMessage] = useState("");
   const [receiptDraft, setReceiptDraft] = useState<ReceiptDraft | null>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptViewer, setReceiptViewer] = useState<ReceiptViewerState | null>(
+    null,
+  );
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [monthMessage, setMonthMessage] = useState("");
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(
@@ -236,10 +249,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       "",
   );
   const [chartsReady, setChartsReady] = useState(false);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(false);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setChartsReady(true));
     return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    const syncViewport = () => setIsDesktopViewport(window.innerWidth >= 1024);
+
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   const currentMonth = initialData.selectedMonth;
@@ -274,6 +296,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }, [defaultAccount, personalAccount]);
   const selectedAccount = accountsById.get(selectedAccountId);
   const isSharedView = selectedAccount?.kind === "shared";
+  const mobileChartsReady = chartsReady && !isDesktopViewport;
   const latestBalanceSnapshot = useMemo(
     () =>
       balanceSnapshots
@@ -579,11 +602,41 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     };
 
     setTransactions((items) => [transaction, ...items]);
+
+    let receiptUrl: string | null = null;
+    if (receiptFile) {
+      setScanMessage("Afschrijving toegevoegd. Bon wordt opgeslagen...");
+
+      try {
+        receiptUrl = await saveReceiptForTransaction({
+          file: receiptFile,
+          accountId: selectedAccount.id,
+          transactionId: transaction.id,
+        });
+        setTransactions((items) =>
+          items.map((item) =>
+            item.id === transaction.id
+              ? { ...item, receiptUrl: receiptUrl ?? undefined }
+              : item,
+          ),
+        );
+      } catch {
+        setScanMessage(
+          "Afschrijving toegevoegd, maar bon opslaan lukte niet. Je kunt verder werken.",
+        );
+      }
+    }
+
     setSelectedAccountId(selectedAccount.id);
     setQuickAmount("");
     setQuickNote("");
-    setScanMessage("Afschrijving toegevoegd.");
+    if (!receiptFile || receiptUrl) {
+      setScanMessage(
+        receiptUrl ? "Afschrijving en bon opgeslagen." : "Afschrijving toegevoegd.",
+      );
+    }
     setReceiptDraft(null);
+    setReceiptFile(null);
   }
 
   async function addContribution() {
@@ -855,6 +908,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setIsScanningReceipt(true);
     setScanMessage("Bon wordt gelezen...");
     setReceiptDraft(null);
+    setReceiptFile(null);
 
     try {
       const formData = new FormData();
@@ -885,6 +939,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       };
 
       setReceiptDraft(draft);
+      setReceiptFile(file);
 
       if (typeof draft.amount === "number") {
         setQuickAmount(draft.amount.toFixed(2));
@@ -910,6 +965,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   function dismissReceiptDraft() {
     setReceiptDraft(null);
+    setReceiptFile(null);
     setScanMessage("Scan verborgen. De ingevulde gegevens blijven staan.");
   }
 
@@ -1132,6 +1188,21 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }
 
   function exportExcel() {
+    const summaryRows = [
+      {
+        Rekening: selectedAccount?.name ?? viewCopy.label,
+        Maand: monthLabel(currentMonth),
+        Stortingen: monthTotals.contributionTotal,
+        Inkomsten: monthTotals.incomeTotal,
+        "Vaste lasten": monthTotals.fixedTotal,
+        Variabel: monthTotals.variableTotal,
+        "Over/tekort": monthTotals.netTotal,
+        Transacties: monthTransactions.length,
+        "Bonnen aanwezig": monthTransactions.filter(
+          (transaction) => transaction.receiptUrl,
+        ).length,
+      },
+    ];
     const rows = monthTransactions.map((transaction) => ({
       Datum: transaction.date,
       Rekening: transaction.accountName ?? "",
@@ -1151,22 +1222,61 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
       IngevoerdDoor: transaction.type === "fixed" ? "" : transaction.enteredBy,
+      "Bon aanwezig": transaction.receiptUrl ? "Ja" : "Nee",
       Notitie: transaction.note ?? "",
     }));
+    const fixedRows = fixedAgendaItems.map((item) => ({
+      Datum: item.date,
+      Dag: item.day,
+      Naam: item.name,
+      Categorie: item.categoryName,
+      Bedrag: item.amount,
+      Status: agendaStateLabel(item.state),
+      Notitie: item.note ?? "",
+    }));
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Transacties");
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(summaryRows),
+      "Samenvatting",
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(rows),
+      "Alle transacties",
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(fixedRows),
+      "Vaste lasten status",
+    );
     XLSX.writeFile(workbook, `huishouden-${currentMonth}.xlsx`);
   }
 
   async function exportPdf() {
     const { pdf } = await import("@react-pdf/renderer");
+    const receiptImages = await loadReceiptImagesForPdf(transactions);
+    const fixedItems = fixedAgendaItems.map(
+      (item) =>
+        ({
+          id: item.id,
+          date: item.date,
+          name: item.name,
+          categoryName: item.categoryName,
+          amount: item.amount,
+          status: agendaStateLabel(item.state),
+          note: item.note,
+        }) satisfies MonthReportFixedItem,
+    );
     const blob = await pdf(
       <MonthReportDocument
         month={currentMonth}
         transactions={transactions}
         categories={initialData.categories}
+        fixedItems={fixedItems}
+        generatedAt={new Date().toLocaleDateString("nl-NL")}
+        receiptImages={receiptImages}
       />,
     ).toBlob();
     const url = URL.createObjectURL(blob);
@@ -1175,6 +1285,58 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     anchor.download = `maandrapport-${currentMonth}.pdf`;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function downloadReceiptZip() {
+    const receiptTransactions = monthTransactions.filter(
+      (transaction): transaction is Transaction & { receiptUrl: string } =>
+        Boolean(transaction.receiptUrl),
+    );
+
+    if (!receiptTransactions.length) {
+      return;
+    }
+
+    setMonthMessage(`Bonnen voor ${monthLabel(currentMonth)} worden gebundeld...`);
+
+    try {
+      const { default: JSZip } = await import("jszip");
+      const supabase = getSupabaseBrowserClient();
+      const zip = new JSZip();
+      const usedNames = new Map<string, number>();
+
+      for (const transaction of receiptTransactions) {
+        const { data, error } = await supabase.storage
+          .from("receipts")
+          .download(transaction.receiptUrl);
+
+        if (error || !data) {
+          throw error ?? new Error("Bon kon niet worden gedownload.");
+        }
+
+        const categoryName =
+          transaction.type === "contribution"
+            ? "Storting"
+            : transaction.type === "income"
+              ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
+              : labels.get(transaction.categoryId)?.name ?? "Onbekend";
+        const baseName = [
+          transaction.date,
+          fileNamePart(categoryName),
+          fileAmountPart(transaction.amount),
+        ].join("-");
+
+        zip.file(uniqueZipFileName(`${baseName}.jpg`, usedNames), data);
+      }
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      downloadBlob(blob, `bonnen-${currentMonth}.zip`);
+      setMonthMessage(`Bonnen voor ${monthLabel(currentMonth)} zijn gedownload.`);
+    } catch {
+      setMonthMessage(
+        "Bonnen downloaden lukte niet. Probeer het later nog eens.",
+      );
+    }
   }
 
   return (
@@ -1236,7 +1398,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           <ChartsPanel
             categoryRows={categoryRows}
             selectedSixMonthTrend={selectedSixMonthTrend}
-            chartsReady={chartsReady}
+            chartsReady={mobileChartsReady}
           />
 
           {isSharedView && (
@@ -1348,11 +1510,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onDeleteTransaction={deleteTransaction}
             onExportExcel={exportExcel}
             onExportPdf={exportPdf}
+            onDownloadReceipts={downloadReceiptZip}
+            onOpenReceipt={setReceiptViewer}
           />
           <ChartsPanel
             categoryRows={categoryRows}
             selectedSixMonthTrend={selectedSixMonthTrend}
-            chartsReady={chartsReady}
+            chartsReady={mobileChartsReady}
           />
         </section>
 
@@ -1398,6 +1562,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onDeleteTransaction={deleteTransaction}
               onExportExcel={exportExcel}
               onExportPdf={exportPdf}
+              onDownloadReceipts={downloadReceiptZip}
+              onOpenReceipt={setReceiptViewer}
             />
 
             {isSharedView && (
@@ -1536,6 +1702,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </aside>
         </div>
       </div>
+      {receiptViewer && (
+        <ReceiptViewer
+          receipt={receiptViewer}
+          onClose={() => setReceiptViewer(null)}
+        />
+      )}
     </main>
   );
 }
@@ -1892,6 +2064,8 @@ function MonthTransactionsCard({
   onDeleteTransaction,
   onExportExcel,
   onExportPdf,
+  onDownloadReceipts,
+  onOpenReceipt,
   compact = false,
   className,
 }: {
@@ -1906,6 +2080,8 @@ function MonthTransactionsCard({
   onDeleteTransaction: (transaction: Transaction) => void;
   onExportExcel: () => void;
   onExportPdf: () => void;
+  onDownloadReceipts: () => void;
+  onOpenReceipt: (receipt: ReceiptViewerState) => void;
   compact?: boolean;
   className?: string;
 }) {
@@ -1914,6 +2090,7 @@ function MonthTransactionsCard({
     : monthTransactions;
   const hiddenCount = monthTransactions.length - visibleTransactions.length;
   const cardTitle = compact ? "Maandoverzicht" : title;
+  const hasReceipts = monthTransactions.some((transaction) => transaction.receiptUrl);
 
   return (
     <Card
@@ -1938,6 +2115,17 @@ function MonthTransactionsCard({
           <Button size="icon" variant="secondary" onClick={onExportPdf} title="Exporteer PDF" className="h-9 w-9">
             <ArrowDownToLine className="h-4 w-4" />
           </Button>
+          {hasReceipts && (
+            <Button
+              variant="secondary"
+              onClick={onDownloadReceipts}
+              title={`Download bonnen ${monthLabel(currentMonth)}`}
+              className="h-9 px-3 text-xs"
+            >
+              <ReceiptText className="h-4 w-4" />
+              <span className="hidden xl:inline">Bonnen</span>
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="p-0">
@@ -1992,6 +2180,13 @@ function MonthTransactionsCard({
                   </div>
 
                   <div className="flex min-w-fit items-center gap-2 text-right">
+                    {transaction.receiptUrl && (
+                      <ReceiptAttachment
+                        receiptUrl={transaction.receiptUrl}
+                        title={`${title} · ${transaction.date}`}
+                        onOpen={onOpenReceipt}
+                      />
+                    )}
                     <div>
                       <p
                         className={cn(
@@ -2049,6 +2244,107 @@ function MonthTransactionsCard({
   );
 }
 
+function ReceiptAttachment({
+  receiptUrl,
+  title,
+  onOpen,
+}: {
+  receiptUrl: string;
+  title: string;
+  onOpen: (receipt: ReceiptViewerState) => void;
+}) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    getSupabaseBrowserClient()
+      .storage.from("receipts")
+      .createSignedUrl(receiptUrl, 60 * 10)
+      .then(({ data }) => {
+        if (isMounted) {
+          setSignedUrl(data?.signedUrl ?? null);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [receiptUrl]);
+
+  return (
+    <button
+      type="button"
+      disabled={!signedUrl}
+      onClick={() => {
+        if (signedUrl) {
+          onOpen({ url: signedUrl, title });
+        }
+      }}
+      className="group flex shrink-0 items-center gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)] disabled:cursor-wait disabled:opacity-50"
+      title={signedUrl ? "Bekijk bon" : "Bon laden"}
+    >
+      <ReceiptText className="h-3.5 w-3.5 text-[var(--accent)]" />
+      <span>Bon</span>
+      {signedUrl && (
+        <img
+          src={signedUrl}
+          alt=""
+          className="hidden h-10 w-8 rounded-[6px] border border-[var(--border)] object-cover opacity-75 transition group-hover:opacity-100 lg:block"
+        />
+      )}
+    </button>
+  );
+}
+
+function ReceiptViewer({
+  receipt,
+  onClose,
+}: {
+  receipt: ReceiptViewerState;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    document.body.classList.add("receipt-printing-ready");
+
+    return () => {
+      document.body.classList.remove("receipt-printing-ready");
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 grid bg-black/80 p-4 backdrop-blur-xl sm:p-8">
+      <div className="receipt-print-surface mx-auto grid h-full w-full max-w-4xl grid-rows-[auto_1fr] overflow-hidden rounded-[22px] border border-[var(--border-strong)] bg-[var(--bg-card)] shadow-2xl">
+        <div className="receipt-print-controls flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
+              Bon
+            </p>
+            <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
+              {receipt.title}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => window.print()}>
+              Print
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onClose} title="Sluit bon">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="grid min-h-0 place-items-center overflow-auto bg-black/25 p-4 sm:p-6">
+          <img
+            src={receipt.url}
+            alt={receipt.title}
+            className="receipt-print-image max-h-full max-w-full rounded-[14px] border border-[var(--border)] object-contain shadow-2xl"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MonthInsightsSection({
   currentMonth,
   monthTitle,
@@ -2064,6 +2360,8 @@ function MonthInsightsSection({
   onDeleteTransaction,
   onExportExcel,
   onExportPdf,
+  onDownloadReceipts,
+  onOpenReceipt,
 }: {
   currentMonth: string;
   monthTitle: string;
@@ -2079,6 +2377,8 @@ function MonthInsightsSection({
   onDeleteTransaction: (transaction: Transaction) => void;
   onExportExcel: () => void;
   onExportPdf: () => void;
+  onDownloadReceipts: () => void;
+  onOpenReceipt: (receipt: ReceiptViewerState) => void;
 }) {
   return (
     <section id="finance-month" className="scroll-mt-4 grid gap-4">
@@ -2109,6 +2409,8 @@ function MonthInsightsSection({
           onDeleteTransaction={onDeleteTransaction}
           onExportExcel={onExportExcel}
           onExportPdf={onExportPdf}
+          onDownloadReceipts={onDownloadReceipts}
+          onOpenReceipt={onOpenReceipt}
           compact
           className="xl:sticky xl:top-4"
         />
@@ -4085,6 +4387,171 @@ const tooltipStyle = {
 
 function parseCurrencyInput(value: string) {
   return Number(value.trim().replace(/\s/g, "").replace(",", "."));
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function fileNamePart(value: string) {
+  return (
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "onbekend"
+  );
+}
+
+function fileAmountPart(value: number) {
+  return value.toFixed(2).replace(".", "-");
+}
+
+function uniqueZipFileName(filename: string, usedNames: Map<string, number>) {
+  const count = usedNames.get(filename) ?? 0;
+  usedNames.set(filename, count + 1);
+
+  if (count === 0) {
+    return filename;
+  }
+
+  return filename.replace(/\.jpg$/, `-${count + 1}.jpg`);
+}
+
+async function loadReceiptImagesForPdf(transactions: Transaction[]) {
+  const receiptTransactions = transactions.filter(
+    (transaction): transaction is Transaction & { receiptUrl: string } =>
+      Boolean(transaction.receiptUrl),
+  );
+  const supabase = getSupabaseBrowserClient();
+  const images: Record<string, string> = {};
+
+  for (const transaction of receiptTransactions) {
+    const { data, error } = await supabase.storage
+      .from("receipts")
+      .download(transaction.receiptUrl);
+
+    if (error || !data) {
+      continue;
+    }
+
+    try {
+      images[transaction.id] = await blobToDataUrl(data);
+    } catch {
+      // Keep the PDF usable even when one receipt image cannot be embedded.
+    }
+  }
+
+  return images;
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Bon kon niet aan PDF worden toegevoegd."));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function saveReceiptForTransaction({
+  file,
+  accountId,
+  transactionId,
+}: {
+  file: File;
+  accountId: string;
+  transactionId: string;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  const receiptBlob = await compressReceiptImage(file);
+  const receiptPath = `${accountId}/${transactionId}.jpg`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("receipts")
+    .upload(receiptPath, receiptBlob, {
+      contentType: "image/jpeg",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw uploadError;
+  }
+
+  const { error: updateError } = await supabase
+    .from("transactions")
+    .update({ receipt_url: receiptPath })
+    .eq("id", transactionId);
+
+  if (updateError) {
+    await supabase.storage.from("receipts").remove([receiptPath]);
+    throw updateError;
+  }
+
+  return receiptPath;
+}
+
+async function compressReceiptImage(file: File) {
+  const image = await loadImage(file);
+  const maxWidth = 800;
+  const scale = Math.min(1, maxWidth / image.naturalWidth);
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Bon kon niet worden gecomprimeerd.");
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+
+        reject(new Error("Bon kon niet worden gecomprimeerd."));
+      },
+      "image/jpeg",
+      0.6,
+    );
+  });
+}
+
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Bon kon niet worden geopend."));
+    };
+    image.src = url;
+  });
 }
 
 function signedTransactionAmount(transaction: Transaction) {
