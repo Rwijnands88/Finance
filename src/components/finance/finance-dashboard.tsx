@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Check,
   FileSpreadsheet,
+  Globe,
   ListChecks,
   LoaderCircle,
   LogOut,
@@ -16,6 +17,7 @@ import {
   Plus,
   ReceiptText,
   Save,
+  Smartphone,
   Trash2,
   WalletCards,
   X,
@@ -76,6 +78,16 @@ type ReceiptViewerState = {
   title: string;
 };
 
+type BankLauncherState = {
+  name: string;
+  label: string;
+  appUrl: string;
+  androidIntentUrl: string;
+  webUrl: string;
+  badge: string;
+  badgeClass: string;
+};
+
 type DashboardMetric = {
   icon: React.ReactNode;
   label: string;
@@ -84,6 +96,31 @@ type DashboardMetric = {
 };
 
 type ActiveSection = "dashboard" | "fixed" | "input" | "month";
+
+const bankLinks: BankLauncherState[] = [
+  {
+    name: "ING",
+    label: "ING",
+    appUrl: "ing://",
+    androidIntentUrl:
+      "intent://open#Intent;scheme=ing;package=com.ing.mobile;S.browser_fallback_url=https%3A%2F%2Fwww.ing.nl%2Fparticulier%2Fbetalen%2Fbankrekeningen%2Fsneakpeak-ing-app;end",
+    webUrl: "https://www.ing.nl/particulier/betalen/bankrekeningen/sneakpeak-ing-app",
+    badge: "ING",
+    badgeClass: "bg-[#ff6200] text-white",
+  },
+  {
+    name: "ABN AMRO",
+    label: "ABN",
+    appUrl: "abnamro://",
+    androidIntentUrl:
+      "intent://open#Intent;scheme=abnamro;package=com.abnamro.nl.mobile.payments;S.browser_fallback_url=https%3A%2F%2Fwww.abnamro.nl%2Fnl%2Fprive%2Finternet-en-mobiel%2Fabn-amro-app%2Findex.html;end",
+    webUrl:
+      "https://www.abnamro.nl/nl/prive/internet-en-mobiel/abn-amro-app/index.html",
+    badge: "ABN",
+    badgeClass:
+      "bg-[linear-gradient(135deg,#008578_0%,#008578_58%,#f6c343_58%,#f6c343_100%)] text-white",
+  },
+];
 
 function sectionNavItems() {
   return [
@@ -220,6 +257,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [receiptDraft, setReceiptDraft] = useState<ReceiptDraft | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptViewer, setReceiptViewer] = useState<ReceiptViewerState | null>(
+    null,
+  );
+  const [bankLauncher, setBankLauncher] = useState<BankLauncherState | null>(
     null,
   );
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
@@ -1340,7 +1380,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }
 
   return (
-    <main className="min-h-dvh bg-[var(--bg-base)] pb-[calc(80px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
+    <main className="min-h-dvh bg-[var(--bg-base)] pb-[calc(96px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
       <div className="mx-auto w-full max-w-[1800px] px-4 py-4 sm:px-6 lg:px-8 2xl:px-10">
         <MobileBottomNav
         activeSection={activeSection}
@@ -1393,7 +1433,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             ))}
           </section>
 
-          <BankAppsCard />
+          <BankAppsCard onOpenBank={setBankLauncher} />
 
           <ChartsPanel
             categoryRows={categoryRows}
@@ -1643,7 +1683,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onAddIncome={addIncome}
             />
 
-            <BankAppsCard />
+            <BankAppsCard onOpenBank={setBankLauncher} />
 
             <section id="finance-input" className="scroll-mt-4">
               <QuickEntryCard
@@ -1708,6 +1748,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           onClose={() => setReceiptViewer(null)}
         />
       )}
+      {bankLauncher && (
+        <BankLauncherDialog
+          bank={bankLauncher}
+          onClose={() => setBankLauncher(null)}
+        />
+      )}
     </main>
   );
 }
@@ -1743,7 +1789,7 @@ function MobileBottomNav({
   const items = sectionNavItems();
 
   return (
-    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t border-[var(--border)] lg:hidden">
+    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 items-start border-t border-[var(--border)] lg:hidden">
       {items.map((item) => {
         const isActive = activeSection === item.id;
         const Icon = item.icon;
@@ -1754,15 +1800,15 @@ function MobileBottomNav({
             type="button"
             onClick={() => onSectionChange(item.id)}
             className={cn(
-              "flex flex-col items-center justify-center gap-1 text-[11px] font-medium",
+              "min-w-0 rounded-[12px] text-[11px] font-medium leading-none",
               isActive
                 ? "text-[var(--accent)]"
                 : "text-[var(--text-muted)]",
             )}
             aria-label={item.label}
           >
-            <Icon className="h-6 w-6" />
-            {isActive && <span>{item.label}</span>}
+            <Icon className="h-6 w-6 shrink-0" />
+            {isActive && <span className="max-w-full truncate">{item.label}</span>}
           </button>
         );
       })}
@@ -3743,24 +3789,11 @@ function AccountBalanceCard({
   );
 }
 
-function BankAppsCard() {
-  const bankLinks = [
-    {
-      name: "ING",
-      label: "ING",
-      href: "https://www.ing.nl/particulier/betalen/bankrekeningen/sneakpeak-ing-app",
-      badge: "ING",
-      badgeClass: "bg-[#ff6200] text-white",
-    },
-    {
-      name: "ABN AMRO",
-      label: "ABN",
-      href: "https://www.abnamro.nl/nl/prive/internet-en-mobiel/abn-amro-app/index.html",
-      badge: "ABN",
-      badgeClass: "bg-[linear-gradient(135deg,#008578_0%,#008578_58%,#f6c343_58%,#f6c343_100%)] text-white",
-    },
-  ];
-
+function BankAppsCard({
+  onOpenBank,
+}: {
+  onOpenBank: (bank: BankLauncherState) => void;
+}) {
   return (
     <Card className="finance-card">
       <CardHeader className="pb-2">
@@ -3772,12 +3805,11 @@ function BankAppsCard() {
       <CardContent>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
           {bankLinks.map((bank) => (
-            <a
+            <button
               key={bank.name}
-              href={bank.href}
-              target="_blank"
-              rel="noreferrer"
-              className="accent-glow-hover inline-flex h-12 items-center justify-between gap-3 rounded-[var(--radius-btn)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-sm font-medium text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-card-hover)]"
+              type="button"
+              onClick={() => onOpenBank(bank)}
+              className="accent-glow-hover inline-flex h-12 items-center justify-between gap-3 rounded-[var(--radius-btn)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-left text-sm font-medium text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-card-hover)]"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span
@@ -3790,11 +3822,89 @@ function BankAppsCard() {
                 </span>
                 <span className="truncate">{bank.label}</span>
               </span>
-            </a>
+              <Smartphone className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+            </button>
           ))}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function BankLauncherDialog({
+  bank,
+  onClose,
+}: {
+  bank: BankLauncherState;
+  onClose: () => void;
+}) {
+  function openBankApp() {
+    const isAndroid =
+      typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
+    const targetUrl = isAndroid ? bank.androidIntentUrl : bank.appUrl;
+
+    window.location.href = targetUrl;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-end bg-black/70 p-3 backdrop-blur-xl sm:place-items-center sm:p-6">
+      <div className="w-full max-w-sm rounded-[24px] border border-[var(--border-strong)] bg-[var(--bg-card)] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.42)]">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              className={cn(
+                "flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] text-xs font-bold tracking-normal shadow-[0_10px_28px_rgba(0,0,0,0.24)]",
+                bank.badgeClass,
+              )}
+            >
+              {bank.badge}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold text-[var(--text-primary)]">
+                {bank.label} openen
+              </p>
+              <p className="mt-1 text-sm leading-5 text-[var(--text-secondary)]">
+                We proberen de bankapp op je telefoon te openen.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onClose}
+            title="Sluiten"
+            className="h-8 w-8 shrink-0 text-[var(--text-secondary)]"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="mt-4 grid gap-2">
+          <Button
+            type="button"
+            onClick={openBankApp}
+            className="accent-glow-hover h-12 justify-center rounded-[var(--radius-btn)] bg-[var(--accent)] text-sm font-semibold text-white hover:bg-[var(--accent)]"
+          >
+            <Smartphone className="h-4 w-4" />
+            Open app
+          </Button>
+          <a
+            href={bank.webUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-btn)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
+          >
+            <Globe className="h-4 w-4" />
+            Open website
+          </a>
+        </div>
+
+        <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">
+          Als je telefoon vraagt of de app geopend mag worden, kies Open. Lukt
+          dat niet, gebruik dan de websiteknop.
+        </p>
+      </div>
+    </div>
   );
 }
 
