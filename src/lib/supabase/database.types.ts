@@ -121,6 +121,38 @@ export type Database = {
         };
         Relationships: [];
       };
+      contribution_plans: {
+        Row: {
+          id: string;
+          household_id: string;
+          account_id: string;
+          user_id: string;
+          monthly_amount: number;
+          deposit_day: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          household_id: string;
+          account_id: string;
+          user_id: string;
+          monthly_amount?: number;
+          deposit_day?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          account_id?: string;
+          user_id?: string;
+          monthly_amount?: number;
+          deposit_day?: number;
+          is_active?: boolean;
+        };
+        Relationships: [];
+      };
       vehicles: {
         Row: {
           id: string;

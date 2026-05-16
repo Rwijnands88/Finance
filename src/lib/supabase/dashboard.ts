@@ -1,4 +1,9 @@
-import type { Account, DashboardData, Transaction } from "@/lib/types";
+import type {
+  Account,
+  ContributionPlan,
+  DashboardData,
+  Transaction,
+} from "@/lib/types";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type SupabaseClient = Awaited<ReturnType<typeof getSupabaseServerClient>>;
@@ -46,6 +51,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     membersResult,
     currentProfileResult,
     vehiclesResult,
+    contributionPlansResult,
     recurringResult,
     fixedInstancesResult,
   ] = await Promise.all([
@@ -76,6 +82,12 @@ export async function getDashboardData(): Promise<DashboardData> {
       .eq("is_active", true)
       .order("created_at", { ascending: true }),
     supabase
+      .from("contribution_plans")
+      .select("*")
+      .eq("household_id", membership.household_id)
+      .eq("is_active", true)
+      .order("deposit_day", { ascending: true }),
+    supabase
       .from("recurring_expenses")
       .select("*")
       .eq("household_id", membership.household_id)
@@ -93,6 +105,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   throwIfError(membersResult.error);
   throwIfError(currentProfileResult.error);
   throwIfError(vehiclesResult.error);
+  throwIfErrorUnlessMissingContributionPlans(contributionPlansResult.error);
   throwIfError(recurringResult.error);
   throwIfError(fixedInstancesResult.error);
 
@@ -147,6 +160,9 @@ export async function getDashboardData(): Promise<DashboardData> {
     members.find((member) => member.userId === user.id)?.displayName ??
     people[0] ??
     "Onbekend";
+  const memberNameByUserId = new Map(
+    members.map((member) => [member.userId, member.displayName]),
+  );
 
   return {
     householdId: membership.household_id,
@@ -159,6 +175,10 @@ export async function getDashboardData(): Promise<DashboardData> {
       id: vehicle.id,
       name: vehicle.name,
     })),
+    contributionPlans: mapContributionPlans(
+      contributionPlansResult.data ?? [],
+      memberNameByUserId,
+    ),
     categories,
     recurringExpenses: (recurringResult.data ?? []).map((expense) => ({
       id: expense.id,
@@ -241,6 +261,7 @@ async function fetchTransactions(
       amount: Number(transaction.amount),
       date: transaction.transaction_date,
       note: transaction.note ?? undefined,
+      enteredById: transaction.entered_by,
       enteredBy: profile?.display_name ?? "Onbekend",
       fixedInstanceId: transaction.fixed_expense_instance_id ?? undefined,
       fuel: fuelDetails
@@ -251,6 +272,38 @@ async function fetchTransactions(
         : undefined,
     } satisfies Transaction;
   });
+}
+
+function mapContributionPlans(
+  rows: Array<{
+    id: string;
+    account_id: string;
+    user_id: string;
+    monthly_amount: number;
+    deposit_day: number;
+    is_active: boolean;
+  }>,
+  memberNameByUserId: Map<string, string>,
+) {
+  return rows.map(
+    (plan) =>
+      ({
+        id: plan.id,
+        accountId: plan.account_id,
+        userId: plan.user_id,
+        person: memberNameByUserId.get(plan.user_id) ?? "Onbekend",
+        monthlyAmount: Number(plan.monthly_amount),
+        depositDay: plan.deposit_day,
+        isActive: plan.is_active,
+      }) satisfies ContributionPlan,
+  );
+}
+
+function throwIfErrorUnlessMissingContributionPlans(
+  error: { code?: string; message: string } | null,
+) {
+  if (!error || error.code === "42P01") return;
+  throw new Error(error.message);
 }
 
 function averageForCategory(

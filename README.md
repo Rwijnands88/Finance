@@ -93,14 +93,18 @@ inleg en cashflow.
 
 #### Fase 4 - Inleg en cashflow
 
-Startpunt na afronding van Fase 3.
-
 - [x] Supabase voorbereiden: transactietype `contribution` en categorie `Inleg`.
 - [x] Inleg/stortingen toevoegen voor Ralph en Dorine via de gezamenlijke view.
 - [x] Inleg als apart type behandelen, niet als gewone uitgave.
 - [x] Gezamenlijke maandcashflow tonen: inleg - vaste lasten - variabel = over/tekort.
-- [ ] Maandelijkse standaardinleg kunnen instellen.
+- [x] Maandelijkse standaardinleg kunnen instellen.
+- [x] Per persoon tonen: gepland, ontvangen en nog verwacht.
 - [x] Historie van inleg tonen in maandrapport.
+
+**Status:** Fase 4 is afgerond en Supabase chunk 20 is uitgevoerd. De app is nu
+klaar om de standaardinleg live te testen. Daarna is de volgende inhoudelijke
+stap Fase 5: mobiele invoer en scanner afronden met een duidelijke
+concept/bevestig-flow.
 
 #### Fase 5 - Mobiele invoer en scanner
 

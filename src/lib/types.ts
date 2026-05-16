@@ -50,12 +50,23 @@ export type Transaction = {
   amount: number;
   date: string;
   note?: string;
+  enteredById?: string;
   enteredBy: Person;
   fixedInstanceId?: string;
   fuel?: {
     vehicle: string;
     liters: number;
   };
+};
+
+export type ContributionPlan = {
+  id: string;
+  accountId: string;
+  userId: string;
+  person: Person;
+  monthlyAmount: number;
+  depositDay: number;
+  isActive: boolean;
 };
 
 export type Vehicle = {
@@ -72,6 +83,7 @@ export type DashboardData = {
   accounts: Account[];
   vehicles: Vehicle[];
   categories: Category[];
+  contributionPlans: ContributionPlan[];
   recurringExpenses: RecurringExpense[];
   fixedInstances: FixedExpenseInstance[];
   transactions: Transaction[];

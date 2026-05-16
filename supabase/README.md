@@ -8,6 +8,9 @@ Run the SQL files in order:
 2. `migrations/20260513000000_supabase_bootstrap.sql`
 3. `migrations/20260513001000_api_grants.sql`
 4. `migrations/20260515000000_v2_accounts_foundation.sql`
+5. `migrations/20260515001000_recurring_billing_day.sql`
+6. `migrations/20260516000000_contributions_cashflow.sql`
+7. `migrations/20260516001000_contribution_plans.sql`
 
 For the SQL Editor route, open each file locally and paste its full contents into Supabase SQL Editor. Run the files in the order above.
 
@@ -34,6 +37,8 @@ succeeded:
 16. `16_v2_account_confirm_fixed.sql`
 17. `17_v2_account_views_grants.sql`
 18. `18_recurring_billing_day.sql`
+19. `19_contributions_cashflow.sql`
+20. `20_contribution_plans.sql`
 
 These chunks are non-destructive. They keep the current app working while adding
 the account/rekening layer needed for the v2 UI.
@@ -41,6 +46,10 @@ the account/rekening layer needed for the v2 UI.
 Chunk 18 prepares the fixed-expense calendar by adding `billing_day` to
 `recurring_expenses`. Existing fixed expenses are backfilled from their
 `starts_on` day, with `1` as fallback.
+
+Chunk 19 enables `contribution` transactions and creates the `Inleg` category.
+Chunk 20 adds monthly contribution plans per household member for the shared
+account, so the app can show planned, received and remaining inleg.
 
 ## First household
 

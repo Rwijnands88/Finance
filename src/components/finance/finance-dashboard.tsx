@@ -34,6 +34,7 @@ import {
   YAxis,
 } from "recharts";
 import {
+  type ContributionPlan,
   type DashboardData,
   type FixedExpenseInstance,
   type RecurringExpense,
@@ -77,6 +78,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>(
     initialData.recurringExpenses,
   );
+  const [contributionPlans, setContributionPlans] = useState<ContributionPlan[]>(
+    initialData.contributionPlans,
+  );
+  const [contributionPlanDrafts, setContributionPlanDrafts] = useState(() =>
+    Object.fromEntries(
+      initialData.contributionPlans.map((plan) => [
+        plan.id,
+        {
+          amount: String(plan.monthlyAmount || ""),
+          depositDay: String(plan.depositDay),
+        },
+      ]),
+    ),
+  );
   const [quickCategory, setQuickCategory] = useState(
     initialData.categories.find(
       (category) => category.kind === "variable" && category.name !== "Inleg",
@@ -99,6 +114,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [contributionNote, setContributionNote] = useState("");
   const [contributionMessage, setContributionMessage] = useState("");
   const [isSavingContribution, setIsSavingContribution] = useState(false);
+  const [contributionPlanMessage, setContributionPlanMessage] = useState("");
+  const [savingContributionPlanId, setSavingContributionPlanId] = useState<
+    string | null
+  >(null);
   const [scanMessage, setScanMessage] = useState("");
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [monthMessage, setMonthMessage] = useState("");
@@ -225,6 +244,55 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .sort((a, b) => b.date.localeCompare(a.date)),
     [currentMonth, selectedTransactions],
   );
+  const sharedContributionPlans = useMemo(
+    () =>
+      contributionPlans.filter(
+        (plan) => plan.isActive && plan.accountId === defaultAccount?.id,
+      ),
+    [contributionPlans, defaultAccount?.id],
+  );
+  const contributionReceivedByUser = useMemo(() => {
+    const totals = new Map<string, number>();
+
+    transactions
+      .filter(
+        (transaction) =>
+          transaction.type === "contribution" &&
+          transaction.date.startsWith(currentMonth) &&
+          (transaction.accountId ?? defaultAccount?.id) === defaultAccount?.id,
+      )
+      .forEach((transaction) => {
+        const key = transaction.enteredById ?? transaction.enteredBy;
+        totals.set(key, (totals.get(key) ?? 0) + transaction.amount);
+      });
+
+    return totals;
+  }, [currentMonth, defaultAccount?.id, transactions]);
+  const contributionPlanRows = useMemo(
+    () =>
+      sharedContributionPlans.map((plan) => {
+        const received =
+          contributionReceivedByUser.get(plan.userId) ??
+          contributionReceivedByUser.get(plan.person) ??
+          0;
+
+        return {
+          ...plan,
+          received,
+          remaining: Math.max(plan.monthlyAmount - received, 0),
+        };
+      }),
+    [contributionReceivedByUser, sharedContributionPlans],
+  );
+  const plannedContributionTotal = contributionPlanRows.reduce(
+    (total, plan) => total + plan.monthlyAmount,
+    0,
+  );
+  const remainingContributionTotal = contributionPlanRows.reduce(
+    (total, plan) => total + plan.remaining,
+    0,
+  );
+  const projectedNetTotal = plannedContributionTotal - monthTotals.expenseTotal;
   const topCategory = categoryRows[0];
   const fixedAgendaItems = useMemo(
     () =>
@@ -307,6 +375,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       amount,
       date: quickDate,
       note: quickNote || undefined,
+      enteredById: initialData.currentUserId,
       enteredBy: initialData.currentPerson,
       fuel:
         isFuel && initialData.vehicles[0]
@@ -381,6 +450,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         amount,
         date: contributionDate,
         note: contributionNote || "Inleg gezamenlijke rekening",
+        enteredById: initialData.currentUserId,
         enteredBy: initialData.currentPerson,
       },
       ...items,
@@ -390,6 +460,78 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setContributionMessage("Inleg toegevoegd.");
     setSelectedAccountId(defaultAccount.id);
     setQuickAccount(defaultAccount.id);
+  }
+
+  function updateContributionPlanDraft(
+    planId: string,
+    field: "amount" | "depositDay",
+    value: string,
+  ) {
+    setContributionPlanDrafts((drafts) => ({
+      ...drafts,
+      [planId]: {
+        amount: drafts[planId]?.amount ?? "",
+        depositDay: drafts[planId]?.depositDay ?? "1",
+        [field]: value,
+      },
+    }));
+  }
+
+  async function saveContributionPlan(plan: ContributionPlan) {
+    const draft = contributionPlanDrafts[plan.id];
+    const amount = parseCurrencyInput(draft?.amount ?? "");
+    const depositDay = Number(draft?.depositDay);
+
+    if (Number.isNaN(amount) || amount < 0) {
+      setContributionPlanMessage("Vul een geldig maandbedrag in.");
+      return;
+    }
+
+    if (!Number.isInteger(depositDay) || depositDay < 1 || depositDay > 31) {
+      setContributionPlanMessage("Kies een dag tussen 1 en 31.");
+      return;
+    }
+
+    setSavingContributionPlanId(plan.id);
+    setContributionPlanMessage("");
+
+    const response = await fetch("/api/contribution-plans", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: plan.id,
+        householdId: initialData.householdId,
+        monthlyAmount: amount,
+        depositDay,
+      }),
+    });
+    const result = await response.json();
+
+    setSavingContributionPlanId(null);
+
+    if (!response.ok) {
+      setContributionPlanMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Standaardinleg opslaan lukte niet.",
+      );
+      return;
+    }
+
+    const updatedPlan = result.plan as ContributionPlan;
+    setContributionPlans((plans) =>
+      plans.map((item) => (item.id === updatedPlan.id ? updatedPlan : item)),
+    );
+    setContributionPlanDrafts((drafts) => ({
+      ...drafts,
+      [updatedPlan.id]: {
+        amount: String(updatedPlan.monthlyAmount || ""),
+        depositDay: String(updatedPlan.depositDay),
+      },
+    }));
+    setContributionPlanMessage(`Standaardinleg voor ${updatedPlan.person} bewaard.`);
   }
 
   async function scanReceipt(file: File) {
@@ -1092,11 +1234,21 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               date={contributionDate}
               note={contributionNote}
               person={initialData.currentPerson}
+              plans={contributionPlanRows}
+              planDrafts={contributionPlanDrafts}
+              planMessage={contributionPlanMessage}
+              savingPlanId={savingContributionPlanId}
+              plannedTotal={plannedContributionTotal}
+              receivedTotal={monthTotals.contributionTotal}
+              remainingTotal={remainingContributionTotal}
+              projectedNetTotal={projectedNetTotal}
               message={contributionMessage}
               isSaving={isSavingContribution}
               onAmountChange={setContributionAmount}
               onDateChange={setContributionDate}
               onNoteChange={setContributionNote}
+              onPlanDraftChange={updateContributionPlanDraft}
+              onPlanSave={saveContributionPlan}
               onSubmit={addContribution}
             />
             <FixedExpenseManager
@@ -1756,34 +1908,164 @@ function ContributionCard({
   date,
   note,
   person,
+  plans,
+  planDrafts,
+  planMessage,
+  savingPlanId,
+  plannedTotal,
+  receivedTotal,
+  remainingTotal,
+  projectedNetTotal,
   message,
   isSaving,
   onAmountChange,
   onDateChange,
   onNoteChange,
+  onPlanDraftChange,
+  onPlanSave,
   onSubmit,
 }: {
   amount: string;
   date: string;
   note: string;
   person: string;
+  plans: Array<
+    ContributionPlan & {
+      received: number;
+      remaining: number;
+    }
+  >;
+  planDrafts: Record<string, { amount: string; depositDay: string }>;
+  planMessage: string;
+  savingPlanId: string | null;
+  plannedTotal: number;
+  receivedTotal: number;
+  remainingTotal: number;
+  projectedNetTotal: number;
   message: string;
   isSaving: boolean;
   onAmountChange: (value: string) => void;
   onDateChange: (value: string) => void;
   onNoteChange: (value: string) => void;
+  onPlanDraftChange: (
+    planId: string,
+    field: "amount" | "depositDay",
+    value: string,
+  ) => void;
+  onPlanSave: (plan: ContributionPlan) => void;
   onSubmit: () => void;
 }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Inleg</CardTitle>
+        <CardTitle>Inleg & cashflow</CardTitle>
         <CardDescription>
-          Bijschrijving op de gezamenlijke rekening.
+          Standaard maandinleg en losse bijschrijvingen.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid gap-3">
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <ContributionStat label="Gepland" value={currency(plannedTotal)} />
+          <ContributionStat label="Ontvangen" value={currency(receivedTotal)} />
+          <ContributionStat
+            label="Nog verwacht"
+            value={currency(remainingTotal)}
+            tone={remainingTotal > 0 ? "indigo" : "emerald"}
+          />
+          <ContributionStat
+            label="Na uitgaven"
+            value={currency(projectedNetTotal)}
+            tone={projectedNetTotal < 0 ? "red" : "emerald"}
+          />
+        </div>
+
+        <div className="space-y-2 rounded-[14px] border border-zinc-800/70 bg-zinc-950/35 p-2">
+          {plans.map((plan) => {
+            const draft = planDrafts[plan.id] ?? {
+              amount: String(plan.monthlyAmount || ""),
+              depositDay: String(plan.depositDay),
+            };
+            const isSavingPlan = savingPlanId === plan.id;
+
+            return (
+              <div
+                key={plan.id}
+                className="grid gap-2 rounded-[12px] border border-zinc-800/70 bg-[#18181B] p-2"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-100">{plan.person}</p>
+                    <p className="text-xs text-zinc-500">
+                      Binnen: {currency(plan.received)} · nog{" "}
+                      {currency(plan.remaining)}
+                    </p>
+                  </div>
+                  <Badge
+                    className={cn(
+                      "border-zinc-700 bg-zinc-900 text-zinc-300",
+                      plan.remaining <= 0 &&
+                        "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
+                    )}
+                  >
+                    dag {plan.depositDay}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-[1fr_4.8rem_auto] gap-2">
+                  <Input
+                    inputMode="decimal"
+                    value={draft.amount}
+                    placeholder="Maandbedrag"
+                    className="h-9"
+                    onChange={(event) =>
+                      onPlanDraftChange(plan.id, "amount", event.target.value)
+                    }
+                  />
+                  <Input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={draft.depositDay}
+                    className="h-9"
+                    aria-label={`Stortdag ${plan.person}`}
+                    onChange={(event) =>
+                      onPlanDraftChange(plan.id, "depositDay", event.target.value)
+                    }
+                  />
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    title={`Standaardinleg ${plan.person} bewaren`}
+                    className="h-9 w-9"
+                    disabled={isSavingPlan}
+                    onClick={() => onPlanSave(plan)}
+                  >
+                    {isSavingPlan ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+          {plans.length === 0 && (
+            <p className="rounded-[12px] border border-dashed border-zinc-800 p-3 text-sm text-zinc-500">
+              Standaardinleg verschijnt zodra Supabase chunk 20 is uitgevoerd.
+            </p>
+          )}
+        </div>
+
+        {planMessage && (
+          <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+            {planMessage}
+          </p>
+        )}
+
+        <div className="grid gap-2 border-t border-zinc-800/70 pt-3">
+          <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">
+            Losse inleg
+          </p>
           <Input
             inputMode="decimal"
             placeholder="Bedrag"
@@ -1797,13 +2079,13 @@ function ContributionCard({
             className="h-10"
             onChange={(event) => onDateChange(event.target.value)}
           />
+          <Input
+            placeholder={`Notitie, bijv. inleg ${person}`}
+            value={note}
+            className="h-10"
+            onChange={(event) => onNoteChange(event.target.value)}
+          />
         </div>
-        <Input
-          placeholder={`Notitie, bijv. inleg ${person}`}
-          value={note}
-          className="h-10"
-          onChange={(event) => onNoteChange(event.target.value)}
-        />
         {message && (
           <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
             {message}
@@ -1828,6 +2110,33 @@ function ContributionCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ContributionStat({
+  label,
+  value,
+  tone = "zinc",
+}: {
+  label: string;
+  value: string;
+  tone?: "zinc" | "indigo" | "emerald" | "red";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-[12px] border bg-zinc-950/40 p-2.5",
+        tone === "zinc" && "border-zinc-800",
+        tone === "indigo" && "border-indigo-400/25 bg-indigo-500/10",
+        tone === "emerald" && "border-emerald-400/20 bg-emerald-500/10",
+        tone === "red" && "border-red-400/25 bg-red-500/10",
+      )}
+    >
+      <p className="text-[11px] font-medium uppercase tracking-normal text-zinc-500">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-semibold text-zinc-50">{value}</p>
+    </div>
   );
 }
 
