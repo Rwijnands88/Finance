@@ -358,8 +358,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .filter((snapshot) => snapshot.snapshotDate < monthStart(addIsoMonths(currentMonth, 1)))
         .sort(
           (first, second) =>
-            second.snapshotDate.localeCompare(first.snapshotDate) ||
-            second.id.localeCompare(first.id),
+            second.snapshotDate.localeCompare(first.snapshotDate),
         )[0],
     [balanceSnapshots, currentMonth, selectedAccountId],
   );
@@ -857,6 +856,45 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setBalanceSnapshots((items) => [result.snapshot, ...items]);
     setBalanceAmount("");
     setBalanceMessage("Saldo bijgewerkt.");
+  }
+
+  async function deleteBalanceSnapshot(snapshot: AccountBalanceSnapshot) {
+    const confirmed = window.confirm(
+      "Saldo-invoer verwijderen?\n\nJe kunt daarna gewoon een nieuw saldo invoeren.",
+    );
+
+    if (!confirmed) return;
+
+    setIsSavingBalance(true);
+    setBalanceMessage("");
+
+    const response = await fetch("/api/account-balance-snapshots", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        snapshotId: snapshot.id,
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingBalance(false);
+
+    if (!response.ok) {
+      setBalanceMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Saldo verwijderen lukte niet.",
+      );
+      return;
+    }
+
+    setBalanceSnapshots((items) =>
+      items.filter((item) => item.id !== snapshot.id),
+    );
+    setBalanceMessage("Saldo verwijderd. Je kunt nu een nieuw saldo invoeren.");
   }
 
   async function addIncome() {
@@ -1902,6 +1940,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onBalanceAmountChange={setBalanceAmount}
               onBalanceDateChange={setBalanceDate}
               onSaveBalance={saveBalanceSnapshot}
+              onDeleteBalance={deleteBalanceSnapshot}
               onIncomeAmountChange={setIncomeAmount}
               onIncomeDateChange={setIncomeDate}
               onIncomeKindChange={setIncomeKind}
@@ -3995,6 +4034,7 @@ function AccountBalanceCard({
   onBalanceAmountChange,
   onBalanceDateChange,
   onSaveBalance,
+  onDeleteBalance,
   onIncomeAmountChange,
   onIncomeDateChange,
   onIncomeKindChange,
@@ -4017,6 +4057,7 @@ function AccountBalanceCard({
   onBalanceAmountChange: (value: string) => void;
   onBalanceDateChange: (value: string) => void;
   onSaveBalance: () => void;
+  onDeleteBalance: (snapshot: AccountBalanceSnapshot) => void;
   onIncomeAmountChange: (value: string) => void;
   onIncomeDateChange: (value: string) => void;
   onIncomeKindChange: (value: "salary" | "extra") => void;
@@ -4043,9 +4084,26 @@ function AccountBalanceCard({
               </p>
             </div>
             {snapshot && (
-              <Badge className="border-zinc-800 bg-zinc-950/70 text-zinc-400">
-                {snapshot.enteredBy}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge className="border-zinc-800 bg-zinc-950/70 text-zinc-400">
+                  {snapshot.enteredBy}
+                </Badge>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  title="Saldo-invoer verwijderen"
+                  onClick={() => onDeleteBalance(snapshot)}
+                  disabled={isSavingBalance}
+                  className="h-8 w-8 text-zinc-500 hover:text-red-300"
+                >
+                  {isSavingBalance ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
             )}
           </div>
         </div>

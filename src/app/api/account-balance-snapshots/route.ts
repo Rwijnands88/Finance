@@ -10,6 +10,11 @@ type BalanceSnapshotBody = {
   note?: string | null;
 };
 
+type DeleteBalanceSnapshotBody = {
+  householdId?: string;
+  snapshotId?: string;
+};
+
 export async function POST(request: Request) {
   const body = (await request.json()) as BalanceSnapshotBody;
   const balance = Number(body.balance);
@@ -60,6 +65,39 @@ export async function POST(request: Request) {
   return NextResponse.json({
     snapshot: await mapSnapshot(supabase, snapshot),
   });
+}
+
+export async function DELETE(request: Request) {
+  const body = (await request.json()) as DeleteBalanceSnapshotBody;
+
+  if (!body.householdId || !body.snapshotId) {
+    return NextResponse.json(
+      { error: "Saldo-invoer ontbreekt." },
+      { status: 400 },
+    );
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+
+  const { error } = await supabase
+    .from("account_balance_snapshots")
+    .delete()
+    .eq("id", body.snapshotId)
+    .eq("household_id", body.householdId);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
 
 async function mapSnapshot(
