@@ -823,44 +823,28 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         </section>
 
         <section className="order-1 grid gap-4 lg:order-none lg:grid-cols-[0.78fr_1.22fr]">
-          <div className="grid gap-4">
-            {isSharedView && (
-              <ContributionCard
-                amount={contributionAmount}
-                date={contributionDate}
-                note={contributionNote}
-                person={initialData.currentPerson}
-                message={contributionMessage}
-                isSaving={isSavingContribution}
-                onAmountChange={setContributionAmount}
-                onDateChange={setContributionDate}
-                onNoteChange={setContributionNote}
-                onSubmit={addContribution}
-              />
-            )}
-            <QuickEntryCard
-              title={viewCopy.quickTitle}
-              amount={quickAmount}
-              account={quickAccount}
-              date={quickDate}
-              note={quickNote}
-              category={quickCategory}
-              fuelLiters={fuelLiters}
-              onAmountChange={setQuickAmount}
-              onAccountChange={setQuickAccount}
-              onDateChange={setQuickDate}
-              onNoteChange={setQuickNote}
-              onCategoryChange={setQuickCategory}
-              onFuelLitersChange={setFuelLiters}
-              isScanningReceipt={isScanningReceipt}
-              scanMessage={scanMessage}
-              onScanReceipt={scanReceipt}
-              categories={initialData.categories}
-              accounts={initialData.accounts}
-              vehicles={initialData.vehicles}
-              onSubmit={addVariableExpense}
-            />
-          </div>
+          <QuickEntryCard
+            title={viewCopy.quickTitle}
+            amount={quickAmount}
+            account={quickAccount}
+            date={quickDate}
+            note={quickNote}
+            category={quickCategory}
+            fuelLiters={fuelLiters}
+            onAmountChange={setQuickAmount}
+            onAccountChange={setQuickAccount}
+            onDateChange={setQuickDate}
+            onNoteChange={setQuickNote}
+            onCategoryChange={setQuickCategory}
+            onFuelLitersChange={setFuelLiters}
+            isScanningReceipt={isScanningReceipt}
+            scanMessage={scanMessage}
+            onScanReceipt={scanReceipt}
+            categories={initialData.categories}
+            accounts={initialData.accounts}
+            vehicles={initialData.vehicles}
+            onSubmit={addVariableExpense}
+          />
 
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -1096,7 +1080,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         )}
 
         {isSharedView && (
-          <section className="order-5 lg:order-none">
+          <section className="order-5 grid gap-4 lg:order-none lg:grid-cols-[0.72fr_1.28fr]">
+            <ContributionCard
+              amount={contributionAmount}
+              date={contributionDate}
+              note={contributionNote}
+              person={initialData.currentPerson}
+              message={contributionMessage}
+              isSaving={isSavingContribution}
+              onAmountChange={setContributionAmount}
+              onDateChange={setContributionDate}
+              onNoteChange={setContributionNote}
+              onSubmit={addContribution}
+            />
             <FixedExpenseManager
               expenses={recurringExpenses}
               categories={fixedCategories}
@@ -1445,8 +1441,8 @@ function FixedExpenseManager({
           <div className="grid gap-3">
             {activeExpenses.length === 0 && (
               <div className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-                Nog geen vaste lasten toegevoegd. Voeg hierboven de eerste
-                terugkerende afschrijving toe.
+                Nog geen vaste lasten toegevoegd. Gebruik Nieuwe vaste last
+                hieronder voor de eerste terugkerende afschrijving.
               </div>
             )}
 
@@ -1773,26 +1769,26 @@ function ContributionCard({
   onSubmit: () => void;
 }) {
   return (
-    <Card className="border-emerald-400/15 bg-emerald-500/[0.04]">
+    <Card className="h-full">
       <CardHeader>
-        <CardTitle>Inleg toevoegen</CardTitle>
+        <CardTitle>Inleg</CardTitle>
         <CardDescription>
-          Geld dat op de gezamenlijke rekening wordt gestort.
+          Bijschrijving op de gezamenlijke rekening.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
+        <div className="grid gap-3">
           <Input
             inputMode="decimal"
             placeholder="Bedrag"
             value={amount}
-            className="h-11 text-base font-semibold"
+            className="h-10 text-sm font-semibold"
             onChange={(event) => onAmountChange(event.target.value)}
           />
           <Input
             type="date"
             value={date}
-            className="h-11"
+            className="h-10"
             onChange={(event) => onDateChange(event.target.value)}
           />
         </div>
@@ -1807,18 +1803,23 @@ function ContributionCard({
             {message}
           </p>
         )}
-        <Button
-          className="w-full bg-emerald-500 shadow-[0_14px_35px_rgba(16,185,129,0.18)] hover:bg-emerald-400"
-          onClick={onSubmit}
-          disabled={isSaving}
-        >
-          {isSaving ? (
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-          ) : (
-            <ArrowDownToLine className="h-4 w-4" />
-          )}
-          Inleg opslaan
-        </Button>
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <p className="text-xs text-zinc-500">Ingevoerd door {person}</p>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onSubmit}
+            disabled={isSaving}
+            className="border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10"
+          >
+            {isSaving ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowDownToLine className="h-4 w-4" />
+            )}
+            Opslaan
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
