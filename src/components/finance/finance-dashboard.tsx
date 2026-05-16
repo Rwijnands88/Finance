@@ -19,7 +19,6 @@ import {
   Plus,
   ReceiptText,
   Save,
-  Smartphone,
   Trash2,
   WalletCards,
   X,
@@ -80,16 +79,6 @@ type ReceiptViewerState = {
   title: string;
 };
 
-type BankLauncherState = {
-  name: string;
-  label: string;
-  appUrl: string;
-  androidIntentUrl: string;
-  webUrl: string;
-  badge: string;
-  badgeClass: string;
-};
-
 type DashboardMetric = {
   icon: React.ReactNode;
   label: string;
@@ -108,31 +97,6 @@ type MonthDataResponse = {
   fixedInstances?: FixedExpenseInstance[];
   error?: string;
 };
-
-const bankLinks: BankLauncherState[] = [
-  {
-    name: "ING",
-    label: "ING",
-    appUrl: "ing://",
-    androidIntentUrl:
-      "intent://open#Intent;scheme=ing;package=com.ing.mobile;S.browser_fallback_url=https%3A%2F%2Fwww.ing.nl%2Fparticulier%2Fbetalen%2Fbankrekeningen%2Fsneakpeak-ing-app;end",
-    webUrl: "https://www.ing.nl/particulier/betalen/bankrekeningen/sneakpeak-ing-app",
-    badge: "ING",
-    badgeClass: "bg-[#ff6200] text-white",
-  },
-  {
-    name: "ABN AMRO",
-    label: "ABN",
-    appUrl: "abnamro://",
-    androidIntentUrl:
-      "intent://open#Intent;scheme=abnamro;package=com.abnamro.nl.mobile.payments;S.browser_fallback_url=https%3A%2F%2Fwww.abnamro.nl%2Fnl%2Fprive%2Finternet-en-mobiel%2Fabn-amro-app%2Findex.html;end",
-    webUrl:
-      "https://www.abnamro.nl/nl/prive/internet-en-mobiel/abn-amro-app/index.html",
-    badge: "ABN",
-    badgeClass:
-      "bg-[linear-gradient(135deg,#008578_0%,#008578_58%,#f6c343_58%,#f6c343_100%)] text-white",
-  },
-];
 
 function sectionNavItems() {
   return [
@@ -269,9 +233,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [receiptDraft, setReceiptDraft] = useState<ReceiptDraft | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptViewer, setReceiptViewer] = useState<ReceiptViewerState | null>(
-    null,
-  );
-  const [bankLauncher, setBankLauncher] = useState<BankLauncherState | null>(
     null,
   );
   const [currentMonth, setCurrentMonth] = useState(initialData.selectedMonth);
@@ -539,16 +500,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
   );
-  const openFixedAgendaItems = fixedAgendaItems.filter(
-    (item) =>
-      item.state === "overdue" ||
-      item.state === "today" ||
-      item.state === "upcoming",
-  );
-  const openFixedTotal = openFixedAgendaItems.reduce(
-    (total, item) => total + item.amount,
-    0,
-  );
   const dashboardPrimaryValue =
     calculatedBalance === null
       ? currency(monthTotals.netTotal)
@@ -562,30 +513,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const dashboardMetrics: DashboardMetric[] = isSharedView
     ? [
         {
-          icon: <ArrowDownToLine className="h-5 w-5" />,
-          label: "Nog te storten",
-          value: currency(remainingContributionTotal),
-          tone: remainingContributionTotal > 0 ? "indigo" : "emerald",
-        },
-        {
-          icon: <ListChecks className="h-5 w-5" />,
-          label: "Komt eraan",
-          value: currency(openFixedTotal),
-          tone: fixedAgendaItems.some((item) => item.state === "overdue")
-            ? "red"
-            : openFixedTotal > 0
-              ? "indigo"
-              : "emerald",
-        },
-        {
           icon: <ReceiptText className="h-5 w-5" />,
-          label: "Uitgegeven",
+          label: "Uitgaven",
           value: currency(monthTotals.expenseTotal),
           tone: "zinc" as const,
         },
         {
           icon: <WalletCards className="h-5 w-5" />,
-          label: "Einde maand",
+          label: "Verwacht eindsaldo",
           value:
             expectedMonthEndBalance === null
               ? currency(monthTotals.netTotal)
@@ -595,23 +530,23 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               ? "red"
               : "emerald",
         },
+        {
+          icon: <ArrowDownToLine className="h-5 w-5" />,
+          label: "Stortingen",
+          value: currency(monthTotals.contributionTotal),
+          tone: "emerald" as const,
+        },
       ]
     : [
         {
-          icon: <WalletCards className="h-5 w-5" />,
-          label: "Inkomen",
-          value: currency(monthTotals.incomeTotal),
-          tone: "emerald" as const,
-        },
-        {
-          icon: <WalletCards className="h-5 w-5" />,
+          icon: <ReceiptText className="h-5 w-5" />,
           label: "Uitgaven",
-          value: currency(monthTotals.variableTotal),
+          value: currency(monthTotals.expenseTotal),
           tone: "zinc" as const,
         },
         {
-          icon: <ReceiptText className="h-5 w-5" />,
-          label: "Einde maand",
+          icon: <WalletCards className="h-5 w-5" />,
+          label: "Verwacht eindsaldo",
           value:
             expectedMonthEndBalance === null
               ? currency(monthTotals.netTotal)
@@ -622,10 +557,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               : "indigo",
         },
         {
-          icon: <ListChecks className="h-5 w-5" />,
-          label: "Transacties",
-          value: `${monthTransactions.length}`,
-          tone: "zinc" as const,
+          icon: <ArrowDownToLine className="h-5 w-5" />,
+          label: "Inkomen",
+          value: currency(monthTotals.incomeTotal),
+          tone: "emerald" as const,
         },
       ];
   const fixedCategories = useMemo(
@@ -756,7 +691,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
     let receiptUrl: string | null = null;
     if (receiptFile) {
-      setScanMessage("Afschrijving toegevoegd. Bon wordt opgeslagen...");
+      setScanMessage("Uitgave toegevoegd. Bon wordt opgeslagen...");
 
       try {
         receiptUrl = await saveReceiptForTransaction({
@@ -773,7 +708,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         );
       } catch {
         setScanMessage(
-          "Afschrijving toegevoegd, maar bon opslaan lukte niet. Je kunt verder werken.",
+          "Uitgave toegevoegd, maar bon opslaan lukte niet. Je kunt verder werken.",
         );
       }
     }
@@ -783,7 +718,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setQuickNote("");
     if (!receiptFile || receiptUrl) {
       setScanMessage(
-        receiptUrl ? "Afschrijving en bon opgeslagen." : "Afschrijving toegevoegd.",
+        receiptUrl ? "Uitgave en bon opgeslagen." : "Uitgave toegevoegd.",
       );
     }
     setReceiptDraft(null);
@@ -811,7 +746,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         accountId: defaultAccount.id,
         amount,
         date: contributionDate,
-        note: contributionNote || "Inleg gezamenlijke rekening",
+        note: contributionNote || "Storting gezamenlijke rekening",
         type: "contribution",
       }),
     });
@@ -848,7 +783,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         categoryId: contributionCategory.id,
         amount,
         date: contributionDate,
-        note: contributionNote || "Inleg gezamenlijke rekening",
+        note: contributionNote || "Storting gezamenlijke rekening",
         enteredById: initialData.currentUserId,
         enteredBy: initialData.currentPerson,
       },
@@ -939,7 +874,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       setIncomeMessage(
         typeof result.error === "string"
           ? result.error
-          : "Inkomsten opslaan lukte niet.",
+          : "Inkomen opslaan lukte niet.",
       );
       return;
     }
@@ -978,7 +913,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     ]);
     setIncomeAmount("");
     setIncomeNote("");
-    setIncomeMessage("Inkomsten toegevoegd.");
+    setIncomeMessage("Inkomen toegevoegd.");
   }
 
   function updateContributionPlanDraft(
@@ -1123,7 +1058,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   async function deleteTransaction(transaction: Transaction) {
     const confirmed = window.confirm(
       transaction.type === "fixed"
-        ? "Definitief verwijderen?\n\nDeze vaste-last transactie verdwijnt uit dit maandoverzicht. De vaste last zelf blijft in de agenda staan."
+        ? "Definitief verwijderen?\n\nDeze vaste-last uitgave verdwijnt uit dit maandoverzicht. De vaste last zelf blijft in de agenda staan."
         : "Definitief verwijderen?\n\nDeze ingevoerde uitgave wordt permanent uit het maandoverzicht verwijderd.",
     );
 
@@ -1167,7 +1102,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       setFixedMessage(`${fixedInstance.name} staat weer open.`);
     }
 
-    setMonthMessage("Afschrijving verwijderd.");
+    setMonthMessage("Uitgave verwijderd.");
   }
 
   function resetRecurringForm() {
@@ -1288,7 +1223,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   async function deleteRecurringExpense(expense: RecurringExpense) {
     const confirmed = window.confirm(
-      `${expense.name} definitief uit vaste lasten verwijderen?\n\nHistorische transacties blijven bewaard.`,
+      `${expense.name} definitief uit vaste lasten verwijderen?\n\nHistorische uitgaven blijven bewaard.`,
     );
 
     if (!confirmed) return;
@@ -1376,11 +1311,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         Rekening: selectedAccount?.name ?? viewCopy.label,
         Maand: monthLabel(targetMonth),
         Stortingen: exportTotals.contributionTotal,
-        Inkomsten: exportTotals.incomeTotal,
+        Inkomen: exportTotals.incomeTotal,
         "Vaste lasten": exportTotals.fixedTotal,
         Variabel: exportTotals.variableTotal,
         "Over/tekort": exportTotals.netTotal,
-        Transacties: exportTransactions.length,
+        Uitgaven: exportTransactions.length,
         "Bonnen aanwezig": exportTransactions.filter(
           (transaction) => transaction.receiptUrl,
         ).length,
@@ -1393,7 +1328,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         transaction.type === "fixed"
           ? "Vaste last"
           : transaction.type === "income"
-            ? "Inkomsten"
+            ? "Inkomen"
           : transaction.type === "contribution"
             ? "Storting"
             : "Variabel",
@@ -1401,7 +1336,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         transaction.type === "contribution"
           ? "Storting"
           : transaction.type === "income"
-            ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
+            ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
       IngevoerdDoor: transaction.type === "fixed" ? "" : transaction.enteredBy,
@@ -1427,7 +1362,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     XLSX.utils.book_append_sheet(
       workbook,
       XLSX.utils.json_to_sheet(rows),
-      "Alle transacties",
+      "Alle uitgaven",
     );
     XLSX.utils.book_append_sheet(
       workbook,
@@ -1451,11 +1386,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         Rekening: selectedAccount?.name ?? viewCopy.label,
         Maand: monthLabel(month),
         Stortingen: totals.contributionTotal,
-        Inkomsten: totals.incomeTotal,
+        Inkomen: totals.incomeTotal,
         "Vaste lasten": totals.fixedTotal,
         Variabel: totals.variableTotal,
         "Over/tekort": totals.netTotal,
-        Transacties: monthTransactionsForExport.length,
+        Uitgaven: monthTransactionsForExport.length,
         "Bonnen aanwezig": monthTransactionsForExport.filter(
           (transaction) => transaction.receiptUrl,
         ).length,
@@ -1469,7 +1404,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         transaction.type === "fixed"
           ? "Vaste last"
           : transaction.type === "income"
-            ? "Inkomsten"
+            ? "Inkomen"
           : transaction.type === "contribution"
             ? "Storting"
             : "Variabel",
@@ -1477,7 +1412,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         transaction.type === "contribution"
           ? "Storting"
           : transaction.type === "income"
-            ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
+            ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
       IngevoerdDoor: transaction.type === "fixed" ? "" : transaction.enteredBy,
@@ -1506,7 +1441,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     XLSX.utils.book_append_sheet(
       workbook,
       XLSX.utils.json_to_sheet(rows),
-      "Alle transacties",
+      "Alle uitgaven",
     );
     XLSX.utils.book_append_sheet(
       workbook,
@@ -1581,7 +1516,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           transaction.type === "contribution"
             ? "Storting"
             : transaction.type === "income"
-              ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
+              ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
               : labels.get(transaction.categoryId)?.name ?? "Onbekend";
         const baseName = [
           transaction.date,
@@ -1636,7 +1571,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           transaction.type === "contribution"
             ? "Storting"
             : transaction.type === "income"
-              ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
+              ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
               : labels.get(transaction.categoryId)?.name ?? "Onbekend";
         const month = transaction.date.slice(0, 7);
         const baseName = [
@@ -1709,18 +1644,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             mobile
           />
 
-          <section className="grid gap-3 sm:grid-cols-2">
-            {dashboardMetrics.map((metric) => (
-              <MetricCard key={metric.label} {...metric} />
-            ))}
-          </section>
-
-          <BankAppsCard onOpenBank={setBankLauncher} />
+          <BankAppsCard />
 
           <ChartsPanel
             categoryRows={categoryRows}
             selectedSixMonthTrend={selectedSixMonthTrend}
             chartsReady={mobileChartsReady}
+            showTrend={false}
           />
 
           {isSharedView && (
@@ -1740,6 +1670,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           )}
         >
           <MobileSectionHeader title="Vaste lasten" subtitle={monthLabel(currentMonth)} />
+          <FixedExpenseAgenda
+            items={fixedAgendaItems}
+            currentMonth={currentMonth}
+            message={fixedMessage}
+            highlightedId={highlightedFixedInstanceId}
+          />
           <FixedExpenseManager
             expenses={selectedRecurringExpenses}
             categories={fixedCategories}
@@ -1763,12 +1699,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onEdit={startEditingRecurring}
             onDelete={deleteRecurringExpense}
             onCancel={resetRecurringForm}
-          />
-          <FixedExpenseAgenda
-            items={fixedAgendaItems}
-            currentMonth={currentMonth}
-            message={fixedMessage}
-            highlightedId={highlightedFixedInstanceId}
           />
         </section>
 
@@ -1841,9 +1771,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             <AccountRail
               tabs={accountTabs}
               selectedAccountId={selectedAccountId}
-              currentMonth={currentMonth}
               currentPerson={initialData.currentPerson}
-              metrics={dashboardMetrics}
               activeSection={activeSection}
               onSelect={(accountId) => {
                 setSelectedAccountId(accountId);
@@ -1934,10 +1862,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             <AccountBalanceCard
               accountName={selectedAccount?.name ?? viewCopy.label}
               snapshot={latestBalanceSnapshot}
-              calculatedBalance={calculatedBalance}
-              expectedMonthEndBalance={expectedMonthEndBalance}
-              expectedIncomeTotal={expectedIncomeTotal}
-              expenseTotal={monthTotals.expenseTotal}
               balanceAmount={balanceAmount}
               balanceDate={balanceDate}
               balanceMessage={balanceMessage}
@@ -1949,7 +1873,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               incomeMessage={incomeMessage}
               isSavingIncome={isSavingIncome}
               showIncomeForm={!isSharedView}
-              incomingLabel={isSharedView ? "Te storten" : "Inkomen"}
               onBalanceAmountChange={setBalanceAmount}
               onBalanceDateChange={setBalanceDate}
               onSaveBalance={saveBalanceSnapshot}
@@ -1960,7 +1883,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onAddIncome={addIncome}
             />
 
-            <BankAppsCard onOpenBank={setBankLauncher} />
+            <BankAppsCard />
 
             <section id="finance-input" className="scroll-mt-4">
               <QuickEntryCard
@@ -2023,12 +1946,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         <ReceiptViewer
           receipt={receiptViewer}
           onClose={() => setReceiptViewer(null)}
-        />
-      )}
-      {bankLauncher && (
-        <BankLauncherDialog
-          bank={bankLauncher}
-          onClose={() => setBankLauncher(null)}
         />
       )}
       {isExportDialogOpen && (
@@ -2412,18 +2329,14 @@ function MonthNavigator({
 function AccountRail({
   tabs,
   selectedAccountId,
-  currentMonth,
   currentPerson,
-  metrics,
   activeSection,
   onSelect,
   onSectionChange,
 }: {
   tabs: Array<{ id: string; label: string; description: string }>;
   selectedAccountId: string;
-  currentMonth: string;
   currentPerson: string;
-  metrics: DashboardMetric[];
   activeSection: ActiveSection;
   onSelect: (accountId: string) => void;
   onSectionChange: (section: ActiveSection) => void;
@@ -2500,15 +2413,6 @@ function AccountRail({
           })}
         </nav>
 
-        <div className="grid gap-2 border-t border-[var(--border)] pt-4">
-          <p className="px-2 text-xs text-[var(--text-muted)]">
-            {monthLabel(currentMonth)}
-          </p>
-          {metrics.slice(0, 3).map((metric) => (
-            <RailMetric key={metric.label} {...metric} />
-          ))}
-        </div>
-
         <div className="mt-auto rounded-[12px] border border-[var(--border)] bg-black/10 p-3">
           <p className="text-sm font-medium text-[var(--text-primary)]">
             {currentPerson}
@@ -2522,66 +2426,6 @@ function AccountRail({
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function ViewSummary({
-  label,
-  description,
-  currentMonth,
-}: {
-  label: string;
-  description: string;
-  currentMonth: string;
-}) {
-  return (
-    <section className="rounded-[16px] border border-zinc-800/70 bg-zinc-950/35 px-4 py-3">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-zinc-100">{label}</p>
-          <p className="mt-0.5 text-xs leading-5 text-zinc-500">
-            {description}
-          </p>
-        </div>
-        <Badge className="w-fit border-zinc-800 bg-zinc-950/70 text-zinc-400">
-          {monthLabel(currentMonth)}
-        </Badge>
-      </div>
-    </section>
-  );
-}
-
-function RailMetric({
-  icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  tone: "indigo" | "emerald" | "red" | "zinc";
-}) {
-  return (
-    <div className="grid grid-cols-[auto_1fr] items-center gap-3 rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-2.5">
-      <div
-        className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-[10px]",
-          tone === "indigo" && "bg-indigo-500/15 text-indigo-300",
-          tone === "emerald" && "bg-emerald-500/15 text-emerald-300",
-          tone === "red" && "bg-red-500/15 text-red-300",
-          tone === "zinc" && "bg-zinc-900 text-zinc-300",
-        )}
-      >
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[11px] text-zinc-500">{label}</p>
-        <p className="mt-0.5 truncate text-base font-semibold tracking-normal text-zinc-50">
-          {value}
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -2680,7 +2524,7 @@ function MonthTransactionsCard({
                 isContribution
                   ? "Storting"
                   : isIncome
-                    ? category?.name ?? "Inkomsten"
+                    ? category?.name ?? "Inkomen"
                     : category?.name ?? "Onbekend";
               const metadata = [
                 transaction.type === "fixed" ? "Vaste last" : category?.name,
@@ -2741,7 +2585,7 @@ function MonthTransactionsCard({
                     <Button
                       size="icon"
                       variant="ghost"
-                      title="Verwijder afschrijving"
+                      title="Verwijder uitgave"
                       onClick={() => onDeleteTransaction(transaction)}
                       disabled={isDeleting}
                       className="h-8 w-8 text-[var(--text-muted)] hover:text-[var(--negative)]"
@@ -2758,7 +2602,7 @@ function MonthTransactionsCard({
             })}
             {hiddenCount > 0 && (
               <div className="px-4 py-3 text-xs text-[var(--text-muted)] sm:px-5">
-                Plus {hiddenCount} extra transacties in dit maandoverzicht.
+                Plus {hiddenCount} extra uitgaven in dit maandoverzicht.
               </div>
             )}
           </div>
@@ -2769,7 +2613,7 @@ function MonthTransactionsCard({
               compact ? "p-3" : "p-4",
             )}
           >
-            Nog geen transacties in {monthLabel(currentMonth)}.
+            Nog geen uitgaven in {monthLabel(currentMonth)}.
           </div>
         )}
       </CardContent>
@@ -2925,7 +2769,7 @@ function MonthInsightsSection({
             Maandinzichten
           </p>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            Transacties, verdeling en trend in een overzicht.
+            Uitgaven, verdeling en trend in een overzicht.
           </p>
         </div>
         <MonthNavigator
@@ -2970,11 +2814,13 @@ function ChartsPanel({
   selectedSixMonthTrend,
   chartsReady,
   featured = false,
+  showTrend = true,
 }: {
   categoryRows: ReturnType<typeof categoryTotals>;
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
   chartsReady: boolean;
   featured?: boolean;
+  showTrend?: boolean;
 }) {
   const totalCategories = categoryRows.reduce((total, row) => total + row.amount, 0);
   const hasCategoryData = totalCategories > 0;
@@ -2989,7 +2835,12 @@ function ChartsPanel({
   );
 
   return (
-    <section className={cn("grid gap-4", !featured && "lg:grid-cols-1 2xl:grid-cols-2")}>
+    <section
+      className={cn(
+        "grid gap-4",
+        showTrend && !featured && "lg:grid-cols-1 2xl:grid-cols-2",
+      )}
+    >
       <Card className="finance-card overflow-hidden">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-4">
@@ -3079,7 +2930,7 @@ function ChartsPanel({
             )}
             {!hasCategoryData && (
               <p className="rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-6 text-[var(--text-secondary)]">
-                Zodra er kosten staan, zie je hier direct welke categorieen de maand bepalen.
+                Zodra er uitgaven staan, zie je hier direct welke categorieen de maand bepalen.
               </p>
             )}
             {visibleCategoryRows.filter((row) => row.amount > 0).map((row) => {
@@ -3121,12 +2972,13 @@ function ChartsPanel({
         </CardContent>
       </Card>
 
+      {showTrend && (
       <Card className="finance-card overflow-hidden">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-4">
             <div>
               <CardTitle>Laatste 6 maanden</CardTitle>
-              <CardDescription>Vaste lasten en variabele kosten naast elkaar.</CardDescription>
+              <CardDescription>Vaste lasten en variabele uitgaven naast elkaar.</CardDescription>
             </div>
             <div className="hidden rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-right sm:block">
               <p className="text-[11px] text-[var(--text-muted)]">Deze maand</p>
@@ -3176,7 +3028,7 @@ function ChartsPanel({
                 </div>
               ))}
               <p className="text-xs text-[var(--text-secondary)]">
-                De trend wordt zichtbaar zodra er transacties in meerdere maanden staan.
+                De trend wordt zichtbaar zodra er uitgaven in meerdere maanden staan.
               </p>
             </div>
           )}
@@ -3192,6 +3044,7 @@ function ChartsPanel({
           </span>
         </div>
       </Card>
+      )}
     </section>
   );
 }
@@ -3289,7 +3142,7 @@ function FixedExpenseAgenda({
               </div>
               <p className="text-xs text-[var(--text-muted)]">
                 {timelineItems.length}{" "}
-                {timelineItems.length === 1 ? "afschrijving" : "afschrijvingen"}
+                {timelineItems.length === 1 ? "vaste last" : "vaste lasten"}
               </p>
             </div>
 
@@ -3336,7 +3189,7 @@ function UpcomingFixedExpensesCard({
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle>Komende afschrijvingen</CardTitle>
+            <CardTitle>Komende vaste lasten</CardTitle>
             <CardDescription>
               Eerstvolgende vaste lasten op de gezamenlijke rekening.
             </CardDescription>
@@ -3358,7 +3211,7 @@ function UpcomingFixedExpensesCard({
 
         {upcomingItems.length === 0 ? (
           <div className="rounded-[14px] border border-dashed border-[var(--border)] bg-black/10 p-4 text-sm leading-6 text-[var(--text-secondary)]">
-            Geen komende afschrijvingen. Voeg vaste lasten toe bij Vaste lasten;
+            Geen komende vaste lasten. Voeg vaste lasten toe bij Vaste lasten;
             daarna verschijnen ze hier automatisch.
           </div>
         ) : (
@@ -3446,7 +3299,7 @@ function FixedExpenseCalendar({
         <div>
           <p className="text-sm font-medium text-[var(--text-primary)]">Kalender</p>
           <p className="text-xs text-[var(--text-secondary)]">
-            Afschrijvingen per dag
+            Vaste lasten per dag
           </p>
         </div>
         <Badge className="border-[var(--border)] bg-[var(--accent-light)] text-[var(--accent)]">
@@ -3681,6 +3534,7 @@ function FixedExpenseManager({
   onDelete: (expense: RecurringExpense) => void;
   onCancel: () => void;
 }) {
+  const [isManagerOpen, setIsManagerOpen] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const activeExpenses = expenses
     .filter((expense) => expense.isActive)
@@ -3693,6 +3547,7 @@ function FixedExpenseManager({
       );
     });
   const formTitle = editingId ? "Vaste last wijzigen" : "Nieuwe vaste last";
+  const showManager = Boolean(editingId) || isManagerOpen;
   const showForm = Boolean(editingId) || isFormOpen;
   const monthlyTotal = activeExpenses.reduce(
     (total, expense) => total + expense.currentAmount,
@@ -3705,16 +3560,32 @@ function FixedExpenseManager({
         <div>
           <CardTitle>Vaste lasten</CardTitle>
           <CardDescription>
-            Terugkerende afschrijvingen op {accountName}.
+            Terugkerende vaste lasten op {accountName}.
           </CardDescription>
         </div>
-        {editingId && (
-          <Button size="sm" variant="secondary" onClick={onCancel}>
-            <X className="h-4 w-4" />
-            Annuleer
+        <div className="flex items-center gap-2">
+          {editingId && (
+            <Button size="sm" variant="secondary" onClick={onCancel}>
+              <X className="h-4 w-4" />
+              Annuleer
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setIsManagerOpen((open) => !open)}
+          >
+            <Plus
+              className={cn(
+                "h-4 w-4 transition",
+                showManager && "rotate-45",
+              )}
+            />
+            {showManager ? "Sluiten" : "Beheren"}
           </Button>
-        )}
+        </div>
       </CardHeader>
+      {showManager && (
       <CardContent className="space-y-5">
         {message && (
           <div
@@ -3854,6 +3725,7 @@ function FixedExpenseManager({
           )}
         </div>
       </CardContent>
+      )}
     </Card>
   );
 }
@@ -3874,8 +3746,8 @@ function PersonCostInsight({
     1,
   );
   const title = isSharedView
-    ? "Gezamenlijke kosten per persoon"
-    : "Mijn toegevoegde kosten";
+    ? "Gezamenlijke uitgaven per persoon"
+    : "Mijn toegevoegde uitgaven";
   const description = isSharedView
     ? "Wie voegde deze maand welke gezamenlijke uitgaven toe."
     : "Prive-uitgaven op deze rekening, uitgesplitst waar mogelijk.";
@@ -3936,7 +3808,7 @@ function PersonCostInsight({
         <div className="space-y-2">
           {categoryRows.length === 0 && (
             <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-              Nog geen variabele kosten om te verdelen.
+              Nog geen variabele uitgaven om te verdelen.
             </p>
           )}
 
@@ -4083,10 +3955,6 @@ function FieldLabel({
 function AccountBalanceCard({
   accountName,
   snapshot,
-  calculatedBalance,
-  expectedMonthEndBalance,
-  expectedIncomeTotal,
-  expenseTotal,
   balanceAmount,
   balanceDate,
   balanceMessage,
@@ -4098,7 +3966,6 @@ function AccountBalanceCard({
   incomeMessage,
   isSavingIncome,
   showIncomeForm,
-  incomingLabel,
   onBalanceAmountChange,
   onBalanceDateChange,
   onSaveBalance,
@@ -4110,10 +3977,6 @@ function AccountBalanceCard({
 }: {
   accountName: string;
   snapshot?: AccountBalanceSnapshot;
-  calculatedBalance: number | null;
-  expectedMonthEndBalance: number | null;
-  expectedIncomeTotal: number;
-  expenseTotal: number;
   balanceAmount: string;
   balanceDate: string;
   balanceMessage: string;
@@ -4125,7 +3988,6 @@ function AccountBalanceCard({
   incomeMessage: string;
   isSavingIncome: boolean;
   showIncomeForm: boolean;
-  incomingLabel: string;
   onBalanceAmountChange: (value: string) => void;
   onBalanceDateChange: (value: string) => void;
   onSaveBalance: () => void;
@@ -4142,35 +4004,6 @@ function AccountBalanceCard({
         <CardDescription>{accountName}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          <ContributionStat
-            label="Berekend nu"
-            value={
-              calculatedBalance === null ? "Nog geen saldo" : currency(calculatedBalance)
-            }
-            tone={calculatedBalance === null ? "zinc" : "indigo"}
-          />
-          <ContributionStat
-            label="Eind maand"
-            value={
-              expectedMonthEndBalance === null
-                ? "Nog geen saldo"
-                : currency(expectedMonthEndBalance)
-            }
-            tone={
-              expectedMonthEndBalance !== null && expectedMonthEndBalance < 0
-                ? "red"
-                : "emerald"
-            }
-          />
-          <ContributionStat label={incomingLabel} value={currency(expectedIncomeTotal)} />
-          <ContributionStat
-            label="Uitgaven"
-            value={currency(expenseTotal)}
-            tone={expenseTotal > expectedIncomeTotal ? "red" : "zinc"}
-          />
-        </div>
-
         <div className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -4237,7 +4070,7 @@ function AccountBalanceCard({
         {showIncomeForm && (
           <details className="group rounded-[14px] border border-emerald-400/15 bg-emerald-500/5">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-emerald-100">
-              Salaris / inkomsten
+              Inkomen
               <Plus className="h-4 w-4 text-emerald-300 transition group-open:rotate-45" />
             </summary>
             <div className="grid gap-2 border-t border-emerald-400/10 p-3">
@@ -4256,7 +4089,7 @@ function AccountBalanceCard({
                     onIncomeKindChange(event.target.value as "salary" | "extra")
                   }
                 >
-                  <option value="salary">Salaris</option>
+                  <option value="salary">Vast inkomen</option>
                   <option value="extra">Extra</option>
                 </Select>
               </div>
@@ -4302,15 +4135,13 @@ function AccountBalanceCard({
   );
 }
 
-function BankAppsCard(_props: {
-  onOpenBank: (bank: BankLauncherState) => void;
-}) {
+function BankAppsCard() {
   return (
     <Card className="finance-card hidden lg:block">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Bankieren</CardTitle>
         <CardDescription>
-          Open je bankwebsite om saldo of afschrijvingen te controleren.
+          Open je bankwebsite om saldo of vaste lasten te controleren.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -4541,83 +4372,6 @@ function ExportDialog({
             </Button>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function BankLauncherDialog({
-  bank,
-  onClose,
-}: {
-  bank: BankLauncherState;
-  onClose: () => void;
-}) {
-  function openBankApp() {
-    const isAndroid =
-      typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
-    const targetUrl = isAndroid ? bank.androidIntentUrl : bank.appUrl;
-
-    window.location.href = targetUrl;
-  }
-
-  return (
-    <div className="fixed inset-0 z-[60] grid place-items-end bg-black/70 p-3 backdrop-blur-xl sm:place-items-center sm:p-6">
-      <div className="w-full max-w-sm rounded-[24px] border border-[var(--border-strong)] bg-[var(--bg-card)] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.42)]">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <span
-              className={cn(
-                "flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] text-xs font-bold tracking-normal shadow-[0_10px_28px_rgba(0,0,0,0.24)]",
-                bank.badgeClass,
-              )}
-            >
-              {bank.badge}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-base font-semibold text-[var(--text-primary)]">
-                {bank.label} openen
-              </p>
-              <p className="mt-1 text-sm leading-5 text-[var(--text-secondary)]">
-                We proberen de bankapp op je telefoon te openen.
-              </p>
-            </div>
-          </div>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onClose}
-            title="Sluiten"
-            className="h-8 w-8 shrink-0 text-[var(--text-secondary)]"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <div className="mt-4 grid gap-2">
-          <Button
-            type="button"
-            onClick={openBankApp}
-            className="accent-glow-hover h-12 justify-center rounded-[var(--radius-btn)] bg-[var(--accent)] text-sm font-semibold text-white hover:bg-[var(--accent)]"
-          >
-            <Smartphone className="h-4 w-4" />
-            Open app
-          </Button>
-          <a
-            href={bank.webUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-[var(--radius-btn)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
-          >
-            <Globe className="h-4 w-4" />
-            Open website
-          </a>
-        </div>
-
-        <p className="mt-3 text-xs leading-5 text-[var(--text-muted)]">
-          Als je telefoon vraagt of de app geopend mag worden, kies Open. Lukt
-          dat niet, gebruik dan de websiteknop.
-        </p>
       </div>
     </div>
   );
@@ -5160,44 +4914,10 @@ function QuickEntryCard({
         <div className="sticky bottom-3 z-10 flex justify-end pt-2 sm:static">
           <Button className="accent-glow-hover h-14 w-full text-base font-semibold sm:h-11 sm:w-auto sm:text-sm" onClick={onSubmit}>
             <Plus className="h-5 w-5" />
-            Afschrijving toevoegen
+            Uitgave toevoegen
           </Button>
         </div>
       </CardContent>
-    </Card>
-  );
-}
-
-function MetricCard({
-  icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  tone: "indigo" | "emerald" | "red" | "zinc";
-}) {
-  return (
-    <Card className="grid grid-cols-[auto_1fr] items-center gap-3 p-3 sm:p-4">
-      <div
-        className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-[12px]",
-          tone === "indigo" && "bg-indigo-500/15 text-indigo-300",
-          tone === "emerald" && "bg-emerald-500/15 text-emerald-300",
-          tone === "red" && "bg-red-500/15 text-red-300",
-          tone === "zinc" && "bg-zinc-900 text-zinc-300",
-        )}
-      >
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs text-zinc-500">{label}</p>
-        <p className="mt-0.5 truncate text-xl font-semibold tracking-normal text-zinc-50">
-          {value}
-        </p>
-      </div>
     </Card>
   );
 }
