@@ -5,6 +5,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 type RecurringExpenseBody = {
   id?: string | null;
   householdId?: string;
+  accountId?: string;
   name?: string;
   categoryId?: string;
   currentAmount?: number;
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
     .from("recurring_expenses")
     .insert({
       household_id: body.householdId!,
+      account_id: body.accountId ?? null,
       name: body.name!.trim(),
       category_id: body.categoryId!,
       current_amount: Number(body.currentAmount),
@@ -389,6 +391,7 @@ async function updatePendingCurrentInstance(
 
 function mapRecurringExpense(row: {
   id: string;
+  account_id: string | null;
   name: string;
   category_id: string;
   current_amount: number;
@@ -398,6 +401,7 @@ function mapRecurringExpense(row: {
 }): RecurringExpense {
   return {
     id: row.id,
+    accountId: row.account_id ?? undefined,
     name: row.name,
     categoryId: row.category_id,
     currentAmount: Number(row.current_amount),

@@ -337,6 +337,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const selectedAccount = accountsById.get(selectedAccountId);
   const isSharedView = selectedAccount?.kind === "shared";
   const mobileChartsReady = chartsReady && !isDesktopViewport;
+
   const latestBalanceSnapshot = useMemo(
     () =>
       balanceSnapshots
@@ -407,6 +408,25 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .filter((transaction) => transaction.date.startsWith(currentMonth))
         .sort((a, b) => b.date.localeCompare(a.date)),
     [currentMonth, selectedTransactions],
+  );
+  const selectedRecurringExpenses = useMemo(
+    () =>
+      recurringExpenses.filter(
+        (expense) =>
+          (expense.accountId ?? defaultAccount?.id) === selectedAccountId,
+      ),
+    [defaultAccount?.id, recurringExpenses, selectedAccountId],
+  );
+  const selectedRecurringExpenseIds = useMemo(
+    () => new Set(selectedRecurringExpenses.map((expense) => expense.id)),
+    [selectedRecurringExpenses],
+  );
+  const selectedFixedInstances = useMemo(
+    () =>
+      fixedInstances.filter((instance) =>
+        selectedRecurringExpenseIds.has(instance.recurringExpenseId),
+      ),
+    [fixedInstances, selectedRecurringExpenseIds],
   );
   const incomeTransactions = monthTransactions.filter(
     (transaction) => transaction.type === "income",
@@ -479,12 +499,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const fixedAgendaItems = useMemo(
     () =>
       buildFixedAgendaItems(
-        recurringExpenses,
-        fixedInstances,
+        selectedRecurringExpenses,
+        selectedFixedInstances,
         currentMonth,
         labels,
       ),
-    [currentMonth, fixedInstances, labels, recurringExpenses],
+    [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
   );
   const openFixedAgendaItems = fixedAgendaItems.filter(
     (item) =>
@@ -1083,6 +1103,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const amount = parseCurrencyInput(recurringAmount);
     const billingDay = Number(recurringBillingDay);
 
+    if (!selectedAccount) {
+      setManageMessage("Kies een rekening voor deze vaste last.");
+      return;
+    }
+
     if (
       !recurringName.trim() ||
       !recurringCategory ||
@@ -1109,6 +1134,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       body: JSON.stringify({
         id: editingRecurringId,
         householdId: initialData.householdId,
+        accountId: selectedAccount.id,
         name: recurringName.trim(),
         categoryId: recurringCategory,
         currentAmount: amount,
@@ -1383,12 +1409,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     <main className="min-h-dvh bg-[var(--bg-base)] pb-[calc(96px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
       <div className="mx-auto w-full max-w-[1800px] px-4 py-4 sm:px-6 lg:px-8 2xl:px-10">
         <MobileBottomNav
-        activeSection={activeSection}
-        onSectionChange={(section) => {
-          setActiveSection(section);
-          window.scrollTo({ top: 0, behavior: "auto" });
-        }}
-      />
+          activeSection={activeSection}
+          onSectionChange={(section) => {
+            setActiveSection(section);
+            window.scrollTo({ top: 0, behavior: "auto" });
+          }}
+        />
 
         <section
           className={cn(
@@ -1458,47 +1484,36 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           )}
         >
           <MobileSectionHeader title="Vaste lasten" subtitle={monthLabel(currentMonth)} />
-          {isSharedView ? (
-            <>
-              <FixedExpenseManager
-                expenses={recurringExpenses}
-                categories={fixedCategories}
-                labels={labels}
-                name={recurringName}
-                amount={recurringAmount}
-                billingDay={recurringBillingDay}
-                startsOn={recurringStartsOn}
-                category={recurringCategory}
-                editingId={editingRecurringId}
-                highlightedId={highlightedRecurringId}
-                message={manageMessage}
-                isSaving={isSavingRecurring}
-                onNameChange={setRecurringName}
-                onAmountChange={setRecurringAmount}
-                onBillingDayChange={setRecurringBillingDay}
-                onStartsOnChange={setRecurringStartsOn}
-                onCategoryChange={setRecurringCategory}
-                onSave={saveRecurringExpense}
-                onEdit={startEditingRecurring}
-                onDelete={deleteRecurringExpense}
-                onCancel={resetRecurringForm}
-              />
-              <FixedExpenseAgenda
-                items={fixedAgendaItems}
-                currentMonth={currentMonth}
-                message={fixedMessage}
-                highlightedId={highlightedFixedInstanceId}
-              />
-            </>
-          ) : (
-            <Card>
-              <CardContent>
-                <p className="text-sm text-[var(--text-secondary)]">
-                  Vaste lasten horen bij de gezamenlijke rekening.
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          <FixedExpenseManager
+            expenses={selectedRecurringExpenses}
+            categories={fixedCategories}
+            labels={labels}
+            accountName={selectedAccount?.name ?? viewCopy.label}
+            name={recurringName}
+            amount={recurringAmount}
+            billingDay={recurringBillingDay}
+            startsOn={recurringStartsOn}
+            category={recurringCategory}
+            editingId={editingRecurringId}
+            highlightedId={highlightedRecurringId}
+            message={manageMessage}
+            isSaving={isSavingRecurring}
+            onNameChange={setRecurringName}
+            onAmountChange={setRecurringAmount}
+            onBillingDayChange={setRecurringBillingDay}
+            onStartsOnChange={setRecurringStartsOn}
+            onCategoryChange={setRecurringCategory}
+            onSave={saveRecurringExpense}
+            onEdit={startEditingRecurring}
+            onDelete={deleteRecurringExpense}
+            onCancel={resetRecurringForm}
+          />
+          <FixedExpenseAgenda
+            items={fixedAgendaItems}
+            currentMonth={currentMonth}
+            message={fixedMessage}
+            highlightedId={highlightedFixedInstanceId}
+          />
         </section>
 
         <section
@@ -1615,39 +1630,38 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               />
             )}
 
-            {isSharedView && (
-              <section id="finance-fixed" className="scroll-mt-4 grid gap-4">
-                <FixedExpenseAgenda
-                  items={fixedAgendaItems}
-                  currentMonth={currentMonth}
-                  message={fixedMessage}
-                  highlightedId={highlightedFixedInstanceId}
-                />
-                <FixedExpenseManager
-                  expenses={recurringExpenses}
-                  categories={fixedCategories}
-                  labels={labels}
-                  name={recurringName}
-                  amount={recurringAmount}
-                  billingDay={recurringBillingDay}
-                  startsOn={recurringStartsOn}
-                  category={recurringCategory}
-                  editingId={editingRecurringId}
-                  highlightedId={highlightedRecurringId}
-                  message={manageMessage}
-                  isSaving={isSavingRecurring}
-                  onNameChange={setRecurringName}
-                  onAmountChange={setRecurringAmount}
-                  onBillingDayChange={setRecurringBillingDay}
-                  onStartsOnChange={setRecurringStartsOn}
-                  onCategoryChange={setRecurringCategory}
-                  onSave={saveRecurringExpense}
-                  onEdit={startEditingRecurring}
-                  onDelete={deleteRecurringExpense}
-                  onCancel={resetRecurringForm}
-                />
-              </section>
-            )}
+            <section id="finance-fixed" className="scroll-mt-4 grid gap-4">
+              <FixedExpenseAgenda
+                items={fixedAgendaItems}
+                currentMonth={currentMonth}
+                message={fixedMessage}
+                highlightedId={highlightedFixedInstanceId}
+              />
+              <FixedExpenseManager
+                expenses={selectedRecurringExpenses}
+                categories={fixedCategories}
+                labels={labels}
+                accountName={selectedAccount?.name ?? viewCopy.label}
+                name={recurringName}
+                amount={recurringAmount}
+                billingDay={recurringBillingDay}
+                startsOn={recurringStartsOn}
+                category={recurringCategory}
+                editingId={editingRecurringId}
+                highlightedId={highlightedRecurringId}
+                message={manageMessage}
+                isSaving={isSavingRecurring}
+                onNameChange={setRecurringName}
+                onAmountChange={setRecurringAmount}
+                onBillingDayChange={setRecurringBillingDay}
+                onStartsOnChange={setRecurringStartsOn}
+                onCategoryChange={setRecurringCategory}
+                onSave={saveRecurringExpense}
+                onEdit={startEditingRecurring}
+                onDelete={deleteRecurringExpense}
+                onCancel={resetRecurringForm}
+              />
+            </section>
           </section>
 
           <aside
@@ -1997,7 +2011,9 @@ function AccountRail({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   onSectionChange(item.id);
-                  scrollToFinanceSection(item.id);
+                  window.requestAnimationFrame(() => {
+                    scrollToFinanceSection(item.id);
+                  });
                 }}
                 className={cn(
                   "flex items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-medium",
@@ -3144,6 +3160,7 @@ function FixedExpenseManager({
   expenses,
   categories,
   labels,
+  accountName,
   name,
   amount,
   billingDay,
@@ -3166,6 +3183,7 @@ function FixedExpenseManager({
   expenses: RecurringExpense[];
   categories: DashboardData["categories"];
   labels: Map<string, DashboardData["categories"][number]>;
+  accountName: string;
   name: string;
   amount: string;
   billingDay: string;
@@ -3207,7 +3225,7 @@ function FixedExpenseManager({
         <div>
           <CardTitle>Vaste lasten</CardTitle>
           <CardDescription>
-            Terugkerende afschrijvingen op de gezamenlijke rekening.
+            Terugkerende afschrijvingen op {accountName}.
           </CardDescription>
         </div>
         {editingId && (
