@@ -8,7 +8,6 @@ import {
   Camera,
   CalendarDays,
   Car,
-  Check,
   FileSpreadsheet,
   Fuel,
   ListChecks,
@@ -330,14 +329,30 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   );
 
   async function addVariableExpense() {
-    const amount = Number(quickAmount);
-    const liters = Number(fuelLiters);
+    const amount = parseCurrencyInput(quickAmount);
+    const liters = parseCurrencyInput(fuelLiters);
     const isFuel = labels.get(quickCategory)?.name === "Tanken";
     const selectedAccount = accountsById.get(quickAccount) ?? defaultAccount;
 
-    if (!amount || amount <= 0) return;
-    if (!selectedAccount) return;
-    if (isFuel && (!liters || liters <= 0)) return;
+    if (!amount || amount <= 0) {
+      setScanMessage("Vul een geldig bedrag in.");
+      return;
+    }
+
+    if (!quickCategory) {
+      setScanMessage("Kies een categorie.");
+      return;
+    }
+
+    if (!selectedAccount) {
+      setScanMessage("Kies een rekening.");
+      return;
+    }
+
+    if (isFuel && (!liters || liters <= 0)) {
+      setScanMessage("Vul liters in, of kies een andere categorie.");
+      return;
+    }
 
     const response = await fetch("/api/transactions", {
       method: "POST",
@@ -395,7 +410,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setQuickAmount("");
     setQuickNote("");
     setFuelLiters("");
-    setScanMessage("");
+    setScanMessage("Afschrijving toegevoegd.");
     setReceiptDraft(null);
   }
 
@@ -566,15 +581,30 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         return;
       }
 
-      setReceiptDraft({
+      const draft = {
         amount: typeof result.amount === "number" ? result.amount : null,
         date: typeof result.date === "string" ? result.date : null,
         merchant:
           typeof result.merchant === "string" && result.merchant.trim()
             ? result.merchant.trim()
             : null,
-      });
-      setScanMessage("Bon gelezen. Controleer het concept voordat je hem overneemt.");
+      };
+
+      setReceiptDraft(draft);
+
+      if (typeof draft.amount === "number") {
+        setQuickAmount(draft.amount.toFixed(2));
+      }
+
+      if (draft.date) {
+        setQuickDate(draft.date);
+      }
+
+      if (draft.merchant) {
+        setQuickNote(draft.merchant);
+      }
+
+      setScanMessage("Bon gelezen. Controleer, kies categorie en sla op.");
     } catch {
       setScanMessage(
         "Deze bon kon niet gelezen worden. Je kunt handmatig verder.",
@@ -584,28 +614,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
   }
 
-  function applyReceiptDraft() {
-    if (!receiptDraft) return;
-
-    if (typeof receiptDraft.amount === "number") {
-      setQuickAmount(receiptDraft.amount.toFixed(2));
-    }
-
-    if (receiptDraft.date) {
-      setQuickDate(receiptDraft.date);
-    }
-
-    if (receiptDraft.merchant) {
-      setQuickNote(receiptDraft.merchant);
-    }
-
-    setReceiptDraft(null);
-    setScanMessage("Gegevens overgenomen. Kies categorie en sla op.");
-  }
-
   function dismissReceiptDraft() {
     setReceiptDraft(null);
-    setScanMessage("Concept genegeerd. Je kunt handmatig verder.");
+    setScanMessage("Scan verborgen. De ingevulde gegevens blijven staan.");
   }
 
   async function deleteTransaction(transaction: Transaction) {
@@ -770,7 +781,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   async function deleteRecurringExpense(expense: RecurringExpense) {
     const confirmed = window.confirm(
-      `${expense.name} verwijderen vanaf nu?\n\nHistorische maanden blijven bewaard.`,
+      `${expense.name} definitief uit vaste lasten verwijderen?\n\nHistorische transacties blijven bewaard.`,
     );
 
     if (!confirmed) return;
@@ -801,27 +812,29 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       return;
     }
 
-    const recurringExpense = result.recurringExpense as RecurringExpense;
     const removedInstanceIds = Array.isArray(result.removedInstanceIds)
       ? (result.removedInstanceIds as string[])
       : [];
 
     setRecurringExpenses((items) =>
-      items.map((item) =>
-        item.id === recurringExpense.id ? recurringExpense : item,
-      ),
+      items.filter((item) => item.id !== expense.id),
     );
     setFixedInstances((items) =>
-      items.filter((item) => !removedInstanceIds.includes(item.id)),
+      items.filter(
+        (item) =>
+          item.recurringExpenseId !== expense.id &&
+          !removedInstanceIds.includes(item.id),
+      ),
     );
 
     if (editingRecurringId === expense.id) {
       resetRecurringForm();
     }
 
-    setHighlightedRecurringId(recurringExpense.id);
-    setFixedMessage(`${recurringExpense.name} staat niet meer in de agenda.`);
-    setManageMessage(`${recurringExpense.name} is verwijderd vanaf nu.`);
+    setHighlightedRecurringId(null);
+    setHighlightedFixedInstanceId(null);
+    setFixedMessage(`${expense.name} staat niet meer in de agenda.`);
+    setManageMessage(`${expense.name} is verwijderd uit vaste lasten.`);
   }
 
   function exportExcel() {
@@ -1012,7 +1025,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             scanMessage={scanMessage}
             receiptDraft={receiptDraft}
             onScanReceipt={scanReceipt}
-            onApplyReceiptDraft={applyReceiptDraft}
             onDismissReceiptDraft={dismissReceiptDraft}
             categories={initialData.categories}
             accounts={initialData.accounts}
@@ -1610,6 +1622,15 @@ function FixedExpenseManager({
         )}
       </CardHeader>
       <CardContent className="space-y-5">
+        {message && (
+          <div
+            className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300"
+            aria-live="polite"
+          >
+            {message}
+          </div>
+        )}
+
         <div className="rounded-[16px] border border-zinc-800 bg-zinc-950/35 p-4">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
@@ -1712,16 +1733,6 @@ function FixedExpenseManager({
                 />
               </FieldLabel>
             </div>
-
-            {message && (
-              <div
-                className="flex items-start gap-2 rounded-[12px] border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-200"
-                aria-live="polite"
-              >
-                <Check className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>{message}</p>
-              </div>
-            )}
 
             <Button className="w-full sm:w-auto" onClick={onSave} disabled={isSaving}>
               {isSaving ? (
@@ -2204,7 +2215,6 @@ function QuickEntryCard({
   scanMessage,
   receiptDraft,
   onScanReceipt,
-  onApplyReceiptDraft,
   onDismissReceiptDraft,
   onSubmit,
 }: {
@@ -2228,7 +2238,6 @@ function QuickEntryCard({
   scanMessage: string;
   receiptDraft: ReceiptDraft | null;
   onScanReceipt: (file: File) => void;
-  onApplyReceiptDraft: () => void;
   onDismissReceiptDraft: () => void;
   onSubmit: () => void;
 }) {
@@ -2291,10 +2300,10 @@ function QuickEntryCard({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-zinc-50">
-                  Concept bon
+                  Bon overgenomen
                 </p>
                 <p className="mt-0.5 text-xs text-zinc-400">
-                  Controleer, kies straks zelf de categorie.
+                  Controleer de velden, kies categorie en sla op.
                 </p>
               </div>
               <Badge className="border-indigo-400/25 bg-indigo-500/15 text-indigo-100">
@@ -2319,7 +2328,7 @@ function QuickEntryCard({
                 value={receiptDraft.merchant ?? "onduidelijk"}
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex justify-end">
               <Button
                 size="sm"
                 variant="secondary"
@@ -2327,15 +2336,7 @@ function QuickEntryCard({
                 className="h-10"
               >
                 <X className="h-4 w-4" />
-                Negeren
-              </Button>
-              <Button
-                size="sm"
-                onClick={onApplyReceiptDraft}
-                className="h-10"
-              >
-                <Check className="h-4 w-4" />
-                Overnemen
+                Verberg scan
               </Button>
             </div>
           </div>
@@ -2344,6 +2345,7 @@ function QuickEntryCard({
         <div className="grid grid-cols-3 gap-2">
           {variableCategories.map((item) => (
             <button
+              type="button"
               key={item.id}
               className={cn(
                 "flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-[13px] border border-zinc-800 bg-zinc-950/45 p-2 text-xs font-medium text-zinc-400 transition sm:min-h-14",

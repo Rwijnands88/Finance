@@ -114,9 +114,9 @@ concept/bevestig-flow.
 - [x] Tanken-flow behouden met liters en auto.
 - [x] Duidelijke concept/bevestig-flow voor gescande bonnen.
 
-**Status:** Fase 5 is afgerond voor de bestaande scanner-scope. Een scan komt
-eerst als conceptkaart terug; pas na "Overnemen" worden bedrag, datum en winkel
-in het invoerformulier gezet.
+**Status:** Fase 5 is afgerond voor de bestaande scanner-scope. Een scan vult
+bedrag, datum en winkel direct in als concept; daarna kiest de gebruiker zelf
+de categorie en bevestigt met "Afschrijving toevoegen".
 
 #### Fase 6 - Rapportage en polish
 

@@ -200,7 +200,14 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  const { data: removedInstances } = await supabase
+  if (recurringExpense.is_active) {
+    return NextResponse.json(
+      { error: "Vaste last kon niet worden verwijderd." },
+      { status: 400 },
+    );
+  }
+
+  const { data: removedInstances, error: instancesError } = await supabase
     .from("fixed_expense_instances")
     .delete()
     .eq("recurring_expense_id", body.id)
@@ -208,8 +215,13 @@ export async function DELETE(request: Request) {
     .gte("month", currentMonthStart())
     .select("id");
 
+  if (instancesError) {
+    return NextResponse.json({ error: instancesError.message }, { status: 400 });
+  }
+
   return NextResponse.json({
     recurringExpense: mapRecurringExpense(recurringExpense),
+    removedRecurringExpenseId: body.id,
     removedInstanceIds: (removedInstances ?? []).map((item) => item.id),
   });
 }
