@@ -42,7 +42,7 @@ export type FixedExpenseInstance = {
 
 export type Transaction = {
   id: string;
-  type: "fixed" | "variable";
+  type: "fixed" | "variable" | "contribution";
   accountId?: string;
   accountName?: string;
   accountKind?: Account["kind"];
@@ -79,12 +79,16 @@ export type DashboardData = {
     month: string;
     fixed: number;
     variable: number;
+    contribution?: number;
   }>;
 };
 
 export type MonthSummary = {
   month: string;
+  contributionTotal: number;
   fixedTotal: number;
   variableTotal: number;
+  expenseTotal: number;
+  netTotal: number;
   total: number;
 };

@@ -95,11 +95,12 @@ inleg en cashflow.
 
 Startpunt na afronding van Fase 3.
 
-- [ ] Inleg/stortingen toevoegen voor Ralph en Dorine.
-- [ ] Inleg als apart type behandelen, niet als gewone uitgave.
-- [ ] Gezamenlijke maandcashflow tonen: inleg - vaste lasten - variabel = over/tekort.
+- [x] Supabase voorbereiden: transactietype `contribution` en categorie `Inleg`.
+- [x] Inleg/stortingen toevoegen voor Ralph en Dorine via de gezamenlijke view.
+- [x] Inleg als apart type behandelen, niet als gewone uitgave.
+- [x] Gezamenlijke maandcashflow tonen: inleg - vaste lasten - variabel = over/tekort.
 - [ ] Maandelijkse standaardinleg kunnen instellen.
-- [ ] Historie van inleg tonen in maandrapport.
+- [x] Historie van inleg tonen in maandrapport.
 
 #### Fase 5 - Mobiele invoer en scanner
 

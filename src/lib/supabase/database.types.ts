@@ -236,7 +236,7 @@ export type Database = {
           category_id: string;
           amount: number;
           transaction_date: string;
-          type: "fixed" | "variable";
+          type: "fixed" | "variable" | "contribution";
           note: string | null;
           entered_by: string;
           created_at: string;
@@ -250,7 +250,7 @@ export type Database = {
           category_id: string;
           amount: number;
           transaction_date: string;
-          type: "fixed" | "variable";
+          type: "fixed" | "variable" | "contribution";
           note?: string | null;
           entered_by: string;
           created_at?: string;

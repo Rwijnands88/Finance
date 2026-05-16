@@ -9,6 +9,7 @@ type CreateTransactionBody = {
   amount?: number;
   date?: string;
   note?: string | null;
+  type?: "variable" | "contribution";
   fuel?: {
     vehicleId?: string;
     vehicleName?: string;
@@ -23,10 +24,24 @@ type DeleteTransactionBody = {
 export async function POST(request: Request) {
   const body = (await request.json()) as CreateTransactionBody;
   const amount = Number(body.amount);
+  const transactionType = body.type ?? "variable";
 
-  if (!body.householdId || !body.categoryId || !body.date || !amount || amount <= 0) {
+  if (
+    !body.householdId ||
+    !body.date ||
+    !amount ||
+    amount <= 0 ||
+    (transactionType === "variable" && !body.categoryId)
+  ) {
     return NextResponse.json(
       { error: "Vul bedrag, categorie en datum in." },
+      { status: 400 },
+    );
+  }
+
+  if (!["variable", "contribution"].includes(transactionType)) {
+    return NextResponse.json(
+      { error: "Transactietype is ongeldig." },
       { status: 400 },
     );
   }
@@ -45,19 +60,40 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
   }
 
+  let categoryId = body.categoryId!;
+
+  if (transactionType === "contribution") {
+    try {
+      categoryId = await getOrCreateContributionCategory(
+        supabase,
+        body.householdId,
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Inlegcategorie kon niet worden gemaakt.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   const { data: transaction, error: transactionError } = await supabase
     .from("transactions")
     .insert({
       household_id: body.householdId,
       account_id: body.accountId || null,
-      category_id: body.categoryId,
+      category_id: categoryId,
       amount,
       transaction_date: body.date,
-      type: "variable",
+      type: transactionType,
       note: body.note || null,
       entered_by: user.id,
     })
-    .select("id, account_id")
+    .select("id, account_id, category_id, type")
     .single();
 
   if (transactionError) {
@@ -67,7 +103,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (body.fuel?.vehicleId && body.fuel.liters) {
+  if (transactionType === "variable" && body.fuel?.vehicleId && body.fuel.liters) {
     const { error: fuelError } = await supabase.from("fuel_details").insert({
       transaction_id: transaction.id,
       vehicle_id: body.fuel.vehicleId,
@@ -83,9 +119,49 @@ export async function POST(request: Request) {
     transaction: {
       id: transaction.id,
       accountId: transaction.account_id,
+      categoryId: transaction.category_id,
+      type: transaction.type,
       enteredBy: user.id,
     },
   });
+}
+
+async function getOrCreateContributionCategory(
+  supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>,
+  householdId: string,
+) {
+  const { data: existingCategory, error: existingError } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("household_id", householdId)
+    .eq("name", "Inleg")
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  if (existingCategory) {
+    return existingCategory.id;
+  }
+
+  const { data: category, error } = await supabase
+    .from("categories")
+    .insert({
+      household_id: householdId,
+      name: "Inleg",
+      kind: "variable",
+      color: "#34D399",
+      sort_order: 115,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return category.id;
 }
 
 export async function DELETE(request: Request) {

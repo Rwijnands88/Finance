@@ -19,12 +19,21 @@ export function totalsForMonth(transactions: Transaction[], month: string) {
       .filter((transaction) => transaction.type === "variable")
       .map((transaction) => transaction.amount),
   );
+  const contributionTotal = sum(
+    monthTransactions
+      .filter((transaction) => transaction.type === "contribution")
+      .map((transaction) => transaction.amount),
+  );
+  const expenseTotal = fixedTotal + variableTotal;
 
   return {
     month,
+    contributionTotal,
     fixedTotal,
     variableTotal,
-    total: fixedTotal + variableTotal,
+    expenseTotal,
+    netTotal: contributionTotal - expenseTotal,
+    total: expenseTotal,
   };
 }
 
@@ -37,7 +46,11 @@ export function categoryTotals(
   const grouped = new Map<string, number>();
 
   transactions
-    .filter((transaction) => transaction.date.startsWith(month))
+    .filter(
+      (transaction) =>
+        transaction.date.startsWith(month) &&
+        transaction.type !== "contribution",
+    )
     .forEach((transaction) => {
       grouped.set(
         transaction.categoryId,
@@ -62,7 +75,11 @@ export function categoryTotals(
 
 export function totalsByPerson(transactions: Transaction[], month: string) {
   return transactions
-    .filter((transaction) => transaction.date.startsWith(month))
+    .filter(
+      (transaction) =>
+        transaction.date.startsWith(month) &&
+        transaction.type !== "contribution",
+    )
     .reduce(
       (result, transaction) => {
         result[transaction.enteredBy] =
@@ -133,6 +150,11 @@ export function sixMonthTrend(transactions: Transaction[], currentMonth: string)
       variable: sum(
         monthTransactions
           .filter((transaction) => transaction.type === "variable")
+          .map((transaction) => transaction.amount),
+      ),
+      contribution: sum(
+        monthTransactions
+          .filter((transaction) => transaction.type === "contribution")
           .map((transaction) => transaction.amount),
       ),
     };

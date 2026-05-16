@@ -11,7 +11,6 @@ import {
   Check,
   FileSpreadsheet,
   Fuel,
-  Landmark,
   ListChecks,
   LoaderCircle,
   LogOut,
@@ -79,7 +78,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     initialData.recurringExpenses,
   );
   const [quickCategory, setQuickCategory] = useState(
-    initialData.categories.find((category) => category.kind === "variable")?.id ??
+    initialData.categories.find(
+      (category) => category.kind === "variable" && category.name !== "Inleg",
+    )?.id ??
       initialData.categories[0]?.id ??
       "",
   );
@@ -91,6 +92,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10));
   const [quickNote, setQuickNote] = useState("");
   const [fuelLiters, setFuelLiters] = useState("");
+  const [contributionAmount, setContributionAmount] = useState("");
+  const [contributionDate, setContributionDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [contributionNote, setContributionNote] = useState("");
+  const [contributionMessage, setContributionMessage] = useState("");
+  const [isSavingContribution, setIsSavingContribution] = useState(false);
   const [scanMessage, setScanMessage] = useState("");
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [monthMessage, setMonthMessage] = useState("");
@@ -312,6 +320,76 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setQuickNote("");
     setFuelLiters("");
     setScanMessage("");
+  }
+
+  async function addContribution() {
+    const amount = parseCurrencyInput(contributionAmount);
+
+    if (!amount || amount <= 0 || !defaultAccount) {
+      setContributionMessage("Vul een geldig bedrag in.");
+      return;
+    }
+
+    setIsSavingContribution(true);
+    setContributionMessage("");
+
+    const response = await fetch("/api/transactions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        accountId: defaultAccount.id,
+        amount,
+        date: contributionDate,
+        note: contributionNote || "Inleg gezamenlijke rekening",
+        type: "contribution",
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingContribution(false);
+
+    if (!response.ok) {
+      setContributionMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Inleg opslaan lukte niet. Probeer het nog eens.",
+      );
+      return;
+    }
+
+    const contributionCategory =
+      initialData.categories.find((category) => category.name === "Inleg") ??
+      ({
+        id: result.transaction.categoryId,
+        name: "Inleg",
+        kind: "variable",
+        color: "#34D399",
+        averageMonthly: 0,
+      } satisfies DashboardData["categories"][number]);
+
+    setTransactions((items) => [
+      {
+        id: result.transaction.id,
+        type: "contribution",
+        accountId: defaultAccount.id,
+        accountName: defaultAccount.name,
+        accountKind: defaultAccount.kind,
+        categoryId: contributionCategory.id,
+        amount,
+        date: contributionDate,
+        note: contributionNote || "Inleg gezamenlijke rekening",
+        enteredBy: initialData.currentPerson,
+      },
+      ...items,
+    ]);
+    setContributionAmount("");
+    setContributionNote("");
+    setContributionMessage("Inleg toegevoegd.");
+    setSelectedAccountId(defaultAccount.id);
+    setQuickAccount(defaultAccount.id);
   }
 
   async function scanReceipt(file: File) {
@@ -579,8 +657,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const rows = monthTransactions.map((transaction) => ({
       Datum: transaction.date,
       Rekening: transaction.accountName ?? "",
-      Type: transaction.type === "fixed" ? "Vaste last" : "Variabel",
-      Categorie: labels.get(transaction.categoryId)?.name ?? "Onbekend",
+      Type:
+        transaction.type === "fixed"
+          ? "Vaste last"
+          : transaction.type === "contribution"
+            ? "Inleg"
+            : "Variabel",
+      Categorie:
+        transaction.type === "contribution"
+          ? "Inleg"
+          : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
       IngevoerdDoor: transaction.enteredBy,
       Notitie: transaction.note ?? "",
@@ -684,10 +770,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         <section className="order-2 grid gap-3 lg:order-none lg:grid-cols-4">
           {isSharedView ? (
             <MetricCard
-              icon={<Landmark className="h-5 w-5" />}
-              label="Vaste lasten"
-              value={currency(monthTotals.fixedTotal)}
-              tone="indigo"
+              icon={<ArrowDownToLine className="h-5 w-5" />}
+              label="Inleg"
+              value={currency(monthTotals.contributionTotal)}
+              tone="emerald"
             />
           ) : (
             <MetricCard
@@ -699,15 +785,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           )}
           <MetricCard
             icon={<WalletCards className="h-5 w-5" />}
-            label={isSharedView ? "Variabel samen" : "Variabel prive"}
-            value={currency(monthTotals.variableTotal)}
-            tone="emerald"
+            label={isSharedView ? "Uitgaven" : "Variabel prive"}
+            value={currency(isSharedView ? monthTotals.expenseTotal : monthTotals.variableTotal)}
+            tone={isSharedView ? "zinc" : "emerald"}
           />
           <MetricCard
             icon={<ReceiptText className="h-5 w-5" />}
-            label={isSharedView ? "Maand totaal" : "Transacties"}
-            value={isSharedView ? currency(monthTotals.total) : `${monthTransactions.length}`}
-            tone="zinc"
+            label={isSharedView ? "Over / tekort" : "Transacties"}
+            value={
+              isSharedView
+                ? currency(monthTotals.netTotal)
+                : `${monthTransactions.length}`
+            }
+            tone={isSharedView && monthTotals.netTotal < 0 ? "red" : "zinc"}
           />
           {isSharedView ? (
             <MetricCard
@@ -733,28 +823,44 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         </section>
 
         <section className="order-1 grid gap-4 lg:order-none lg:grid-cols-[0.78fr_1.22fr]">
-          <QuickEntryCard
-            title={viewCopy.quickTitle}
-            amount={quickAmount}
-            account={quickAccount}
-            date={quickDate}
-            note={quickNote}
-            category={quickCategory}
-            fuelLiters={fuelLiters}
-            onAmountChange={setQuickAmount}
-            onAccountChange={setQuickAccount}
-            onDateChange={setQuickDate}
-            onNoteChange={setQuickNote}
-            onCategoryChange={setQuickCategory}
-            onFuelLitersChange={setFuelLiters}
-            isScanningReceipt={isScanningReceipt}
-            scanMessage={scanMessage}
-            onScanReceipt={scanReceipt}
-            categories={initialData.categories}
-            accounts={initialData.accounts}
-            vehicles={initialData.vehicles}
-            onSubmit={addVariableExpense}
-          />
+          <div className="grid gap-4">
+            {isSharedView && (
+              <ContributionCard
+                amount={contributionAmount}
+                date={contributionDate}
+                note={contributionNote}
+                person={initialData.currentPerson}
+                message={contributionMessage}
+                isSaving={isSavingContribution}
+                onAmountChange={setContributionAmount}
+                onDateChange={setContributionDate}
+                onNoteChange={setContributionNote}
+                onSubmit={addContribution}
+              />
+            )}
+            <QuickEntryCard
+              title={viewCopy.quickTitle}
+              amount={quickAmount}
+              account={quickAccount}
+              date={quickDate}
+              note={quickNote}
+              category={quickCategory}
+              fuelLiters={fuelLiters}
+              onAmountChange={setQuickAmount}
+              onAccountChange={setQuickAccount}
+              onDateChange={setQuickDate}
+              onNoteChange={setQuickNote}
+              onCategoryChange={setQuickCategory}
+              onFuelLitersChange={setFuelLiters}
+              isScanningReceipt={isScanningReceipt}
+              scanMessage={scanMessage}
+              onScanReceipt={scanReceipt}
+              categories={initialData.categories}
+              accounts={initialData.accounts}
+              vehicles={initialData.vehicles}
+              onSubmit={addVariableExpense}
+            />
+          </div>
 
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -780,6 +886,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               {monthTransactions.map((transaction) => {
                 const category = labels.get(transaction.categoryId);
                 const isDeleting = deletingTransactionId === transaction.id;
+                const isContribution = transaction.type === "contribution";
 
                 return (
                   <div
@@ -790,14 +897,26 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                       <div className="flex flex-wrap items-center gap-2">
                         <span
                           className="h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: category?.color }}
+                          style={{
+                            backgroundColor: isContribution
+                              ? "#34D399"
+                              : category?.color,
+                          }}
                         />
                         <p className="truncate text-sm font-medium text-zinc-100">
-                          {category?.name}
+                          {isContribution ? "Inleg" : category?.name}
                         </p>
-                        {transaction.type === "fixed" && (
-                          <Badge className="h-6 border-indigo-400/20 bg-indigo-500/10 text-indigo-200">
-                            vast
+                        {transaction.type !== "variable" && (
+                          <Badge
+                            className={cn(
+                              "h-6",
+                              transaction.type === "fixed" &&
+                                "border-indigo-400/20 bg-indigo-500/10 text-indigo-200",
+                              isContribution &&
+                                "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
+                            )}
+                          >
+                            {isContribution ? "inleg" : "vast"}
                           </Badge>
                         )}
                         {transaction.accountName && selectedAccountId === "all" && (
@@ -816,6 +935,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                     </div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-zinc-50">
+                        {isContribution ? "+" : ""}
                         {preciseCurrency(transaction.amount)}
                       </p>
                       <Button
@@ -1629,6 +1749,81 @@ function FieldLabel({
   );
 }
 
+function ContributionCard({
+  amount,
+  date,
+  note,
+  person,
+  message,
+  isSaving,
+  onAmountChange,
+  onDateChange,
+  onNoteChange,
+  onSubmit,
+}: {
+  amount: string;
+  date: string;
+  note: string;
+  person: string;
+  message: string;
+  isSaving: boolean;
+  onAmountChange: (value: string) => void;
+  onDateChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Card className="border-emerald-400/15 bg-emerald-500/[0.04]">
+      <CardHeader>
+        <CardTitle>Inleg toevoegen</CardTitle>
+        <CardDescription>
+          Geld dat op de gezamenlijke rekening wordt gestort.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
+          <Input
+            inputMode="decimal"
+            placeholder="Bedrag"
+            value={amount}
+            className="h-11 text-base font-semibold"
+            onChange={(event) => onAmountChange(event.target.value)}
+          />
+          <Input
+            type="date"
+            value={date}
+            className="h-11"
+            onChange={(event) => onDateChange(event.target.value)}
+          />
+        </div>
+        <Input
+          placeholder={`Notitie, bijv. inleg ${person}`}
+          value={note}
+          className="h-10"
+          onChange={(event) => onNoteChange(event.target.value)}
+        />
+        {message && (
+          <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+            {message}
+          </p>
+        )}
+        <Button
+          className="w-full bg-emerald-500 shadow-[0_14px_35px_rgba(16,185,129,0.18)] hover:bg-emerald-400"
+          onClick={onSubmit}
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+          ) : (
+            <ArrowDownToLine className="h-4 w-4" />
+          )}
+          Inleg opslaan
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function QuickEntryCard({
   title,
   amount,
@@ -1673,7 +1868,8 @@ function QuickEntryCard({
   onSubmit: () => void;
 }) {
   const variableCategories = categories.filter(
-    (item) => item.kind === "variable" || item.kind === "both",
+    (item) =>
+      (item.kind === "variable" || item.kind === "both") && item.name !== "Inleg",
   );
   const isFuel =
     variableCategories.find((item) => item.id === category)?.name === "Tanken";
