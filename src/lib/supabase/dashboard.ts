@@ -208,9 +208,9 @@ export async function getDashboardData(): Promise<DashboardData> {
         note: expense.note ?? undefined,
       };
     }),
-    transactions: historicalTransactionsResult
-      .filter((transaction) => transaction.date.startsWith(selectedMonth))
-      .sort((a, b) => b.date.localeCompare(a.date)),
+    transactions: historicalTransactionsResult.sort((a, b) =>
+      b.date.localeCompare(a.date),
+    ),
     sixMonthTrend: buildSixMonthTrend(historicalTransactionsResult, monthStart),
   };
 }

@@ -8,6 +8,8 @@ import {
   Camera,
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   FileSpreadsheet,
   Globe,
   ListChecks,
@@ -96,6 +98,16 @@ type DashboardMetric = {
 };
 
 type ActiveSection = "dashboard" | "fixed" | "input" | "month";
+type MonthOption = {
+  value: string;
+  label: string;
+};
+type MonthDataResponse = {
+  transactions?: Transaction[];
+  recurringExpenses?: RecurringExpense[];
+  fixedInstances?: FixedExpenseInstance[];
+  error?: string;
+};
 
 const bankLinks: BankLauncherState[] = [
   {
@@ -262,6 +274,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [bankLauncher, setBankLauncher] = useState<BankLauncherState | null>(
     null,
   );
+  const [currentMonth, setCurrentMonth] = useState(initialData.selectedMonth);
+  const [loadedMonthKeys, setLoadedMonthKeys] = useState<string[]>([
+    initialData.selectedMonth,
+  ]);
+  const [loadingMonth, setLoadingMonth] = useState<string | null>(null);
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [monthMessage, setMonthMessage] = useState("");
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(
@@ -304,7 +322,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
-  const currentMonth = initialData.selectedMonth;
   const labels = useMemo(
     () => categoryById(initialData.categories),
     [initialData.categories],
@@ -337,17 +354,32 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const selectedAccount = accountsById.get(selectedAccountId);
   const isSharedView = selectedAccount?.kind === "shared";
   const mobileChartsReady = chartsReady && !isDesktopViewport;
+  const monthOptions = useMemo(
+    () =>
+      buildMonthOptions(
+        transactions,
+        fixedInstances,
+        balanceSnapshots,
+        initialData.selectedMonth,
+      ),
+    [balanceSnapshots, fixedInstances, initialData.selectedMonth, transactions],
+  );
+  const loadedMonths = useMemo(
+    () => new Set(loadedMonthKeys),
+    [loadedMonthKeys],
+  );
 
   const latestBalanceSnapshot = useMemo(
     () =>
       balanceSnapshots
         .filter((snapshot) => snapshot.accountId === selectedAccountId)
+        .filter((snapshot) => snapshot.snapshotDate < monthStart(addIsoMonths(currentMonth, 1)))
         .sort(
           (first, second) =>
             second.snapshotDate.localeCompare(first.snapshotDate) ||
             second.id.localeCompare(first.id),
         )[0],
-    [balanceSnapshots, selectedAccountId],
+    [balanceSnapshots, currentMonth, selectedAccountId],
   );
   const viewCopy = isSharedView
     ? {
@@ -356,7 +388,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           "Voor vaste lasten, boodschappen, tanken en alles wat jullie samen betalen.",
         quickTitle: "Gezamenlijke uitgave",
         monthTitle: "Gezamenlijk maandoverzicht",
-        monthDescription: `${selectedAccount?.name ?? "Gezamenlijke rekening"} in ${monthLabel(initialData.selectedMonth)}.`,
+        monthDescription: `${selectedAccount?.name ?? "Gezamenlijke rekening"} in ${monthLabel(currentMonth)}.`,
       }
     : {
         label: "Mijn rekening",
@@ -364,7 +396,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           "Alleen prive-uitgaven van de ingelogde gebruiker. Geen vaste lasten beheer.",
         quickTitle: "Prive-uitgave",
         monthTitle: "Prive maandoverzicht",
-        monthDescription: `${selectedAccount?.name ?? "Mijn rekening"} in ${monthLabel(initialData.selectedMonth)}.`,
+        monthDescription: `${selectedAccount?.name ?? "Mijn rekening"} in ${monthLabel(currentMonth)}.`,
       };
 
   const selectedTransactions = useMemo(
@@ -492,6 +524,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     ? latestBalanceSnapshot.balance +
       selectedTransactions
         .filter((transaction) => transaction.date > latestBalanceSnapshot.snapshotDate)
+        .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
         .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0)
     : null;
   const expectedMonthEndBalance =
@@ -602,6 +635,64 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [initialData.categories],
   );
+
+  async function loadMonthData(month: string) {
+    if (loadedMonths.has(month)) {
+      return;
+    }
+
+    setLoadingMonth(month);
+
+    try {
+      const [transactionsResponse, recurringResponse] = await Promise.all([
+        fetch(`/api/transactions?month=${encodeURIComponent(month)}`),
+        fetch(`/api/recurring-expenses?month=${encodeURIComponent(month)}`),
+      ]);
+      const transactionsResult =
+        (await transactionsResponse.json()) as MonthDataResponse;
+      const recurringResult =
+        (await recurringResponse.json()) as MonthDataResponse;
+
+      if (!transactionsResponse.ok || !recurringResponse.ok) {
+        throw new Error(
+          transactionsResult.error ??
+            recurringResult.error ??
+            "Maandgegevens konden niet worden geladen.",
+        );
+      }
+
+      setTransactions((items) =>
+        mergeById(items, transactionsResult.transactions ?? []).sort((a, b) =>
+          b.date.localeCompare(a.date),
+        ),
+      );
+      setRecurringExpenses((items) =>
+        mergeById(items, recurringResult.recurringExpenses ?? []).sort((a, b) =>
+          a.name.localeCompare(b.name, "nl"),
+        ),
+      );
+      setFixedInstances((items) =>
+        mergeById(items, recurringResult.fixedInstances ?? []).sort((a, b) =>
+          a.name.localeCompare(b.name, "nl"),
+        ),
+      );
+      setLoadedMonthKeys((keys) =>
+        keys.includes(month) ? keys : [...keys, month],
+      );
+    } catch {
+      setMonthMessage(
+        `Gegevens voor ${monthLabel(month)} konden niet worden geladen.`,
+      );
+    } finally {
+      setLoadingMonth(null);
+    }
+  }
+
+  function changeCurrentMonth(month: string) {
+    setCurrentMonth(month);
+    setMonthMessage("");
+    void loadMonthData(month);
+  }
 
   async function addVariableExpense() {
     const amount = parseCurrencyInput(quickAmount);
@@ -1253,23 +1344,49 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setManageMessage(`${expense.name} is verwijderd uit vaste lasten.`);
   }
 
-  function exportExcel() {
+  function transactionsForMonth(targetMonth: string) {
+    return selectedTransactions
+      .filter((transaction) => transaction.date.startsWith(targetMonth))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  function fixedAgendaItemsForMonth(targetMonth: string) {
+    return buildFixedAgendaItems(
+      selectedRecurringExpenses,
+      selectedFixedInstances,
+      targetMonth,
+      labels,
+    );
+  }
+
+  function transactionsForRange(fromMonth: string, toMonth: string) {
+    const [from, to] = normalizeMonthRange(fromMonth, toMonth);
+
+    return selectedTransactions
+      .filter((transaction) => monthInRange(transaction.date.slice(0, 7), from, to))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  function exportExcel(targetMonth = currentMonth) {
+    const exportTransactions = transactionsForMonth(targetMonth);
+    const exportTotals = totalsForMonth(selectedTransactions, targetMonth);
+    const exportFixedItems = fixedAgendaItemsForMonth(targetMonth);
     const summaryRows = [
       {
         Rekening: selectedAccount?.name ?? viewCopy.label,
-        Maand: monthLabel(currentMonth),
-        Stortingen: monthTotals.contributionTotal,
-        Inkomsten: monthTotals.incomeTotal,
-        "Vaste lasten": monthTotals.fixedTotal,
-        Variabel: monthTotals.variableTotal,
-        "Over/tekort": monthTotals.netTotal,
-        Transacties: monthTransactions.length,
-        "Bonnen aanwezig": monthTransactions.filter(
+        Maand: monthLabel(targetMonth),
+        Stortingen: exportTotals.contributionTotal,
+        Inkomsten: exportTotals.incomeTotal,
+        "Vaste lasten": exportTotals.fixedTotal,
+        Variabel: exportTotals.variableTotal,
+        "Over/tekort": exportTotals.netTotal,
+        Transacties: exportTransactions.length,
+        "Bonnen aanwezig": exportTransactions.filter(
           (transaction) => transaction.receiptUrl,
         ).length,
       },
     ];
-    const rows = monthTransactions.map((transaction) => ({
+    const rows = exportTransactions.map((transaction) => ({
       Datum: transaction.date,
       Rekening: transaction.accountName ?? "",
       Type:
@@ -1291,7 +1408,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       "Bon aanwezig": transaction.receiptUrl ? "Ja" : "Nee",
       Notitie: transaction.note ?? "",
     }));
-    const fixedRows = fixedAgendaItems.map((item) => ({
+    const fixedRows = exportFixedItems.map((item) => ({
       Datum: item.date,
       Dag: item.day,
       Naam: item.name,
@@ -1317,13 +1434,93 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       XLSX.utils.json_to_sheet(fixedRows),
       "Vaste lasten status",
     );
-    XLSX.writeFile(workbook, `huishouden-${currentMonth}.xlsx`);
+    XLSX.writeFile(workbook, `huishouden-${targetMonth}.xlsx`);
   }
 
-  async function exportPdf() {
+  function exportExcelRange(fromMonth: string, toMonth: string) {
+    const [from, to] = normalizeMonthRange(fromMonth, toMonth);
+    const rangeMonths = monthsInRange(from, to);
+    const exportTransactions = transactionsForRange(from, to);
+    const summaryRows = rangeMonths.map((month) => {
+      const monthTransactionsForExport = exportTransactions.filter(
+        (transaction) => transaction.date.startsWith(month),
+      );
+      const totals = totalsForMonth(selectedTransactions, month);
+
+      return {
+        Rekening: selectedAccount?.name ?? viewCopy.label,
+        Maand: monthLabel(month),
+        Stortingen: totals.contributionTotal,
+        Inkomsten: totals.incomeTotal,
+        "Vaste lasten": totals.fixedTotal,
+        Variabel: totals.variableTotal,
+        "Over/tekort": totals.netTotal,
+        Transacties: monthTransactionsForExport.length,
+        "Bonnen aanwezig": monthTransactionsForExport.filter(
+          (transaction) => transaction.receiptUrl,
+        ).length,
+      };
+    });
+    const rows = exportTransactions.map((transaction) => ({
+      Datum: transaction.date,
+      Maand: monthLabel(transaction.date.slice(0, 7)),
+      Rekening: transaction.accountName ?? "",
+      Type:
+        transaction.type === "fixed"
+          ? "Vaste last"
+          : transaction.type === "income"
+            ? "Inkomsten"
+          : transaction.type === "contribution"
+            ? "Storting"
+            : "Variabel",
+      Categorie:
+        transaction.type === "contribution"
+          ? "Storting"
+          : transaction.type === "income"
+            ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
+          : labels.get(transaction.categoryId)?.name ?? "Onbekend",
+      Bedrag: transaction.amount,
+      IngevoerdDoor: transaction.type === "fixed" ? "" : transaction.enteredBy,
+      "Bon aanwezig": transaction.receiptUrl ? "Ja" : "Nee",
+      Notitie: transaction.note ?? "",
+    }));
+    const fixedRows = rangeMonths.flatMap((month) =>
+      fixedAgendaItemsForMonth(month).map((item) => ({
+        Maand: monthLabel(month),
+        Datum: item.date,
+        Dag: item.day,
+        Naam: item.name,
+        Categorie: item.categoryName,
+        Bedrag: item.amount,
+        Status: agendaStateLabel(item.state),
+        Notitie: item.note ?? "",
+      })),
+    );
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(summaryRows),
+      "Samenvatting",
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(rows),
+      "Alle transacties",
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(fixedRows),
+      "Vaste lasten status",
+    );
+    XLSX.writeFile(workbook, `huishouden-${from}-tm-${to}.xlsx`);
+  }
+
+  async function exportPdf(targetMonth = currentMonth) {
     const { pdf } = await import("@react-pdf/renderer");
-    const receiptImages = await loadReceiptImagesForPdf(transactions);
-    const fixedItems = fixedAgendaItems.map(
+    const exportTransactions = transactionsForMonth(targetMonth);
+    const receiptImages = await loadReceiptImagesForPdf(exportTransactions);
+    const fixedItems = fixedAgendaItemsForMonth(targetMonth).map(
       (item) =>
         ({
           id: item.id,
@@ -1337,8 +1534,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     );
     const blob = await pdf(
       <MonthReportDocument
-        month={currentMonth}
-        transactions={transactions}
+        month={targetMonth}
+        transactions={exportTransactions}
         categories={initialData.categories}
         fixedItems={fixedItems}
         generatedAt={new Date().toLocaleDateString("nl-NL")}
@@ -1348,13 +1545,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `maandrapport-${currentMonth}.pdf`;
+    anchor.download = `maandrapport-${targetMonth}.pdf`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
 
-  async function downloadReceiptZip() {
-    const receiptTransactions = monthTransactions.filter(
+  async function downloadReceiptZip(targetMonth = currentMonth) {
+    const receiptTransactions = transactionsForMonth(targetMonth).filter(
       (transaction): transaction is Transaction & { receiptUrl: string } =>
         Boolean(transaction.receiptUrl),
     );
@@ -1363,7 +1560,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       return;
     }
 
-    setMonthMessage(`Bonnen voor ${monthLabel(currentMonth)} worden gebundeld...`);
+    setMonthMessage(`Bonnen voor ${monthLabel(targetMonth)} worden gebundeld...`);
 
     try {
       const { default: JSZip } = await import("jszip");
@@ -1396,8 +1593,67 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       }
 
       const blob = await zip.generateAsync({ type: "blob" });
-      downloadBlob(blob, `bonnen-${currentMonth}.zip`);
-      setMonthMessage(`Bonnen voor ${monthLabel(currentMonth)} zijn gedownload.`);
+      downloadBlob(blob, `bonnen-${targetMonth}.zip`);
+      setMonthMessage(`Bonnen voor ${monthLabel(targetMonth)} zijn gedownload.`);
+    } catch {
+      setMonthMessage(
+        "Bonnen downloaden lukte niet. Probeer het later nog eens.",
+      );
+    }
+  }
+
+  async function downloadReceiptZipRange(fromMonth: string, toMonth: string) {
+    const [from, to] = normalizeMonthRange(fromMonth, toMonth);
+    const receiptTransactions = transactionsForRange(from, to).filter(
+      (transaction): transaction is Transaction & { receiptUrl: string } =>
+        Boolean(transaction.receiptUrl),
+    );
+
+    if (!receiptTransactions.length) {
+      return;
+    }
+
+    setMonthMessage(
+      `Bonnen voor ${monthLabel(from)} t/m ${monthLabel(to)} worden gebundeld...`,
+    );
+
+    try {
+      const { default: JSZip } = await import("jszip");
+      const supabase = getSupabaseBrowserClient();
+      const zip = new JSZip();
+      const usedNames = new Map<string, number>();
+
+      for (const transaction of receiptTransactions) {
+        const { data, error } = await supabase.storage
+          .from("receipts")
+          .download(transaction.receiptUrl);
+
+        if (error || !data) {
+          throw error ?? new Error("Bon kon niet worden gedownload.");
+        }
+
+        const categoryName =
+          transaction.type === "contribution"
+            ? "Storting"
+            : transaction.type === "income"
+              ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
+              : labels.get(transaction.categoryId)?.name ?? "Onbekend";
+        const month = transaction.date.slice(0, 7);
+        const baseName = [
+          month,
+          transaction.date,
+          fileNamePart(categoryName),
+          fileAmountPart(transaction.amount),
+        ].join("/");
+
+        zip.file(uniqueZipFileName(`${baseName}.jpg`, usedNames), data);
+      }
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      downloadBlob(blob, `bonnen-${from}-tm-${to}.zip`);
+      setMonthMessage(
+        `Bonnen voor ${monthLabel(from)} t/m ${monthLabel(to)} zijn gedownload.`,
+      );
     } catch {
       setMonthMessage(
         "Bonnen downloaden lukte niet. Probeer het later nog eens.",
@@ -1553,6 +1809,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           )}
         >
           <MobileSectionHeader title="Maand" subtitle={monthLabel(currentMonth)} />
+          <MonthNavigator
+            currentMonth={currentMonth}
+            monthOptions={monthOptions}
+            onMonthChange={changeCurrentMonth}
+          />
           <MonthTransactionsCard
             title={viewCopy.monthTitle}
             description={viewCopy.monthDescription}
@@ -1563,9 +1824,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             monthMessage={monthMessage}
             deletingTransactionId={deletingTransactionId}
             onDeleteTransaction={deleteTransaction}
-            onExportExcel={exportExcel}
-            onExportPdf={exportPdf}
-            onDownloadReceipts={downloadReceiptZip}
+            onExportExcel={() => setIsExportDialogOpen(true)}
+            onExportPdf={() => setIsExportDialogOpen(true)}
+            onDownloadReceipts={() => setIsExportDialogOpen(true)}
             onOpenReceipt={setReceiptViewer}
           />
           <ChartsPanel
@@ -1614,10 +1875,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               categoryRows={categoryRows}
               selectedSixMonthTrend={selectedSixMonthTrend}
               chartsReady={chartsReady}
+              monthOptions={monthOptions}
+              onMonthChange={changeCurrentMonth}
               onDeleteTransaction={deleteTransaction}
-              onExportExcel={exportExcel}
-              onExportPdf={exportPdf}
-              onDownloadReceipts={downloadReceiptZip}
+              onExportExcel={() => setIsExportDialogOpen(true)}
+              onExportPdf={() => setIsExportDialogOpen(true)}
+              onDownloadReceipts={() => setIsExportDialogOpen(true)}
               onOpenReceipt={setReceiptViewer}
             />
 
@@ -1766,6 +2029,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         <BankLauncherDialog
           bank={bankLauncher}
           onClose={() => setBankLauncher(null)}
+        />
+      )}
+      {isExportDialogOpen && (
+        <ExportDialog
+          currentMonth={currentMonth}
+          monthOptions={monthOptions}
+          transactions={selectedTransactions}
+          onClose={() => setIsExportDialogOpen(false)}
+          onExportExcel={exportExcel}
+          onExportPdf={exportPdf}
+          onDownloadReceipts={downloadReceiptZip}
+          onExportExcelRange={exportExcelRange}
+          onDownloadReceiptRange={downloadReceiptZipRange}
         />
       )}
     </main>
@@ -1935,6 +2211,201 @@ function DashboardHero({
         </div>
       </div>
     </section>
+  );
+}
+
+function MonthNavigator({
+  currentMonth,
+  monthOptions,
+  onMonthChange,
+  compact = false,
+}: {
+  currentMonth: string;
+  monthOptions: MonthOption[];
+  onMonthChange: (month: string) => void;
+  compact?: boolean;
+}) {
+  const newestMonth = monthOptions[0]?.value ?? currentMonth;
+  const oldestMonth = monthOptions.at(-1)?.value ?? currentMonth;
+  const previousMonth = addIsoMonths(currentMonth, -1);
+  const nextMonth = addIsoMonths(currentMonth, 1);
+  const canGoPrevious = previousMonth >= oldestMonth;
+  const canGoNext = nextMonth <= newestMonth;
+  const groupedMonths = groupMonthOptionsByYear(monthOptions);
+  const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
+  const [isDesktopPopoverOpen, setIsDesktopPopoverOpen] = useState(false);
+  const desktopQuickMonths = [
+    { label: "Deze maand", value: newestMonth },
+    { label: "Vorige maand", value: addIsoMonths(newestMonth, -1) },
+  ].filter((item) => monthOptions.some((month) => month.value === item.value));
+
+  function selectMonth(month: string) {
+    onMonthChange(month);
+    setIsMobileSheetOpen(false);
+    setIsDesktopPopoverOpen(false);
+  }
+
+  return (
+    <>
+      <div
+        className={cn(
+          "relative flex items-center gap-2 rounded-[var(--radius-chip)] border border-[var(--border)] bg-[var(--bg-surface)] p-1",
+          compact ? "w-fit" : "w-full",
+        )}
+      >
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={!canGoPrevious}
+          onClick={() => onMonthChange(previousMonth)}
+          title="Vorige maand"
+          className="h-8 w-8 shrink-0 text-[var(--text-secondary)] disabled:opacity-30"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+
+        <button
+          type="button"
+          onClick={() => setIsMobileSheetOpen(true)}
+          className={cn(
+            "h-8 min-w-0 flex-1 rounded-[var(--radius-chip)] px-3 text-center text-sm font-semibold text-[var(--text-primary)] transition hover:bg-white/[0.04] lg:hidden",
+            compact && "w-[9.5rem] flex-none",
+          )}
+        >
+          {monthLabel(currentMonth)}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsDesktopPopoverOpen((open) => !open)}
+          className={cn(
+            "hidden h-8 min-w-0 rounded-[var(--radius-chip)] px-3 text-center text-sm font-semibold text-[var(--text-primary)] transition hover:bg-white/[0.04] lg:block",
+            compact ? "w-[9.5rem]" : "flex-1",
+          )}
+          aria-expanded={isDesktopPopoverOpen}
+          aria-label="Maand kiezen"
+        >
+          {monthLabel(currentMonth)}
+        </button>
+
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={!canGoNext}
+          onClick={() => onMonthChange(nextMonth)}
+          title="Volgende maand"
+          className="h-8 w-8 shrink-0 text-[var(--text-secondary)] disabled:opacity-30"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+
+        {isDesktopPopoverOpen && (
+          <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 hidden w-72 overflow-hidden rounded-[18px] border border-[var(--border-strong)] bg-[var(--bg-card)] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.42)] lg:block">
+            <div className="grid gap-1 border-b border-[var(--border)] pb-3">
+              {desktopQuickMonths.map((month) => (
+                <button
+                  key={month.label}
+                  type="button"
+                  onClick={() => selectMonth(month.value)}
+                  className={cn(
+                    "rounded-[10px] px-3 py-2 text-left text-sm font-medium text-[var(--text-secondary)] transition hover:bg-white/[0.04]",
+                    month.value === currentMonth &&
+                      "bg-[var(--accent-light)] text-[var(--accent)]",
+                  )}
+                >
+                  {month.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 max-h-80 space-y-4 overflow-y-auto pr-1 no-scrollbar">
+              {groupedMonths.map((group) => (
+                <div key={group.year}>
+                  <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                    {group.year}
+                  </p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {group.months.map((month) => (
+                      <button
+                        key={month.value}
+                        type="button"
+                        onClick={() => selectMonth(month.value)}
+                        className={cn(
+                          "rounded-[10px] px-3 py-2 text-left text-xs font-medium text-[var(--text-secondary)] transition hover:bg-white/[0.04]",
+                          month.value === currentMonth &&
+                            "bg-[var(--accent-light)] text-[var(--accent)]",
+                        )}
+                      >
+                        {month.label.replace(` ${group.year}`, "")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {isMobileSheetOpen && (
+        <div className="fixed inset-0 z-[70] bg-black/65 backdrop-blur-sm lg:hidden">
+          <button
+            type="button"
+            aria-label="Maandkiezer sluiten"
+            className="absolute inset-0 h-full w-full cursor-default"
+            onClick={() => setIsMobileSheetOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[78vh] overflow-hidden rounded-t-[28px] border border-[var(--border-strong)] bg-[var(--bg-card)] shadow-[0_-24px_80px_rgba(0,0,0,0.44)]">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+              <div>
+                <p className="text-base font-semibold text-[var(--text-primary)]">
+                  Maand kiezen
+                </p>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Bekijk eerdere maanden terug.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={() => setIsMobileSheetOpen(false)}
+                title="Sluiten"
+                className="h-9 w-9 text-[var(--text-secondary)]"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="max-h-[calc(78vh-72px)] space-y-5 overflow-y-auto px-5 py-4 no-scrollbar">
+              {groupedMonths.map((group) => (
+                <div key={group.year}>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+                    {group.year}
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {group.months.map((month) => (
+                      <button
+                        key={month.value}
+                        type="button"
+                        onClick={() => selectMonth(month.value)}
+                        className={cn(
+                          "rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-3 text-sm font-medium text-[var(--text-secondary)] transition active:scale-[0.98]",
+                          month.value === currentMonth &&
+                            "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
+                        )}
+                      >
+                        {month.label.replace(` ${group.year}`, "")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2409,6 +2880,7 @@ function ReceiptViewer({
 
 function MonthInsightsSection({
   currentMonth,
+  monthOptions,
   monthTitle,
   monthDescription,
   monthTransactions,
@@ -2419,6 +2891,7 @@ function MonthInsightsSection({
   categoryRows,
   selectedSixMonthTrend,
   chartsReady,
+  onMonthChange,
   onDeleteTransaction,
   onExportExcel,
   onExportPdf,
@@ -2426,6 +2899,7 @@ function MonthInsightsSection({
   onOpenReceipt,
 }: {
   currentMonth: string;
+  monthOptions: MonthOption[];
   monthTitle: string;
   monthDescription: string;
   monthTransactions: Transaction[];
@@ -2436,6 +2910,7 @@ function MonthInsightsSection({
   categoryRows: ReturnType<typeof categoryTotals>;
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
   chartsReady: boolean;
+  onMonthChange: (month: string) => void;
   onDeleteTransaction: (transaction: Transaction) => void;
   onExportExcel: () => void;
   onExportPdf: () => void;
@@ -2453,9 +2928,12 @@ function MonthInsightsSection({
             Transacties, verdeling en trend in een overzicht.
           </p>
         </div>
-        <Badge className="border-[var(--border)] bg-[var(--accent-light)] text-[var(--accent)]">
-          {monthLabel(currentMonth)}
-        </Badge>
+        <MonthNavigator
+          currentMonth={currentMonth}
+          monthOptions={monthOptions}
+          onMonthChange={onMonthChange}
+          compact
+        />
       </div>
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.78fr)_minmax(0,1.22fr)]">
@@ -3824,45 +4302,247 @@ function AccountBalanceCard({
   );
 }
 
-function BankAppsCard({
-  onOpenBank,
-}: {
+function BankAppsCard(_props: {
   onOpenBank: (bank: BankLauncherState) => void;
 }) {
   return (
-    <Card className="finance-card">
+    <Card className="finance-card hidden lg:block">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Bank apps</CardTitle>
+        <CardTitle className="text-base">Bankieren</CardTitle>
         <CardDescription>
-          Open je bank om saldo of afschrijvingen te controleren.
+          Open je bankwebsite om saldo of afschrijvingen te controleren.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-          {bankLinks.map((bank) => (
-            <button
-              key={bank.name}
-              type="button"
-              onClick={() => onOpenBank(bank)}
-              className="accent-glow-hover inline-flex h-12 items-center justify-between gap-3 rounded-[var(--radius-btn)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-left text-sm font-medium text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-card-hover)]"
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <span
-                  className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-[10px] font-bold tracking-normal shadow-[0_8px_22px_rgba(0,0,0,0.22)]",
-                    bank.badgeClass,
-                  )}
-                >
-                  {bank.badge}
-                </span>
-                <span className="truncate">{bank.label}</span>
+          <a
+            href="https://www.ing.nl/particulier/"
+            target="_blank"
+            rel="noreferrer"
+            className="accent-glow-hover inline-flex h-12 items-center justify-between gap-3 rounded-[var(--radius-btn)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-left text-sm font-medium text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-card-hover)]"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[#ff6200] text-[10px] font-bold tracking-normal text-white shadow-[0_8px_22px_rgba(0,0,0,0.22)]">
+                ING
               </span>
-              <Smartphone className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
-            </button>
-          ))}
+              <span className="truncate">ING</span>
+            </span>
+            <Globe className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+          </a>
+          <a
+            href="https://www.abnamro.nl/nl/prive/"
+            target="_blank"
+            rel="noreferrer"
+            className="accent-glow-hover inline-flex h-12 items-center justify-between gap-3 rounded-[var(--radius-btn)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-left text-sm font-medium text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-card-hover)]"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[linear-gradient(135deg,#008578_0%,#008578_58%,#f6c343_58%,#f6c343_100%)] text-[10px] font-bold tracking-normal text-white shadow-[0_8px_22px_rgba(0,0,0,0.22)]">
+                ABN
+              </span>
+              <span className="truncate">ABN</span>
+            </span>
+            <Globe className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+          </a>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ExportDialog({
+  currentMonth,
+  monthOptions,
+  transactions,
+  onClose,
+  onExportExcel,
+  onExportPdf,
+  onDownloadReceipts,
+  onExportExcelRange,
+  onDownloadReceiptRange,
+}: {
+  currentMonth: string;
+  monthOptions: MonthOption[];
+  transactions: Transaction[];
+  onClose: () => void;
+  onExportExcel: (month: string) => void;
+  onExportPdf: (month: string) => Promise<void>;
+  onDownloadReceipts: (month: string) => Promise<void>;
+  onExportExcelRange: (fromMonth: string, toMonth: string) => void;
+  onDownloadReceiptRange: (fromMonth: string, toMonth: string) => Promise<void>;
+}) {
+  const [exportMode, setExportMode] = useState<"month" | "range">("month");
+  const [exportMonth, setExportMonth] = useState(currentMonth);
+  const [fromMonth, setFromMonth] = useState(currentMonth);
+  const [toMonth, setToMonth] = useState(currentMonth);
+  const [isExporting, setIsExporting] = useState(false);
+  const [rangeFrom, rangeTo] = normalizeMonthRange(fromMonth, toMonth);
+  const receiptCount =
+    exportMode === "month"
+      ? transactions.filter(
+          (transaction) =>
+            transaction.date.startsWith(exportMonth) && transaction.receiptUrl,
+        ).length
+      : transactions.filter(
+          (transaction) =>
+            monthInRange(transaction.date.slice(0, 7), rangeFrom, rangeTo) &&
+            transaction.receiptUrl,
+        ).length;
+
+  async function runExport(action: "excel" | "pdf" | "receipts") {
+    setIsExporting(true);
+
+    try {
+      if (action === "excel") {
+        if (exportMode === "month") {
+          onExportExcel(exportMonth);
+        } else {
+          onExportExcelRange(rangeFrom, rangeTo);
+        }
+      } else if (action === "pdf") {
+        await onExportPdf(exportMonth);
+      } else {
+        if (exportMode === "month") {
+          await onDownloadReceipts(exportMonth);
+        } else {
+          await onDownloadReceiptRange(rangeFrom, rangeTo);
+        }
+      }
+
+      onClose();
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-end bg-black/70 p-3 backdrop-blur-xl sm:place-items-center sm:p-6">
+      <div className="w-full max-w-sm rounded-[24px] border border-[var(--border-strong)] bg-[var(--bg-card)] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.42)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-base font-semibold text-[var(--text-primary)]">
+              Exporteren
+            </p>
+            <p className="mt-1 text-sm leading-5 text-[var(--text-secondary)]">
+              Kies de maand en daarna het bestand dat je nodig hebt.
+            </p>
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onClose}
+            title="Sluiten"
+            className="h-8 w-8 shrink-0 text-[var(--text-secondary)]"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-1 rounded-[var(--radius-chip)] bg-[var(--bg-surface)] p-1">
+          {(["month", "range"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setExportMode(mode)}
+              className={cn(
+                "rounded-[var(--radius-chip)] px-3 py-2 text-sm font-medium",
+                exportMode === mode
+                  ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                  : "text-[var(--text-secondary)]",
+              )}
+            >
+              {mode === "month" ? "Een maand" : "Periode"}
+            </button>
+          ))}
+        </div>
+
+        {exportMode === "month" ? (
+          <div className="mt-4">
+            <FieldLabel label="Maand">
+              <Select
+                value={exportMonth}
+                onChange={(event) => setExportMonth(event.target.value)}
+                className="h-11"
+              >
+                {monthOptions.map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
+              </Select>
+            </FieldLabel>
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <FieldLabel label="Van maand">
+              <Select
+                value={fromMonth}
+                onChange={(event) => setFromMonth(event.target.value)}
+                className="h-11"
+              >
+                {monthOptions.map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
+              </Select>
+            </FieldLabel>
+            <FieldLabel label="Tot maand">
+              <Select
+                value={toMonth}
+                onChange={(event) => setToMonth(event.target.value)}
+                className="h-11"
+              >
+                {monthOptions.map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
+              </Select>
+            </FieldLabel>
+          </div>
+        )}
+
+        <div className="mt-4 grid gap-2">
+          <Button
+            type="button"
+            onClick={() => void runExport("excel")}
+            disabled={isExporting}
+            className="h-11 justify-center rounded-[var(--radius-btn)]"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {exportMode === "month" ? "Excel" : "Excel periode"}
+          </Button>
+          {exportMode === "month" ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void runExport("pdf")}
+              disabled={isExporting}
+              className="h-11 justify-center rounded-[var(--radius-btn)]"
+            >
+              <ArrowDownToLine className="h-4 w-4" />
+              PDF maandrapport
+            </Button>
+          ) : (
+            <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-xs leading-5 text-[var(--text-secondary)]">
+              PDF blijft per maand, zodat het printbaar en overzichtelijk blijft.
+            </p>
+          )}
+          {receiptCount > 0 && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void runExport("receipts")}
+              disabled={isExporting}
+              className="h-11 justify-center rounded-[var(--radius-btn)]"
+            >
+              <ReceiptText className="h-4 w-4" />
+              Bonnen ZIP ({receiptCount})
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -4780,6 +5460,102 @@ function dateForBillingDay(month: string, billingDay: number) {
   const safeDay = Math.min(Math.max(billingDay, 1), daysInMonth);
 
   return `${month}-${String(safeDay).padStart(2, "0")}`;
+}
+
+function buildMonthOptions(
+  transactions: Transaction[],
+  fixedInstances: FixedExpenseInstance[],
+  balanceSnapshots: AccountBalanceSnapshot[],
+  currentMonth: string,
+) {
+  const observedMonths = new Set<string>();
+  const earliestDefaultMonth = addIsoMonths(currentMonth, -23);
+
+  transactions.forEach((transaction) =>
+    observedMonths.add(transaction.date.slice(0, 7)),
+  );
+  fixedInstances.forEach((instance) => observedMonths.add(instance.month));
+  balanceSnapshots.forEach((snapshot) =>
+    observedMonths.add(snapshot.snapshotDate.slice(0, 7)),
+  );
+
+  const earliestObservedMonth =
+    Array.from(observedMonths)
+      .filter((month) => month <= currentMonth)
+      .sort((first, second) => first.localeCompare(second))[0] ??
+    earliestDefaultMonth;
+  const earliestMonth =
+    earliestObservedMonth < earliestDefaultMonth
+      ? earliestObservedMonth
+      : earliestDefaultMonth;
+  const sortedMonths: string[] = [];
+  let cursor = currentMonth;
+
+  while (cursor >= earliestMonth) {
+    sortedMonths.push(cursor);
+    cursor = addIsoMonths(cursor, -1);
+  }
+
+  return sortedMonths.map((month) => ({
+    value: month,
+    label: monthLabel(month),
+  })) satisfies MonthOption[];
+}
+
+function groupMonthOptionsByYear(monthOptions: MonthOption[]) {
+  const groups = new Map<string, MonthOption[]>();
+
+  monthOptions.forEach((month) => {
+    const year = month.value.slice(0, 4);
+    groups.set(year, [...(groups.get(year) ?? []), month]);
+  });
+
+  return Array.from(groups.entries()).map(([year, months]) => ({
+    year,
+    months,
+  }));
+}
+
+function addIsoMonths(month: string, delta: number) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(year, monthNumber - 1 + delta, 1);
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function normalizeMonthRange(fromMonth: string, toMonth: string) {
+  return fromMonth <= toMonth
+    ? ([fromMonth, toMonth] as const)
+    : ([toMonth, fromMonth] as const);
+}
+
+function monthInRange(month: string, fromMonth: string, toMonth: string) {
+  return month >= fromMonth && month <= toMonth;
+}
+
+function monthsInRange(fromMonth: string, toMonth: string) {
+  const [from, to] = normalizeMonthRange(fromMonth, toMonth);
+  const months: string[] = [];
+  let cursor = from;
+
+  while (cursor <= to) {
+    months.push(cursor);
+    cursor = addIsoMonths(cursor, 1);
+  }
+
+  return months;
+}
+
+function monthStart(month: string) {
+  return `${month}-01`;
+}
+
+function mergeById<T extends { id: string }>(currentItems: T[], nextItems: T[]) {
+  const itemsById = new Map(currentItems.map((item) => [item.id, item]));
+
+  nextItems.forEach((item) => itemsById.set(item.id, item));
+
+  return Array.from(itemsById.values());
 }
 
 function monthShort(date: string) {

@@ -18,6 +18,94 @@ type DeleteTransactionBody = {
   transactionId?: string;
 };
 
+export async function GET(request: Request) {
+  const month = new URL(request.url).searchParams.get("month");
+
+  if (!month || !isIsoMonth(month)) {
+    return NextResponse.json({ error: "Maand is ongeldig." }, { status: 400 });
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("household_members")
+    .select("household_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (membershipError || !membership) {
+    return NextResponse.json(
+      { error: membershipError?.message ?? "Huishouden ontbreekt." },
+      { status: 400 },
+    );
+  }
+
+  const { data: accounts, error: accountsError } = await supabase
+    .from("accounts")
+    .select("id, name, kind")
+    .eq("household_id", membership.household_id)
+    .eq("is_active", true);
+
+  if (accountsError) {
+    return NextResponse.json({ error: accountsError.message }, { status: 400 });
+  }
+
+  const monthStart = `${month}-01`;
+  const from = addMonths(monthStart, -5);
+  const to = addMonths(monthStart, 1);
+  const accountMap = new Map(
+    (accounts ?? []).map((account) => [account.id, account]),
+  );
+  const fallbackAccount =
+    accounts?.find((account) => account.kind === "shared") ?? accounts?.[0];
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*, profiles(display_name)")
+    .eq("household_id", membership.household_id)
+    .gte("transaction_date", from)
+    .lt("transaction_date", to)
+    .order("transaction_date", { ascending: false });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  return NextResponse.json({
+    transactions: (data ?? []).map((transaction) => {
+      const profile = Array.isArray(transaction.profiles)
+        ? transaction.profiles[0]
+        : transaction.profiles;
+      const account =
+        accountMap.get(transaction.account_id ?? "") ?? fallbackAccount;
+
+      return {
+        id: transaction.id,
+        type: transaction.type,
+        accountId: transaction.account_id ?? fallbackAccount?.id,
+        accountName: account?.name,
+        accountKind: account?.kind,
+        categoryId: transaction.category_id,
+        amount: Number(transaction.amount),
+        date: transaction.transaction_date,
+        note: transaction.note ?? undefined,
+        receiptUrl: transaction.receipt_url ?? undefined,
+        enteredById: transaction.entered_by,
+        enteredBy: profile?.display_name ?? "Onbekend",
+        fixedInstanceId: transaction.fixed_expense_instance_id ?? undefined,
+      };
+    }),
+  });
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as CreateTransactionBody;
   const amount = Number(body.amount);
@@ -304,4 +392,20 @@ function mapFixedInstance(row: {
     status: row.status,
     note: row.note ?? undefined,
   };
+}
+
+function isIsoMonth(value: string) {
+  return /^\d{4}-\d{2}$/.test(value);
+}
+
+function addMonths(isoDate: string, months: number) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setMonth(date.getMonth() + months);
+
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }

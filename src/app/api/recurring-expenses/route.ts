@@ -14,6 +14,78 @@ type RecurringExpenseBody = {
   isActive?: boolean;
 };
 
+export async function GET(request: Request) {
+  const month = new URL(request.url).searchParams.get("month");
+
+  if (!month || !isIsoMonth(month)) {
+    return NextResponse.json({ error: "Maand is ongeldig." }, { status: 400 });
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("household_members")
+    .select("household_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (membershipError || !membership) {
+    return NextResponse.json(
+      { error: membershipError?.message ?? "Huishouden ontbreekt." },
+      { status: 400 },
+    );
+  }
+
+  const monthStart = `${month}-01`;
+
+  await supabase.rpc("create_fixed_instances_for_month", {
+    target_household_id: membership.household_id,
+    target_month: monthStart,
+  });
+
+  const [recurringResult, fixedInstancesResult] = await Promise.all([
+    supabase
+      .from("recurring_expenses")
+      .select("*")
+      .eq("household_id", membership.household_id)
+      .order("name", { ascending: true }),
+    supabase
+      .from("fixed_expense_instances")
+      .select("*")
+      .eq("household_id", membership.household_id)
+      .eq("month", monthStart)
+      .order("name_snapshot", { ascending: true }),
+  ]);
+
+  if (recurringResult.error) {
+    return NextResponse.json(
+      { error: recurringResult.error.message },
+      { status: 400 },
+    );
+  }
+
+  if (fixedInstancesResult.error) {
+    return NextResponse.json(
+      { error: fixedInstancesResult.error.message },
+      { status: 400 },
+    );
+  }
+
+  return NextResponse.json({
+    recurringExpenses: (recurringResult.data ?? []).map(mapRecurringExpense),
+    fixedInstances: (fixedInstancesResult.data ?? []).map(mapFixedInstance),
+  });
+}
+
 export async function POST(request: Request) {
   const body = (await request.json()) as RecurringExpenseBody;
   const validationError = validateRecurringInput(body, true);
@@ -424,7 +496,13 @@ function mapFixedInstance(row: {
   amount_snapshot: number;
   status: "pending" | "confirmed" | "adjusted" | "skipped";
   note: string | null;
+  profiles?:
+    | { display_name?: string | null }
+    | Array<{ display_name?: string | null }>
+    | null;
 }): FixedExpenseInstance {
+  const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+
   return {
     id: row.id,
     recurringExpenseId: row.recurring_expense_id,
@@ -433,6 +511,7 @@ function mapFixedInstance(row: {
     categoryId: row.category_id,
     amount: Number(row.amount_snapshot),
     status: row.status,
+    confirmedBy: profile?.display_name ?? undefined,
     note: row.note ?? undefined,
   };
 }
@@ -444,4 +523,8 @@ function currentMonthStart() {
     String(now.getMonth() + 1).padStart(2, "0"),
     "01",
   ].join("-");
+}
+
+function isIsoMonth(value: string) {
+  return /^\d{4}-\d{2}$/.test(value);
 }
