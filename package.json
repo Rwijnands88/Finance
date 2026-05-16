@@ -2,10 +2,13 @@
   "name": "finance-app",
   "version": "0.1.0",
   "private": true,
+  "main": "main.js",
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
+    "electron:dev": "concurrently -k -s first -n next,electron -c blue,magenta \"npm run dev\" \"wait-on http://localhost:3000 && ELECTRON_USE_EXTERNAL_SERVER=true ELECTRON_START_URL=http://localhost:3000 electron .\"",
+    "electron:build": "npm run build && electron-builder --mac dmg",
     "lint": "eslint"
   },
   "dependencies": {
@@ -22,6 +25,7 @@
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.6.0",
+    "wait-on": "^9.0.10",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -29,9 +33,37 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
+    "electron": "^42.1.0",
+    "electron-builder": "^26.8.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "build": {
+    "appId": "nl.wijnands.finance",
+    "productName": "Finance",
+    "asar": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "next.config.ts",
+      ".next/**/*",
+      "public/**/*",
+      "node_modules/**/*",
+      "!dist/**/*",
+      "!.next/cache/**/*",
+      "!node_modules/.cache/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        "dmg"
+      ]
+    }
   }
 }
