@@ -131,7 +131,66 @@ saldo per rekening opslaan en prive-inkomsten boeken.
 bedrag, datum en winkel direct in als concept; daarna kiest de gebruiker zelf
 de categorie en bevestigt met "Afschrijving toevoegen".
 
-#### Fase 6 - Rapportage en polish
+#### Fase 6 - Bonnen bewaren en rapportage
+
+Uitgangspunt: de bestaande scanner blijft werken zoals nu. De scan maakt alleen
+een concept; de bon wordt pas opgeslagen nadat de gebruiker de afschrijving
+bevestigt met "Afschrijving toevoegen".
+
+Veilige bouwvolgorde:
+
+1. Database klaarzetten
+   - `transactions.receipt_url` toevoegen als nullable veld.
+   - Private Supabase Storage bucket `receipts` aanmaken.
+   - Storage RLS toevoegen: alleen gebruikers met toegang tot de rekening mogen
+     bonnen lezen en schrijven.
+   - Stopmoment: SQL eerst handmatig uitvoeren en controleren in Supabase.
+
+2. Data veilig doorgeven
+   - Types, Supabase mapping en transactie-API uitbreiden met `receiptUrl`.
+   - Nog geen upload en nog geen UI.
+   - Controle: bestaande invoer, scanner-draft en transactielijst blijven werken.
+
+3. Bon uploaden na bevestiging
+   - Originele scanfoto tijdelijk in de client bewaren.
+   - Na bevestiging: eerst de transactie opslaan.
+   - Daarna pas client-side comprimeren via canvas: max 800px breed, JPEG 0.6.
+   - Uploaden naar Storage en daarna `receipt_url` opslaan.
+   - Als upload mislukt: transactie blijft bestaan, bonmelding geeft aan dat
+     alleen de bon niet is opgeslagen.
+
+4. Bon tonen bij transacties
+   - Kleine thumbnail tonen bij transacties met bon.
+   - Klik opent de bon groot.
+   - Printknop gebruikt `window.print()` op de bonweergave.
+   - Berekeningen, filters en transactiebedragen blijven onaangeraakt.
+
+5. ZIP-download per maand
+   - `JSZip` toevoegen als dependency.
+   - Knop "Download bonnen [maandnaam]" alleen tonen als er bonnen zijn.
+   - Private bonnen downloaden en bundelen als ZIP.
+   - Bestandsnamen: `[datum]-[categorie]-[bedrag].jpg`.
+
+6. Excel verbeteren
+   - Bestaande Excel-knop behouden.
+   - Werkboek uitbreiden naar drie tabbladen:
+     `Samenvatting`, `Alle transacties`, `Vaste lasten status`.
+   - Kolom toevoegen: bon aanwezig ja/nee.
+
+7. PDF verbeteren
+   - Bestaande PDF-knop behouden.
+   - A4-rapport uitbreiden met koptekst, samenvatting per rekening, vaste
+     lasten status, variabele kosten per categorie en bon-thumbnails.
+   - Extra voorzichtig testen, omdat `@react-pdf/renderer` strikte
+     rendering-beperkingen heeft.
+
+Controles per stap:
+
+- `npx tsc --noEmit`
+- bij export/PDF-wijzigingen ook `npm run build`
+- lokaal controleren dat snelle invoer, scanner-draft, Excel en PDF nog starten
+
+#### Fase 7 - Rapportage en polish
 
 - [ ] Excel-export uitbreiden met rekening, type en transfer-info.
 - [ ] PDF maandrapport per rekening en gezamenlijk.
