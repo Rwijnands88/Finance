@@ -2,12 +2,29 @@
 
 :root {
   color-scheme: dark;
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #18181b;
-  --border: #27272a;
-  --muted: #a1a1aa;
+  --bg-base: #070709;
+  --bg-surface: #111114;
+  --bg-card: #1a1a1f;
+  --bg-card-hover: #20202a;
+  --border: rgba(255,255,255,0.07);
+  --border-strong: rgba(255,255,255,0.13);
   --accent: #6366f1;
+  --accent-light: rgba(99,102,241,0.14);
+  --accent-glow: rgba(99,102,241,0.28);
+  --text-primary: #f4f4f6;
+  --text-secondary: #88889a;
+  --text-muted: #44445a;
+  --positive: #22c55e;
+  --positive-light: rgba(34,197,94,0.12);
+  --negative: #ef4444;
+  --negative-light: rgba(239,68,68,0.12);
+  --radius-card: 16px;
+  --radius-btn: 10px;
+  --radius-chip: 999px;
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
+  --card: var(--bg-card);
+  --muted: var(--text-secondary);
 }
 
 @theme inline {
@@ -32,4 +49,75 @@ textarea {
 
 ::selection {
   background: rgba(99, 102, 241, 0.35);
+}
+
+button,
+a,
+summary {
+  transition:
+    background 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out,
+    opacity 120ms ease-out,
+    transform 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.finance-card {
+  animation: slide-up 200ms ease-out both;
+}
+
+.finance-view {
+  animation: fade-in 150ms ease-out both;
+}
+
+.finance-bottom-nav {
+  height: calc(64px + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(7, 7, 9, 0.94);
+  backdrop-filter: blur(24px);
+}
+
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .desktop-row-hover:hover {
+    background: var(--bg-card-hover);
+    cursor: pointer;
+  }
+
+  .accent-glow-hover:hover {
+    box-shadow: 0 0 28px var(--accent-glow);
+  }
 }

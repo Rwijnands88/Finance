@@ -7,6 +7,7 @@ import {
   ArrowDownToLine,
   Camera,
   CalendarDays,
+  Check,
   FileSpreadsheet,
   ListChecks,
   LoaderCircle,
@@ -73,6 +74,66 @@ type DashboardMetric = {
   tone: "indigo" | "emerald" | "red" | "zinc";
 };
 
+type ActiveSection = "dashboard" | "fixed" | "input" | "month";
+
+function sectionNavItems() {
+  return [
+    { id: "dashboard", label: "Dashboard", icon: WalletCards },
+    { id: "fixed", label: "Vaste lasten", icon: ListChecks },
+    { id: "input", label: "Invoeren", icon: Plus },
+    { id: "month", label: "Maand", icon: CalendarDays },
+  ] satisfies Array<{
+    id: ActiveSection;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }>;
+}
+
+function scrollToFinanceSection(section: ActiveSection) {
+  if (section === "dashboard") {
+    document
+      .querySelector<HTMLElement>("[data-finance-context]")
+      ?.scrollTo({ top: 0, behavior: "auto" });
+    window.scrollTo({ top: 0, behavior: "auto" });
+    return;
+  }
+
+  const target = document.getElementById(`finance-${section}`);
+
+  if (!target) {
+    return;
+  }
+
+  if (section === "input") {
+    const contextPanel = target.closest<HTMLElement>("[data-finance-context]");
+
+    if (contextPanel) {
+      const panelRect = contextPanel.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+
+      contextPanel.scrollTo({
+        top: Math.max(
+          0,
+          Math.round(contextPanel.scrollTop + targetRect.top - panelRect.top),
+        ),
+        behavior: "auto",
+      });
+      window.scrollTo({ top: 0, behavior: "auto" });
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      });
+      return;
+    }
+  }
+
+  const top = window.scrollY + target.getBoundingClientRect().top - 16;
+
+  window.scrollTo({
+    top: Math.max(0, Math.round(top)),
+    behavior: "auto",
+  });
+}
+
 export function FinanceDashboard({ initialData }: { initialData: DashboardData }) {
   const defaultAccount =
     initialData.accounts.find((account) => account.kind === "shared") ??
@@ -117,6 +178,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [selectedAccountId, setSelectedAccountId] = useState(
     defaultAccount?.id ?? personalAccount?.id ?? "all",
   );
+  const [activeSection, setActiveSection] = useState<ActiveSection>("dashboard");
   const [quickAmount, setQuickAmount] = useState("");
   const [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10));
   const [quickNote, setQuickNote] = useState("");
@@ -371,29 +433,27 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     (total, item) => total + item.amount,
     0,
   );
+  const dashboardPrimaryValue =
+    calculatedBalance === null
+      ? currency(monthTotals.netTotal)
+      : currency(calculatedBalance);
+  const dashboardPrimarySubtext =
+    calculatedBalance === null
+      ? "Deze maand tot nu toe"
+      : expectedMonthEndBalance === null
+        ? "Huidig saldo"
+        : `${currency(expectedMonthEndBalance)} verwacht einde maand`;
   const dashboardMetrics: DashboardMetric[] = isSharedView
     ? [
         {
           icon: <ArrowDownToLine className="h-5 w-5" />,
-          label: "Inleg",
-          value: currency(monthTotals.contributionTotal),
-          tone: "emerald" as const,
-        },
-        {
-          icon: <WalletCards className="h-5 w-5" />,
-          label: "Uitgaven",
-          value: currency(monthTotals.expenseTotal),
-          tone: "zinc" as const,
-        },
-        {
-          icon: <ReceiptText className="h-5 w-5" />,
-          label: "Over / tekort",
-          value: currency(monthTotals.netTotal),
-          tone: monthTotals.netTotal < 0 ? "red" : "zinc",
+          label: "Nog te storten",
+          value: currency(remainingContributionTotal),
+          tone: remainingContributionTotal > 0 ? "indigo" : "emerald",
         },
         {
           icon: <ListChecks className="h-5 w-5" />,
-          label: "Open vast",
+          label: "Komt eraan",
           value: currency(openFixedTotal),
           tone: fixedAgendaItems.some((item) => item.state === "overdue")
             ? "red"
@@ -401,11 +461,29 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               ? "indigo"
               : "emerald",
         },
+        {
+          icon: <ReceiptText className="h-5 w-5" />,
+          label: "Uitgegeven",
+          value: currency(monthTotals.expenseTotal),
+          tone: "zinc" as const,
+        },
+        {
+          icon: <WalletCards className="h-5 w-5" />,
+          label: "Einde maand",
+          value:
+            expectedMonthEndBalance === null
+              ? currency(monthTotals.netTotal)
+              : currency(expectedMonthEndBalance),
+          tone:
+            expectedMonthEndBalance !== null && expectedMonthEndBalance < 0
+              ? "red"
+              : "emerald",
+        },
       ]
     : [
         {
           icon: <WalletCards className="h-5 w-5" />,
-          label: "Inkomsten",
+          label: "Inkomen",
           value: currency(monthTotals.incomeTotal),
           tone: "emerald" as const,
         },
@@ -417,9 +495,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         },
         {
           icon: <ReceiptText className="h-5 w-5" />,
-          label: "Over / tekort",
-          value: currency(monthTotals.netTotal),
-          tone: monthTotals.netTotal < 0 ? "red" : "indigo",
+          label: "Einde maand",
+          value:
+            expectedMonthEndBalance === null
+              ? currency(monthTotals.netTotal)
+              : currency(expectedMonthEndBalance),
+          tone:
+            expectedMonthEndBalance !== null && expectedMonthEndBalance < 0
+              ? "red"
+              : "indigo",
         },
         {
           icon: <ListChecks className="h-5 w-5" />,
@@ -535,7 +619,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       setContributionMessage(
         typeof result.error === "string"
           ? result.error
-          : "Inleg opslaan lukte niet. Probeer het nog eens.",
+          : "Storting opslaan lukte niet. Probeer het nog eens.",
       );
       return;
     }
@@ -568,7 +652,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     ]);
     setContributionAmount("");
     setContributionNote("");
-    setContributionMessage("Inleg toegevoegd.");
+    setContributionMessage("Storting toegevoegd.");
     setSelectedAccountId(defaultAccount.id);
     setQuickAccount(defaultAccount.id);
   }
@@ -746,7 +830,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       setContributionPlanMessage(
         typeof result.error === "string"
           ? result.error
-          : "Standaardinleg opslaan lukte niet.",
+          : "Maandelijkse storting opslaan lukte niet.",
       );
       return;
     }
@@ -762,7 +846,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         depositDay: String(updatedPlan.depositDay),
       },
     }));
-    setContributionPlanMessage(`Standaardinleg voor ${updatedPlan.person} bewaard.`);
+    setContributionPlanMessage(
+      `Maandelijkse storting voor ${updatedPlan.person} bewaard.`,
+    );
   }
 
   async function scanReceipt(file: File) {
@@ -1055,11 +1141,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           : transaction.type === "income"
             ? "Inkomsten"
           : transaction.type === "contribution"
-            ? "Inleg"
+            ? "Storting"
             : "Variabel",
       Categorie:
         transaction.type === "contribution"
-          ? "Inleg"
+          ? "Storting"
           : transaction.type === "income"
             ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
@@ -1092,377 +1178,86 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }
 
   return (
-    <main className="min-h-dvh bg-[#09090B] text-zinc-50">
-      <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8 2xl:px-10">
-        <header className="flex flex-col gap-3 border-b border-zinc-900 pb-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-normal text-zinc-50 sm:text-3xl">
-              Finance
-            </h1>
-            <p className="mt-1 text-sm text-zinc-500">Familie Wijnands</p>
-          </div>
+    <main className="min-h-dvh bg-[var(--bg-base)] pb-[calc(80px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
+      <div className="mx-auto w-full max-w-[1800px] px-4 py-4 sm:px-6 lg:px-8 2xl:px-10">
+        <MobileBottomNav
+        activeSection={activeSection}
+        onSectionChange={(section) => {
+          setActiveSection(section);
+          window.scrollTo({ top: 0, behavior: "auto" });
+        }}
+      />
 
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge className="border-zinc-800 bg-zinc-950/70 text-zinc-300">
+        <section
+          className={cn(
+            "finance-view gap-4 lg:hidden",
+            activeSection === "dashboard" ? "grid" : "hidden",
+          )}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold text-[var(--text-primary)]">
+                Finance
+              </h1>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                Familie Wijnands
+              </p>
+            </div>
+            <Badge className="border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)]">
               {initialData.currentPerson}
             </Badge>
-            <form action="/auth/sign-out" method="post">
-              <Button type="submit" size="sm" variant="ghost">
-                <LogOut className="h-4 w-4" />
-                Uitloggen
-              </Button>
-            </form>
           </div>
-        </header>
 
-        <section className="order-1 lg:hidden">
-          <div className="inline-grid w-full gap-1 rounded-[14px] border border-zinc-800 bg-zinc-950/55 p-1 sm:w-auto sm:grid-flow-col">
-            {accountTabs.map((tab) => {
-              const isActive = selectedAccountId === tab.id;
-
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedAccountId(tab.id);
-                    setQuickAccount(tab.id);
-                  }}
-                  className={cn(
-                    "rounded-[10px] border px-3 py-2 text-left transition sm:min-w-44",
-                    isActive
-                      ? "border-zinc-700 bg-zinc-900 text-zinc-50"
-                      : "border-transparent text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200",
-                  )}
-                >
-                  <span className="block text-sm font-semibold">{tab.label}</span>
-                  <span className="mt-0.5 block truncate text-xs text-zinc-600">
-                    {tab.description}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="lg:hidden">
-          <AccountBalanceCard
-            accountName={selectedAccount?.name ?? viewCopy.label}
-            snapshot={latestBalanceSnapshot}
-            calculatedBalance={calculatedBalance}
-            expectedMonthEndBalance={expectedMonthEndBalance}
-            expectedIncomeTotal={expectedIncomeTotal}
-            expenseTotal={monthTotals.expenseTotal}
-            balanceAmount={balanceAmount}
-            balanceDate={balanceDate}
-            balanceMessage={balanceMessage}
-            isSavingBalance={isSavingBalance}
-            incomeAmount={incomeAmount}
-            incomeDate={incomeDate}
-            incomeKind={incomeKind}
-            incomeNote={incomeNote}
-            incomeMessage={incomeMessage}
-            isSavingIncome={isSavingIncome}
-            showIncomeForm={!isSharedView}
-            onBalanceAmountChange={setBalanceAmount}
-            onBalanceDateChange={setBalanceDate}
-            onSaveBalance={saveBalanceSnapshot}
-            onIncomeAmountChange={setIncomeAmount}
-            onIncomeDateChange={setIncomeDate}
-            onIncomeKindChange={setIncomeKind}
-            onIncomeNoteChange={setIncomeNote}
-            onAddIncome={addIncome}
+          <AccountPills
+            tabs={accountTabs}
+            selectedAccountId={selectedAccountId}
+            onSelect={(accountId) => {
+              setSelectedAccountId(accountId);
+              setQuickAccount(accountId);
+            }}
           />
-        </section>
 
-        <section className="lg:hidden">
-          <QuickEntryCard
-            title={viewCopy.quickTitle}
-            amount={quickAmount}
-            account={quickAccount}
-            date={quickDate}
-            note={quickNote}
-            category={quickCategory}
-            onAmountChange={setQuickAmount}
-            onAccountChange={setQuickAccount}
-            onDateChange={setQuickDate}
-            onNoteChange={setQuickNote}
-            onCategoryChange={setQuickCategory}
-            isScanningReceipt={isScanningReceipt}
-            scanMessage={scanMessage}
-            receiptDraft={receiptDraft}
-            onScanReceipt={scanReceipt}
-            onDismissReceiptDraft={dismissReceiptDraft}
-            categories={initialData.categories}
-            accounts={initialData.accounts}
-            onSubmit={addVariableExpense}
+          <DashboardHero
+            label={viewCopy.label}
+            value={dashboardPrimaryValue}
+            subtext={dashboardPrimarySubtext}
+            metrics={dashboardMetrics.slice(0, 3)}
+            mobile
           />
+
+          <section className="grid gap-3 sm:grid-cols-2">
+            {dashboardMetrics.map((metric) => (
+              <MetricCard key={metric.label} {...metric} />
+            ))}
+          </section>
+
+          <BankAppsCard />
+
+          <ChartsPanel
+            categoryRows={categoryRows}
+            selectedSixMonthTrend={selectedSixMonthTrend}
+            chartsReady={chartsReady}
+          />
+
+          {isSharedView && (
+            <PersonCostInsight
+              people={initialData.people}
+              personTotals={personTotals}
+              categoryRows={categoryPersonRows}
+              isSharedView={isSharedView}
+            />
+          )}
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-[230px_minmax(0,1fr)_360px] xl:grid-cols-[250px_minmax(0,1fr)_390px] 2xl:grid-cols-[260px_minmax(0,1fr)_420px]">
-          <aside className="sticky top-4 hidden self-start lg:block">
-            <AccountRail
-              tabs={accountTabs}
-              selectedAccountId={selectedAccountId}
-              currentMonth={currentMonth}
-              currentPerson={initialData.currentPerson}
-              metrics={dashboardMetrics}
-              onSelect={(accountId) => {
-                setSelectedAccountId(accountId);
-                setQuickAccount(accountId);
-              }}
-            />
-          </aside>
-
-          <section className="grid min-w-0 gap-4">
-            <ViewSummary
-              label={viewCopy.label}
-              description={viewCopy.description}
-              currentMonth={currentMonth}
-            />
-
-            <section className="order-2 grid gap-3 sm:grid-cols-2 lg:hidden">
-              {dashboardMetrics.map((metric) => (
-                <MetricCard key={metric.label} {...metric} />
-              ))}
-            </section>
-
-            <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-4">
-                <div>
-                  <CardTitle>{viewCopy.monthTitle}</CardTitle>
-                  <CardDescription>{viewCopy.monthDescription}</CardDescription>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="icon" variant="secondary" onClick={exportExcel} title="Exporteer Excel">
-                    <FileSpreadsheet className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="secondary" onClick={exportPdf} title="Exporteer PDF">
-                    <ArrowDownToLine className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="max-h-[560px] space-y-2 overflow-auto xl:max-h-[640px]">
-              {monthMessage && (
-                <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300">
-                  {monthMessage}
-                </p>
-              )}
-              {monthTransactions.map((transaction) => {
-                const category = labels.get(transaction.categoryId);
-                const isDeleting = deletingTransactionId === transaction.id;
-                const isContribution = transaction.type === "contribution";
-                const isIncome = transaction.type === "income";
-                  const transactionMetadata = [
-                    transaction.date,
-                    transaction.type === "fixed" ? null : transaction.enteredBy,
-                    transaction.note,
-                  ]
-                  .filter(Boolean)
-                  .join(" · ");
-
-                return (
-                  <div
-                    key={transaction.id}
-                    className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[12px] border border-zinc-800/70 bg-zinc-950/35 px-3 py-2.5"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 rounded-full"
-                          style={{
-                            backgroundColor: isContribution || isIncome
-                              ? "#34D399"
-                              : category?.color,
-                          }}
-                        />
-                        <p className="truncate text-sm font-medium text-zinc-100">
-                          {isContribution
-                            ? "Inleg"
-                            : isIncome
-                              ? category?.name ?? "Inkomsten"
-                              : category?.name}
-                        </p>
-                        {transaction.type !== "variable" && (
-                          <Badge
-                            className={cn(
-                              "h-6",
-                              transaction.type === "fixed" &&
-                                "border-indigo-400/20 bg-indigo-500/10 text-indigo-200",
-                              isContribution &&
-                                "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
-                              isIncome &&
-                                "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
-                            )}
-                          >
-                            {isContribution ? "inleg" : isIncome ? "inkomsten" : "vast"}
-                          </Badge>
-                        )}
-                        {transaction.accountName && selectedAccountId === "all" && (
-                          <Badge className="h-6 border-zinc-700 bg-zinc-900 text-zinc-300">
-                            {transaction.accountName}
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="mt-1 truncate text-xs text-zinc-500">
-                        {transactionMetadata}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-zinc-50">
-                        {isContribution || isIncome ? "+" : ""}
-                        {preciseCurrency(transaction.amount)}
-                      </p>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title="Verwijder afschrijving"
-                        onClick={() => deleteTransaction(transaction)}
-                        disabled={isDeleting}
-                        className="h-9 w-9 text-zinc-500 hover:text-red-300"
-                      >
-                        {isDeleting ? (
-                          <LoaderCircle className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-              {monthTransactions.length === 0 && (
-                <div className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-                  Geen afschrijvingen voor deze rekening in{" "}
-                  {monthLabel(currentMonth)}.
-                </div>
-              )}
-              </CardContent>
-            </Card>
-
-            <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Categorieen</CardTitle>
-                  <CardDescription>Verdeling van deze maand.</CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-[0.72fr_1.28fr] xl:grid-cols-1 2xl:grid-cols-[0.72fr_1.28fr]">
-                  <div className="h-52 overflow-visible">
-                    {chartsReady && (
-                      <ResponsiveContainer
-                        width="100%"
-                        height="100%"
-                        minWidth={1}
-                        minHeight={1}
-                      >
-                        <PieChart>
-                          <Pie
-                            data={categoryRows}
-                            dataKey="amount"
-                            nameKey="name"
-                            innerRadius={48}
-                            outerRadius={70}
-                            paddingAngle={3}
-                            stroke="transparent"
-                          >
-                            {categoryRows.map((entry) => (
-                              <Cell key={entry.categoryId} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            formatter={(value) => currency(Number(value))}
-                            contentStyle={tooltipStyle}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    )}
-                  </div>
-                  <div className="space-y-3">
-                    {categoryRows.length === 0 && (
-                      <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-                        Nog geen categorieen voor deze rekening.
-                      </p>
-                    )}
-                    {categoryRows.map((row) => {
-                      const overBudget = row.average > 0 && row.amount > row.average;
-
-                      return (
-                        <div key={row.categoryId}>
-                          <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                            <span className="text-zinc-300">{row.name}</span>
-                            <span
-                              className={cn(
-                                "font-medium",
-                                overBudget ? "text-red-400" : "text-emerald-400",
-                              )}
-                            >
-                              {currency(row.amount)} / {currency(row.average)}
-                            </span>
-                          </div>
-                          <Progress
-                            value={row.amount}
-                            max={row.average || row.amount}
-                            indicatorClassName={
-                              overBudget ? "bg-red-500" : "bg-emerald-500"
-                            }
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Laatste 6 maanden</CardTitle>
-                  <CardDescription>Vast versus variabel.</CardDescription>
-                </CardHeader>
-                <CardContent className="h-56">
-                  {chartsReady && (
-                    <ResponsiveContainer
-                      width="100%"
-                      height="100%"
-                      minWidth={1}
-                      minHeight={1}
-                    >
-                      <BarChart data={selectedSixMonthTrend} barGap={8}>
-                        <XAxis
-                          dataKey="month"
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: "#A1A1AA", fontSize: 12 }}
-                        />
-                        <YAxis
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: "#71717A", fontSize: 12 }}
-                          tickFormatter={(value) => `${Number(value) / 1000}k`}
-                        />
-                        <Tooltip
-                          formatter={(value) => currency(Number(value))}
-                          contentStyle={tooltipStyle}
-                          cursor={{ fill: "rgba(99, 102, 241, 0.08)" }}
-                        />
-                        <Bar dataKey="fixed" fill="#6366F1" radius={[8, 8, 3, 3]} />
-                        <Bar dataKey="variable" fill="#10B981" radius={[8, 8, 3, 3]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                </CardContent>
-              </Card>
-            </section>
-
-            {isSharedView && (
-              <PersonCostInsight
-                people={initialData.people}
-                personTotals={personTotals}
-                categoryRows={categoryPersonRows}
-                isSharedView={isSharedView}
-              />
-            )}
-
-            {isSharedView && (
+        <section
+          className={cn(
+            "finance-view gap-4 lg:hidden",
+            activeSection === "fixed" ? "grid" : "hidden",
+          )}
+        >
+          <MobileSectionHeader title="Vaste lasten" subtitle={monthLabel(currentMonth)} />
+          {isSharedView ? (
+            <>
               <FixedExpenseManager
                 expenses={recurringExpenses}
                 categories={fixedCategories}
@@ -1486,41 +1281,205 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 onDelete={deleteRecurringExpense}
                 onCancel={resetRecurringForm}
               />
+              <FixedExpenseAgenda
+                items={fixedAgendaItems}
+                currentMonth={currentMonth}
+                message={fixedMessage}
+                highlightedId={highlightedFixedInstanceId}
+              />
+            </>
+          ) : (
+            <Card>
+              <CardContent>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Vaste lasten horen bij de gezamenlijke rekening.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </section>
+
+        <section
+          className={cn(
+            "finance-view gap-4 lg:hidden",
+            activeSection === "input" ? "grid" : "hidden",
+          )}
+        >
+          <MobileSectionHeader title="Invoeren" subtitle={viewCopy.label} />
+          <QuickEntryCard
+            title={viewCopy.quickTitle}
+            amount={quickAmount}
+            account={quickAccount}
+            date={quickDate}
+            note={quickNote}
+            category={quickCategory}
+            onAmountChange={setQuickAmount}
+            onAccountChange={setQuickAccount}
+            onDateChange={setQuickDate}
+            onNoteChange={setQuickNote}
+            onCategoryChange={setQuickCategory}
+            isScanningReceipt={isScanningReceipt}
+            scanMessage={scanMessage}
+            receiptDraft={receiptDraft}
+            onScanReceipt={scanReceipt}
+            onDismissReceiptDraft={dismissReceiptDraft}
+            categories={initialData.categories}
+            accounts={initialData.accounts}
+            onSubmit={addVariableExpense}
+          />
+        </section>
+
+        <section
+          className={cn(
+            "finance-view gap-4 lg:hidden",
+            activeSection === "month" ? "grid" : "hidden",
+          )}
+        >
+          <MobileSectionHeader title="Maand" subtitle={monthLabel(currentMonth)} />
+          <MonthTransactionsCard
+            title={viewCopy.monthTitle}
+            description={viewCopy.monthDescription}
+            currentMonth={currentMonth}
+            monthTransactions={monthTransactions}
+            labels={labels}
+            selectedAccountId={selectedAccountId}
+            monthMessage={monthMessage}
+            deletingTransactionId={deletingTransactionId}
+            onDeleteTransaction={deleteTransaction}
+            onExportExcel={exportExcel}
+            onExportPdf={exportPdf}
+          />
+          <ChartsPanel
+            categoryRows={categoryRows}
+            selectedSixMonthTrend={selectedSixMonthTrend}
+            chartsReady={chartsReady}
+          />
+        </section>
+
+        <div className="hidden gap-4 lg:grid lg:grid-cols-[220px_minmax(0,1fr)_320px] xl:grid-cols-[232px_minmax(0,1fr)_340px] 2xl:grid-cols-[240px_minmax(0,1fr)_360px]">
+          <aside className="sticky top-4 self-start">
+            <AccountRail
+              tabs={accountTabs}
+              selectedAccountId={selectedAccountId}
+              currentMonth={currentMonth}
+              currentPerson={initialData.currentPerson}
+              metrics={dashboardMetrics}
+              activeSection={activeSection}
+              onSelect={(accountId) => {
+                setSelectedAccountId(accountId);
+                setQuickAccount(accountId);
+              }}
+              onSectionChange={setActiveSection}
+            />
+          </aside>
+
+          <section className="grid min-w-0 content-start gap-4">
+            <section id="finance-dashboard">
+              <DashboardHero
+                label={viewCopy.label}
+                value={dashboardPrimaryValue}
+                subtext={dashboardPrimarySubtext}
+                metrics={dashboardMetrics.slice(0, 3)}
+              />
+            </section>
+
+            <MonthInsightsSection
+              currentMonth={currentMonth}
+              monthTitle={viewCopy.monthTitle}
+              monthDescription={viewCopy.monthDescription}
+              monthTransactions={monthTransactions}
+              labels={labels}
+              selectedAccountId={selectedAccountId}
+              monthMessage={monthMessage}
+              deletingTransactionId={deletingTransactionId}
+              categoryRows={categoryRows}
+              selectedSixMonthTrend={selectedSixMonthTrend}
+              chartsReady={chartsReady}
+              onDeleteTransaction={deleteTransaction}
+              onExportExcel={exportExcel}
+              onExportPdf={exportPdf}
+            />
+
+            {isSharedView && (
+              <PersonCostInsight
+                people={initialData.people}
+                personTotals={personTotals}
+                categoryRows={categoryPersonRows}
+                isSharedView={isSharedView}
+              />
+            )}
+
+            {isSharedView && (
+              <section id="finance-fixed" className="scroll-mt-4 grid gap-4">
+                <FixedExpenseAgenda
+                  items={fixedAgendaItems}
+                  currentMonth={currentMonth}
+                  message={fixedMessage}
+                  highlightedId={highlightedFixedInstanceId}
+                />
+                <FixedExpenseManager
+                  expenses={recurringExpenses}
+                  categories={fixedCategories}
+                  labels={labels}
+                  name={recurringName}
+                  amount={recurringAmount}
+                  billingDay={recurringBillingDay}
+                  startsOn={recurringStartsOn}
+                  category={recurringCategory}
+                  editingId={editingRecurringId}
+                  highlightedId={highlightedRecurringId}
+                  message={manageMessage}
+                  isSaving={isSavingRecurring}
+                  onNameChange={setRecurringName}
+                  onAmountChange={setRecurringAmount}
+                  onBillingDayChange={setRecurringBillingDay}
+                  onStartsOnChange={setRecurringStartsOn}
+                  onCategoryChange={setRecurringCategory}
+                  onSave={saveRecurringExpense}
+                  onEdit={startEditingRecurring}
+                  onDelete={deleteRecurringExpense}
+                  onCancel={resetRecurringForm}
+                />
+              </section>
             )}
           </section>
 
-          <aside className="grid gap-4 lg:sticky lg:top-4 lg:self-start">
-            <div className="hidden lg:block">
-              <AccountBalanceCard
-                accountName={selectedAccount?.name ?? viewCopy.label}
-                snapshot={latestBalanceSnapshot}
-                calculatedBalance={calculatedBalance}
-                expectedMonthEndBalance={expectedMonthEndBalance}
-                expectedIncomeTotal={expectedIncomeTotal}
-                expenseTotal={monthTotals.expenseTotal}
-                balanceAmount={balanceAmount}
-                balanceDate={balanceDate}
-                balanceMessage={balanceMessage}
-                isSavingBalance={isSavingBalance}
-                incomeAmount={incomeAmount}
-                incomeDate={incomeDate}
-                incomeKind={incomeKind}
-                incomeNote={incomeNote}
-                incomeMessage={incomeMessage}
-                isSavingIncome={isSavingIncome}
-                showIncomeForm={!isSharedView}
-                onBalanceAmountChange={setBalanceAmount}
-                onBalanceDateChange={setBalanceDate}
-                onSaveBalance={saveBalanceSnapshot}
-                onIncomeAmountChange={setIncomeAmount}
-                onIncomeDateChange={setIncomeDate}
-                onIncomeKindChange={setIncomeKind}
-                onIncomeNoteChange={setIncomeNote}
-                onAddIncome={addIncome}
-              />
-            </div>
+          <aside
+            data-finance-context
+            className="scrollbar-hidden sticky top-4 grid max-h-[calc(100dvh-2rem)] gap-4 overflow-auto"
+          >
+            <AccountBalanceCard
+              accountName={selectedAccount?.name ?? viewCopy.label}
+              snapshot={latestBalanceSnapshot}
+              calculatedBalance={calculatedBalance}
+              expectedMonthEndBalance={expectedMonthEndBalance}
+              expectedIncomeTotal={expectedIncomeTotal}
+              expenseTotal={monthTotals.expenseTotal}
+              balanceAmount={balanceAmount}
+              balanceDate={balanceDate}
+              balanceMessage={balanceMessage}
+              isSavingBalance={isSavingBalance}
+              incomeAmount={incomeAmount}
+              incomeDate={incomeDate}
+              incomeKind={incomeKind}
+              incomeNote={incomeNote}
+              incomeMessage={incomeMessage}
+              isSavingIncome={isSavingIncome}
+              showIncomeForm={!isSharedView}
+              incomingLabel={isSharedView ? "Te storten" : "Inkomen"}
+              onBalanceAmountChange={setBalanceAmount}
+              onBalanceDateChange={setBalanceDate}
+              onSaveBalance={saveBalanceSnapshot}
+              onIncomeAmountChange={setIncomeAmount}
+              onIncomeDateChange={setIncomeDate}
+              onIncomeKindChange={setIncomeKind}
+              onIncomeNoteChange={setIncomeNote}
+              onAddIncome={addIncome}
+            />
 
-            <div className="hidden lg:block">
+            <BankAppsCard />
+
+            <section id="finance-input" className="scroll-mt-4">
               <QuickEntryCard
                 title={viewCopy.quickTitle}
                 amount={quickAmount}
@@ -1542,7 +1501,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 accounts={initialData.accounts}
                 onSubmit={addVariableExpense}
               />
-            </div>
+            </section>
 
             {isSharedView && (
               <>
@@ -1605,41 +1564,188 @@ type FixedAgendaItem = {
   note?: string;
 };
 
+function MobileBottomNav({
+  activeSection,
+  onSectionChange,
+}: {
+  activeSection: ActiveSection;
+  onSectionChange: (section: ActiveSection) => void;
+}) {
+  const items = sectionNavItems();
+
+  return (
+    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t border-[var(--border)] lg:hidden">
+      {items.map((item) => {
+        const isActive = activeSection === item.id;
+        const Icon = item.icon;
+
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSectionChange(item.id)}
+            className={cn(
+              "flex flex-col items-center justify-center gap-1 text-[11px] font-medium",
+              isActive
+                ? "text-[var(--accent)]"
+                : "text-[var(--text-muted)]",
+            )}
+            aria-label={item.label}
+          >
+            <Icon className="h-6 w-6" />
+            {isActive && <span>{item.label}</span>}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function MobileSectionHeader({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="flex items-end justify-between gap-4">
+      <div>
+        <h1 className="text-2xl font-semibold text-[var(--text-primary)]">
+          {title}
+        </h1>
+        <p className="mt-1 text-sm text-[var(--text-secondary)]">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+function AccountPills({
+  tabs,
+  selectedAccountId,
+  onSelect,
+}: {
+  tabs: Array<{ id: string; label: string; description: string }>;
+  selectedAccountId: string;
+  onSelect: (accountId: string) => void;
+}) {
+  return (
+    <div className="flex w-full gap-1 rounded-[var(--radius-chip)] bg-[var(--bg-surface)] p-1">
+      {tabs.map((tab) => {
+        const isActive = selectedAccountId === tab.id;
+
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onSelect(tab.id)}
+            className={cn(
+              "min-w-0 flex-1 rounded-[var(--radius-chip)] px-[18px] py-1.5 text-center text-sm font-medium",
+              isActive
+                ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                : "text-[var(--text-secondary)] hover:bg-white/[0.04]",
+            )}
+          >
+            <span className="block truncate">{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function DashboardHero({
+  label,
+  value,
+  subtext,
+  metrics,
+  mobile = false,
+}: {
+  label: string;
+  value: string;
+  subtext: string;
+  metrics: DashboardMetric[];
+  mobile?: boolean;
+}) {
+  return (
+    <section className="finance-card rounded-[var(--radius-card)] border border-[var(--border)] bg-[linear-gradient(135deg,#191924,#13131C)] p-5 shadow-[0_0_80px_rgba(99,102,241,0.07)_inset]">
+      <div className={cn("grid gap-5", mobile ? "text-center" : "lg:grid-cols-[1fr_auto] lg:items-end")}>
+        <div>
+          <p className="text-sm font-medium text-[var(--text-secondary)] lg:text-xs">
+            {label}
+          </p>
+          <p
+            className={cn(
+              "mt-2 font-bold tracking-normal text-[var(--text-primary)]",
+              mobile ? "text-[44px]" : "text-[32px]",
+            )}
+          >
+            {value}
+          </p>
+          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
+            {subtext}
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {metrics.map((metric) => (
+            <div
+              key={metric.label}
+              className="rounded-[14px] border border-[var(--border)] bg-black/10 p-3 text-left"
+            >
+              <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent-light)] text-[var(--accent)]">
+                {metric.icon}
+              </div>
+              <p className="truncate text-lg font-semibold text-[var(--text-primary)]">
+                {metric.value}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
+                {metric.label}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function AccountRail({
   tabs,
   selectedAccountId,
   currentMonth,
   currentPerson,
   metrics,
+  activeSection,
   onSelect,
+  onSectionChange,
 }: {
   tabs: Array<{ id: string; label: string; description: string }>;
   selectedAccountId: string;
   currentMonth: string;
   currentPerson: string;
-  metrics: Array<{
-    icon: React.ReactNode;
-    label: string;
-    value: string;
-    tone: "indigo" | "emerald" | "red" | "zinc";
-  }>;
+  metrics: DashboardMetric[];
+  activeSection: ActiveSection;
   onSelect: (accountId: string) => void;
+  onSectionChange: (section: ActiveSection) => void;
 }) {
+  const items = sectionNavItems();
+
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="pb-0">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>Overzicht</CardTitle>
-            <CardDescription>{monthLabel(currentMonth)}</CardDescription>
-          </div>
-          <Badge className="border-zinc-800 bg-zinc-950/70 text-zinc-400">
-            {currentPerson}
-          </Badge>
+    <Card className="flex min-h-[calc(100dvh-2rem)] flex-col overflow-hidden bg-[var(--bg-surface)]">
+      <CardContent className="flex flex-1 flex-col gap-5 p-3">
+        <div className="px-2 pt-2">
+          <p className="text-xl font-semibold text-[var(--text-primary)]">
+            Finance
+          </p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            Familie Wijnands
+          </p>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-1 rounded-[14px] border border-zinc-800 bg-zinc-950/55 p-1">
+
+        <div className="grid gap-1">
+          <p className="px-2 text-xs text-[var(--text-muted)]">
+            Rekening
+          </p>
           {tabs.map((tab) => {
             const isActive = selectedAccountId === tab.id;
 
@@ -1649,14 +1755,14 @@ function AccountRail({
                 type="button"
                 onClick={() => onSelect(tab.id)}
                 className={cn(
-                  "rounded-[10px] border px-3 py-2 text-left transition",
+                  "rounded-[8px] px-3 py-2 text-left",
                   isActive
-                    ? "border-zinc-700 bg-zinc-900 text-zinc-50"
-                    : "border-transparent text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200",
+                    ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                    : "text-[var(--text-secondary)] hover:bg-white/[0.04]",
                 )}
               >
                 <span className="block text-sm font-semibold">{tab.label}</span>
-                <span className="mt-0.5 block truncate text-xs text-zinc-600">
+                <span className="mt-0.5 block truncate text-xs opacity-70">
                   {tab.description}
                 </span>
               </button>
@@ -1664,10 +1770,53 @@ function AccountRail({
           })}
         </div>
 
-        <div className="grid gap-2">
-          {metrics.map((metric) => (
+        <nav className="grid gap-1 border-t border-[var(--border)] pt-4">
+          {items.map((item) => {
+            const isActive = activeSection === item.id;
+            const Icon = item.icon;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onSectionChange(item.id);
+                  scrollToFinanceSection(item.id);
+                }}
+                className={cn(
+                  "flex items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-medium",
+                  isActive
+                    ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                    : "text-[var(--text-secondary)] hover:bg-white/[0.04]",
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="grid gap-2 border-t border-[var(--border)] pt-4">
+          <p className="px-2 text-xs text-[var(--text-muted)]">
+            {monthLabel(currentMonth)}
+          </p>
+          {metrics.slice(0, 3).map((metric) => (
             <RailMetric key={metric.label} {...metric} />
           ))}
+        </div>
+
+        <div className="mt-auto rounded-[12px] border border-[var(--border)] bg-black/10 p-3">
+          <p className="text-sm font-medium text-[var(--text-primary)]">
+            {currentPerson}
+          </p>
+          <form action="/auth/sign-out" method="post" className="mt-2">
+            <Button type="submit" size="sm" variant="ghost" className="h-8 px-0 text-[var(--text-secondary)] hover:bg-transparent hover:text-[var(--text-primary)]">
+              <LogOut className="h-4 w-4" />
+              Uitloggen
+            </Button>
+          </form>
         </div>
       </CardContent>
     </Card>
@@ -1734,6 +1883,480 @@ function RailMetric({
   );
 }
 
+function MonthTransactionsCard({
+  title,
+  description,
+  currentMonth,
+  monthTransactions,
+  labels,
+  selectedAccountId,
+  monthMessage,
+  deletingTransactionId,
+  onDeleteTransaction,
+  onExportExcel,
+  onExportPdf,
+  compact = false,
+  className,
+}: {
+  title: string;
+  description: string;
+  currentMonth: string;
+  monthTransactions: Transaction[];
+  labels: Map<string, DashboardData["categories"][number]>;
+  selectedAccountId: string;
+  monthMessage: string;
+  deletingTransactionId: string | null;
+  onDeleteTransaction: (transaction: Transaction) => void;
+  onExportExcel: () => void;
+  onExportPdf: () => void;
+  compact?: boolean;
+  className?: string;
+}) {
+  const visibleTransactions = compact
+    ? monthTransactions.slice(0, 6)
+    : monthTransactions;
+  const hiddenCount = monthTransactions.length - visibleTransactions.length;
+  const cardTitle = compact ? "Maandoverzicht" : title;
+
+  return (
+    <Card
+      className={cn(
+        "finance-card overflow-hidden",
+        compact ? "max-w-none" : "max-w-[640px]",
+        className,
+      )}
+    >
+      <CardHeader className="flex flex-row items-start justify-between gap-4 pb-3">
+        <div>
+          <CardTitle>{cardTitle}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge className="hidden border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)] sm:inline-flex">
+            {monthLabel(currentMonth)}
+          </Badge>
+          <Button size="icon" variant="secondary" onClick={onExportExcel} title="Exporteer Excel" className="h-9 w-9">
+            <FileSpreadsheet className="h-4 w-4" />
+          </Button>
+          <Button size="icon" variant="secondary" onClick={onExportPdf} title="Exporteer PDF" className="h-9 w-9">
+            <ArrowDownToLine className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {monthMessage && (
+          <p className="mx-4 mb-3 rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)] sm:mx-5">
+            {monthMessage}
+          </p>
+        )}
+
+        {monthTransactions.length > 0 ? (
+          <div className="divide-y divide-[var(--border)]">
+            {visibleTransactions.map((transaction) => {
+              const category = labels.get(transaction.categoryId);
+              const isDeleting = deletingTransactionId === transaction.id;
+              const isContribution = transaction.type === "contribution";
+              const isIncome = transaction.type === "income";
+              const isPositive = isContribution || isIncome;
+              const title =
+                isContribution
+                  ? "Storting"
+                  : isIncome
+                    ? category?.name ?? "Inkomsten"
+                    : category?.name ?? "Onbekend";
+              const metadata = [
+                transaction.type === "fixed" ? "Vaste last" : category?.name,
+                transaction.date,
+                transaction.note,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+
+              return (
+                <div
+                  key={transaction.id}
+                  className={cn(
+                    "desktop-row-hover grid grid-cols-[1fr_auto] items-center gap-3 px-4 transition sm:px-5",
+                    compact ? "py-2.5" : "py-3",
+                  )}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-surface)] text-[var(--text-secondary)]">
+                      <ReceiptText className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+                        {title}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
+                        {metadata}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex min-w-fit items-center gap-2 text-right">
+                    <div>
+                      <p
+                        className={cn(
+                          "text-[15px] font-semibold",
+                          isPositive
+                            ? "text-[var(--positive)]"
+                            : "text-[var(--negative)]",
+                        )}
+                      >
+                        {isPositive ? "+" : "-"}
+                        {preciseCurrency(transaction.amount)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                        {selectedAccountId === "all"
+                          ? transaction.accountName
+                          : transaction.enteredBy}
+                      </p>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      title="Verwijder afschrijving"
+                      onClick={() => onDeleteTransaction(transaction)}
+                      disabled={isDeleting}
+                      className="h-8 w-8 text-[var(--text-muted)] hover:text-[var(--negative)]"
+                    >
+                      {isDeleting ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+            {hiddenCount > 0 && (
+              <div className="px-4 py-3 text-xs text-[var(--text-muted)] sm:px-5">
+                Plus {hiddenCount} extra transacties in dit maandoverzicht.
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            className={cn(
+              "m-4 rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--bg-surface)] text-sm text-[var(--text-secondary)] sm:m-5",
+              compact ? "p-3" : "p-4",
+            )}
+          >
+            Nog geen transacties in {monthLabel(currentMonth)}.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MonthInsightsSection({
+  currentMonth,
+  monthTitle,
+  monthDescription,
+  monthTransactions,
+  labels,
+  selectedAccountId,
+  monthMessage,
+  deletingTransactionId,
+  categoryRows,
+  selectedSixMonthTrend,
+  chartsReady,
+  onDeleteTransaction,
+  onExportExcel,
+  onExportPdf,
+}: {
+  currentMonth: string;
+  monthTitle: string;
+  monthDescription: string;
+  monthTransactions: Transaction[];
+  labels: Map<string, DashboardData["categories"][number]>;
+  selectedAccountId: string;
+  monthMessage: string;
+  deletingTransactionId: string | null;
+  categoryRows: ReturnType<typeof categoryTotals>;
+  selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
+  chartsReady: boolean;
+  onDeleteTransaction: (transaction: Transaction) => void;
+  onExportExcel: () => void;
+  onExportPdf: () => void;
+}) {
+  return (
+    <section id="finance-month" className="scroll-mt-4 grid gap-4">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-[var(--text-primary)]">
+            Maandinzichten
+          </p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            Transacties, verdeling en trend in een overzicht.
+          </p>
+        </div>
+        <Badge className="border-[var(--border)] bg-[var(--accent-light)] text-[var(--accent)]">
+          {monthLabel(currentMonth)}
+        </Badge>
+      </div>
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.78fr)_minmax(0,1.22fr)]">
+        <MonthTransactionsCard
+          title={monthTitle}
+          description={monthDescription}
+          currentMonth={currentMonth}
+          monthTransactions={monthTransactions}
+          labels={labels}
+          selectedAccountId={selectedAccountId}
+          monthMessage={monthMessage}
+          deletingTransactionId={deletingTransactionId}
+          onDeleteTransaction={onDeleteTransaction}
+          onExportExcel={onExportExcel}
+          onExportPdf={onExportPdf}
+          compact
+          className="xl:sticky xl:top-4"
+        />
+        <ChartsPanel
+          categoryRows={categoryRows}
+          selectedSixMonthTrend={selectedSixMonthTrend}
+          chartsReady={chartsReady}
+          featured
+        />
+      </div>
+    </section>
+  );
+}
+
+function ChartsPanel({
+  categoryRows,
+  selectedSixMonthTrend,
+  chartsReady,
+  featured = false,
+}: {
+  categoryRows: ReturnType<typeof categoryTotals>;
+  selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
+  chartsReady: boolean;
+  featured?: boolean;
+}) {
+  const totalCategories = categoryRows.reduce((total, row) => total + row.amount, 0);
+  const hasCategoryData = totalCategories > 0;
+  const topCategory = categoryRows[0];
+  const visibleCategoryRows = featured ? categoryRows.slice(0, 5) : categoryRows;
+  const latestTrend = selectedSixMonthTrend.at(-1);
+  const latestTrendTotal = latestTrend
+    ? Number(latestTrend.fixed) + Number(latestTrend.variable)
+    : 0;
+  const hasTrendData = selectedSixMonthTrend.some(
+    (row) => Number(row.fixed) + Number(row.variable) > 0,
+  );
+
+  return (
+    <section className={cn("grid gap-4", !featured && "lg:grid-cols-1 2xl:grid-cols-2")}>
+      <Card className="finance-card overflow-hidden">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle>Categorieen</CardTitle>
+              <CardDescription>Waar deze maand het geld heen ging.</CardDescription>
+            </div>
+            <div className="hidden rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-right sm:block">
+              <p className="text-[11px] text-[var(--text-muted)]">Totaal</p>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
+                {currency(totalCategories)}
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent
+          className={cn(
+            "grid gap-4",
+            featured
+              ? "md:grid-cols-[220px_minmax(0,1fr)]"
+              : "md:grid-cols-[0.72fr_1.28fr] lg:grid-cols-1",
+          )}
+        >
+          <div className={cn("relative overflow-visible", hasCategoryData ? "h-48" : "h-36")}>
+            {chartsReady && hasCategoryData && (
+              <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                <PieChart>
+                  <Pie
+                    data={categoryRows}
+                    dataKey="amount"
+                    nameKey="name"
+                    innerRadius={featured ? 54 : 48}
+                    outerRadius={featured ? 78 : 70}
+                    paddingAngle={3}
+                    stroke="transparent"
+                  >
+                    {categoryRows.map((entry) => (
+                      <Cell key={entry.categoryId} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value) => currency(Number(value))}
+                    contentStyle={tooltipStyle}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+            {hasCategoryData ? (
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                <p className="text-[11px] text-[var(--text-muted)]">Totaal</p>
+                <p className="text-lg font-semibold text-[var(--text-primary)]">
+                  {currency(totalCategories)}
+                </p>
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <div className="flex h-28 w-28 flex-col items-center justify-center rounded-full border border-dashed border-[var(--border-strong)] bg-[var(--bg-surface)] text-center">
+                  <p className="text-[11px] text-[var(--text-muted)]">Nog leeg</p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                    {currency(0)}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="space-y-3">
+            {topCategory && (
+              <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Grootste categorie
+                </p>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: topCategory.color }}
+                    />
+                    <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+                      {topCategory.name}
+                    </p>
+                  </div>
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">
+                    {currency(topCategory.amount)}
+                  </p>
+                </div>
+              </div>
+            )}
+            {!hasCategoryData && (
+              <p className="rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-6 text-[var(--text-secondary)]">
+                Zodra er kosten staan, zie je hier direct welke categorieen de maand bepalen.
+              </p>
+            )}
+            {visibleCategoryRows.filter((row) => row.amount > 0).map((row) => {
+              const overBudget = row.average > 0 && row.amount > row.average;
+
+              return (
+                <div
+                  key={row.categoryId}
+                  className="grid grid-cols-[minmax(5rem,1fr)_minmax(80px,200px)_auto] items-center gap-3 text-xs"
+                >
+                  <span className="truncate text-[var(--text-secondary)]">
+                    {row.name}
+                  </span>
+                  <Progress
+                    value={row.amount}
+                    max={row.average || row.amount}
+                    className="max-w-[200px]"
+                    indicatorClassName={
+                      overBudget ? "bg-[var(--negative)]" : "bg-[var(--positive)]"
+                    }
+                  />
+                  <span
+                    className={cn(
+                      "font-medium",
+                      overBudget ? "text-[var(--negative)]" : "text-[var(--positive)]",
+                    )}
+                  >
+                    {currency(row.amount)}
+                  </span>
+                </div>
+              );
+            })}
+            {featured && categoryRows.length > visibleCategoryRows.length && (
+              <p className="text-xs text-[var(--text-muted)]">
+                Plus {categoryRows.length - visibleCategoryRows.length} kleinere categorieen.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="finance-card overflow-hidden">
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle>Laatste 6 maanden</CardTitle>
+              <CardDescription>Vaste lasten en variabele kosten naast elkaar.</CardDescription>
+            </div>
+            <div className="hidden rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-right sm:block">
+              <p className="text-[11px] text-[var(--text-muted)]">Deze maand</p>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
+                {currency(latestTrendTotal)}
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className={cn(hasTrendData ? (featured ? "h-72" : "h-56") : "h-44")}>
+          {chartsReady && hasTrendData ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+              <BarChart
+                data={selectedSixMonthTrend}
+                barGap={8}
+                margin={{ top: 16, right: 8, bottom: 4, left: -18 }}
+              >
+                <XAxis
+                  dataKey="month"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "var(--text-secondary)", fontSize: 12 }}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "var(--text-muted)", fontSize: 12 }}
+                  tickFormatter={(value) => `${Number(value) / 1000}k`}
+                />
+                <Tooltip
+                  formatter={(value) => currency(Number(value))}
+                  contentStyle={tooltipStyle}
+                  cursor={{ fill: "rgba(99, 102, 241, 0.08)" }}
+                />
+                <Bar dataKey="fixed" fill="var(--accent)" radius={[8, 8, 3, 3]} />
+                <Bar dataKey="variable" fill="var(--positive)" radius={[8, 8, 3, 3]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full flex-col justify-center gap-3">
+              {selectedSixMonthTrend.map((row, index) => (
+                <div key={`${row.month}-${index}`} className="grid grid-cols-[2.5rem_1fr] items-center gap-3">
+                  <span className="text-xs text-[var(--text-muted)]">{row.month}</span>
+                  <div className="h-2 rounded-full bg-[var(--bg-surface)]">
+                    <div className="h-full w-8 rounded-full bg-[var(--accent-light)]" />
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-[var(--text-secondary)]">
+                De trend wordt zichtbaar zodra er transacties in meerdere maanden staan.
+              </p>
+            </div>
+          )}
+        </CardContent>
+        <div className="flex gap-3 border-t border-[var(--border)] px-5 py-3 text-xs text-[var(--text-secondary)]">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
+            Vast
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[var(--positive)]" />
+            Variabel
+          </span>
+        </div>
+      </Card>
+    </section>
+  );
+}
+
 function FixedExpenseAgenda({
   items,
   currentMonth,
@@ -1769,9 +2392,16 @@ function FixedExpenseAgenda({
     (item) => item.state === "processed" || item.state === "changed",
   );
   const skippedItems = items.filter((item) => item.state === "skipped");
+  const timelineItems = compact
+    ? upcomingItems.slice(0, 4)
+    : [...upcomingItems, ...pastItems, ...skippedItems].sort(
+        (first, second) =>
+          first.date.localeCompare(second.date) ||
+          first.name.localeCompare(second.name, "nl"),
+      );
 
   return (
-    <Card>
+    <Card className="finance-card">
       <CardHeader className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
         <div>
           <CardTitle>Vaste lasten agenda</CardTitle>
@@ -1787,62 +2417,168 @@ function FixedExpenseAgenda({
       </CardHeader>
       <CardContent className={cn("space-y-5", compact && "space-y-4")}>
         {message && (
-          <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/70 p-3 text-sm text-zinc-300">
+          <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)]">
             {message}
           </p>
         )}
 
         <div className={cn("grid grid-cols-3 gap-2", compact && "grid-cols-1")}>
           <AgendaTotal label="Deze maand" value={monthlyTotal} tone="indigo" />
-          <AgendaTotal label="Open" value={openTotal} tone="zinc" />
-          <AgendaTotal label="Verwerkt" value={processedTotal} tone="emerald" />
+          <AgendaTotal label="Komt eraan" value={openTotal} tone="zinc" />
+          <AgendaTotal label="Afgelopen" value={processedTotal} tone="emerald" />
         </div>
 
-        <div className="rounded-[18px] border border-zinc-800 bg-zinc-950/35 p-4">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-              <CalendarDays className="h-4 w-4 text-indigo-300" />
-              Planning deze maand
-            </div>
-            <p className="text-xs text-zinc-500">
-              {items.length} {items.length === 1 ? "afschrijving" : "afschrijvingen"}
-            </p>
-          </div>
-
-          {items.length === 0 ? (
-            <div className="rounded-[16px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm leading-6 text-zinc-400">
-              Nog geen actieve vaste lasten. Voeg onderaan je hypotheek,
-              verzekeringen of abonnementen toe; daarna verschijnen ze hier
-              automatisch op afschrijfdag.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {upcomingItems.length > 0 && (
-                <AgendaSection
-                  title="Komt eraan"
-                  items={compact ? upcomingItems.slice(0, 4) : upcomingItems}
-                  highlightedId={highlightedId}
-                />
-              )}
-              {!compact && pastItems.length > 0 && (
-                <AgendaSection
-                  title="Verwerkt"
-                  items={pastItems}
-                  highlightedId={highlightedId}
-                />
-              )}
-              {!compact && skippedItems.length > 0 && (
-                <AgendaSection
-                  title="Overgeslagen"
-                  items={skippedItems}
-                  highlightedId={highlightedId}
-                />
-              )}
-            </div>
+        <div
+          className={cn(
+            "grid gap-4",
+            !compact && "lg:grid-cols-[0.9fr_1.1fr]",
           )}
+        >
+          {!compact && (
+            <FixedExpenseCalendar
+              items={items}
+              currentMonth={currentMonth}
+              highlightedId={highlightedId}
+            />
+          )}
+
+          <div className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-surface)] p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-[var(--text-primary)]">
+                <CalendarDays className="h-4 w-4 text-[var(--accent)]" />
+                {compact ? "Eerstvolgend" : "Tijdlijn"}
+              </div>
+              <p className="text-xs text-[var(--text-muted)]">
+                {timelineItems.length}{" "}
+                {timelineItems.length === 1 ? "afschrijving" : "afschrijvingen"}
+              </p>
+            </div>
+
+            {timelineItems.length === 0 ? (
+              <div className="rounded-[16px] border border-dashed border-[var(--border)] bg-black/10 p-4 text-sm leading-6 text-[var(--text-secondary)]">
+                Nog geen actieve vaste lasten. Voeg onderaan je hypotheek,
+                verzekeringen of abonnementen toe; daarna verschijnen ze hier
+                automatisch op afschrijfdag.
+              </div>
+            ) : (
+              <AgendaSection items={timelineItems} highlightedId={highlightedId} />
+            )}
+            {compact && items.length > timelineItems.length && (
+              <p className="mt-3 text-xs text-[var(--text-muted)]">
+                Plus {items.length - timelineItems.length} later deze maand.
+              </p>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function FixedExpenseCalendar({
+  items,
+  currentMonth,
+  highlightedId,
+}: {
+  items: FixedAgendaItem[];
+  currentMonth: string;
+  highlightedId?: string | null;
+}) {
+  const [year, monthNumber] = currentMonth.split("-").map(Number);
+  const daysInMonth = new Date(year, monthNumber, 0).getDate();
+  const firstDay = new Date(year, monthNumber - 1, 1).getDay();
+  const leadingBlanks = firstDay === 0 ? 6 : firstDay - 1;
+  const itemsByDay = new Map<number, FixedAgendaItem[]>();
+
+  items.forEach((item) => {
+    const dayItems = itemsByDay.get(item.day) ?? [];
+    dayItems.push(item);
+    itemsByDay.set(item.day, dayItems);
+  });
+
+  const cells = [
+    ...Array.from({ length: leadingBlanks }, (_, index) => ({
+      key: `blank-${index}`,
+      day: null as number | null,
+      items: [] as FixedAgendaItem[],
+    })),
+    ...Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+
+      return {
+        key: `day-${day}`,
+        day,
+        items: itemsByDay.get(day) ?? [],
+      };
+    }),
+  ];
+
+  return (
+    <div className="hidden rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-surface)] p-4 lg:block">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-[var(--text-primary)]">Kalender</p>
+          <p className="text-xs text-[var(--text-secondary)]">
+            Afschrijvingen per dag
+          </p>
+        </div>
+        <Badge className="border-[var(--border)] bg-[var(--accent-light)] text-[var(--accent)]">
+          {monthLabel(currentMonth)}
+        </Badge>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-[var(--text-muted)]">
+        {["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"].map((day) => (
+          <span key={day}>{day}</span>
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-7 gap-1">
+        {cells.map((cell) => {
+          const hasItems = cell.items.length > 0;
+          const isHighlighted = cell.items.some((item) => item.id === highlightedId);
+          const hasProcessed = cell.items.some(
+            (item) => item.state === "processed" || item.state === "changed",
+          );
+
+          return (
+            <div
+              key={cell.key}
+              className={cn(
+                "min-h-12 rounded-[10px] border border-transparent p-1.5 text-xs transition",
+                cell.day && "hover:bg-[var(--bg-card-hover)]",
+                hasItems && "border-[var(--border)] bg-[var(--accent-light)]",
+                isHighlighted && "border-[var(--accent)]",
+              )}
+            >
+              {cell.day && (
+                <>
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-medium text-[var(--text-secondary)]">
+                      {cell.day}
+                    </span>
+                    {hasItems && (
+                      <span
+                        className={cn(
+                          "h-2 w-2 rounded-full bg-[var(--accent)]",
+                          hasProcessed && "bg-[var(--positive)]",
+                        )}
+                      />
+                    )}
+                  </div>
+                  {hasItems && (
+                    <p className="mt-1 truncate text-[10px] font-medium text-[var(--text-primary)]">
+                      {currency(
+                        cell.items.reduce((total, item) => total + item.amount, 0),
+                      )}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -1859,13 +2595,15 @@ function AgendaTotal({
     <div
       className={cn(
         "rounded-[14px] border p-3",
-        tone === "indigo" && "border-indigo-400/20 bg-indigo-500/10",
-        tone === "emerald" && "border-emerald-400/20 bg-emerald-500/10",
-        tone === "zinc" && "border-zinc-800 bg-zinc-950/55",
+        tone === "indigo" && "border-[var(--border-strong)] bg-[var(--accent-light)]",
+        tone === "emerald" && "border-emerald-400/20 bg-[var(--positive-light)]",
+        tone === "zinc" && "border-[var(--border)] bg-[var(--bg-surface)]",
       )}
     >
-      <p className="text-[11px] font-medium uppercase text-zinc-500">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-zinc-50 sm:text-base">
+      <p className="text-[11px] font-medium uppercase text-[var(--text-muted)]">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-sm font-semibold text-[var(--text-primary)] sm:text-base">
         {currency(value)}
       </p>
     </div>
@@ -1873,17 +2611,14 @@ function AgendaTotal({
 }
 
 function AgendaSection({
-  title,
   items,
   highlightedId,
 }: {
-  title: string;
   items: FixedAgendaItem[];
   highlightedId?: string | null;
 }) {
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-medium text-zinc-500">{title}</p>
+    <div className="relative space-y-0">
       {items.map((item) => (
         <AgendaRow
           key={item.id}
@@ -1902,36 +2637,72 @@ function AgendaRow({
   item: FixedAgendaItem;
   isHighlighted: boolean;
 }) {
+  const isProcessed = item.state === "processed" || item.state === "changed";
+  const isSkipped = item.state === "skipped";
+
   return (
     <div
       className={cn(
-        "grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[13px] border border-zinc-800 bg-zinc-950/40 p-3 transition",
-        isHighlighted &&
-          "border-indigo-400/35 bg-indigo-500/10",
+        "relative grid grid-cols-[3rem_1fr] gap-3 py-2",
+        isSkipped && "opacity-70",
       )}
     >
-      <div className="flex h-11 w-11 flex-col items-center justify-center rounded-[12px] bg-zinc-900 text-zinc-100">
-        <span className="text-[10px] uppercase text-zinc-500">
-          {monthShort(item.date)}
-        </span>
-        <span className="text-base font-semibold">{item.day}</span>
+      <div className="relative flex flex-col items-center">
+        <div
+          className={cn(
+            "absolute top-8 bottom-[-0.5rem] w-px bg-[var(--border)]",
+            isProcessed && "bg-[var(--positive)] opacity-40",
+          )}
+        />
+        <div
+          className={cn(
+            "z-10 flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-card)] text-[13px] font-medium text-[var(--text-secondary)]",
+            isProcessed && "border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]",
+            item.state === "today" && "border-[var(--accent)] text-[var(--accent)]",
+            isHighlighted && "border-[var(--accent)] bg-[var(--accent-light)]",
+          )}
+        >
+          {isProcessed ? <Check className="h-4 w-4" /> : item.day}
+        </div>
       </div>
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span
-            className="h-2.5 w-2.5 shrink-0 rounded-full"
-            style={{ backgroundColor: item.categoryColor }}
-          />
-          <p className="truncate text-sm font-medium text-zinc-100">
-            {item.name}
+
+      <div
+        className={cn(
+          "rounded-[12px] border border-[var(--border)] bg-black/10 p-3 transition",
+          isHighlighted && "border-[var(--accent)] bg-[var(--accent-light)]",
+        )}
+      >
+        <div className="grid grid-cols-[1fr_auto] gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: item.categoryColor }}
+              />
+              <p
+                className={cn(
+                  "truncate text-sm font-medium text-[var(--text-primary)]",
+                  isSkipped && "text-[var(--text-muted)] line-through",
+                )}
+              >
+                {item.name}
+              </p>
+            </div>
+            <p className="mt-1 truncate text-xs text-[var(--text-secondary)]">
+              {item.categoryName} · {agendaStateLabel(item.state)}
+              {item.note ? ` · ${item.note}` : ""}
+            </p>
+          </div>
+          <p
+            className={cn(
+              "text-sm font-semibold text-[var(--text-primary)]",
+              isSkipped && "text-[var(--text-muted)] line-through",
+            )}
+          >
+            {currency(item.amount)}
           </p>
         </div>
-        <p className="mt-1 truncate text-xs text-zinc-500">
-          {item.categoryName} · {agendaStateLabel(item.state)}
-          {item.note ? ` · ${item.note}` : ""}
-        </p>
       </div>
-      <p className="text-sm font-semibold text-zinc-50">{currency(item.amount)}</p>
     </div>
   );
 }
@@ -2381,6 +3152,7 @@ function AccountBalanceCard({
   incomeMessage,
   isSavingIncome,
   showIncomeForm,
+  incomingLabel,
   onBalanceAmountChange,
   onBalanceDateChange,
   onSaveBalance,
@@ -2407,6 +3179,7 @@ function AccountBalanceCard({
   incomeMessage: string;
   isSavingIncome: boolean;
   showIncomeForm: boolean;
+  incomingLabel: string;
   onBalanceAmountChange: (value: string) => void;
   onBalanceDateChange: (value: string) => void;
   onSaveBalance: () => void;
@@ -2417,9 +3190,9 @@ function AccountBalanceCard({
   onAddIncome: () => void;
 }) {
   return (
-    <Card>
+    <Card className="finance-card">
       <CardHeader>
-        <CardTitle>Saldo</CardTitle>
+        <CardTitle>{showIncomeForm ? "Saldo & inkomen" : "Saldo"}</CardTitle>
         <CardDescription>{accountName}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -2444,7 +3217,7 @@ function AccountBalanceCard({
                 : "emerald"
             }
           />
-          <ContributionStat label="Inkomsten" value={currency(expectedIncomeTotal)} />
+          <ContributionStat label={incomingLabel} value={currency(expectedIncomeTotal)} />
           <ContributionStat
             label="Uitgaven"
             value={currency(expenseTotal)}
@@ -2583,6 +3356,61 @@ function AccountBalanceCard({
   );
 }
 
+function BankAppsCard() {
+  const bankLinks = [
+    {
+      name: "ING",
+      label: "ING",
+      href: "https://www.ing.nl/particulier/betalen/bankrekeningen/sneakpeak-ing-app",
+      badge: "ING",
+      badgeClass: "bg-[#ff6200] text-white",
+    },
+    {
+      name: "ABN AMRO",
+      label: "ABN",
+      href: "https://www.abnamro.nl/nl/prive/internet-en-mobiel/abn-amro-app/index.html",
+      badge: "ABN",
+      badgeClass: "bg-[linear-gradient(135deg,#008578_0%,#008578_58%,#f6c343_58%,#f6c343_100%)] text-white",
+    },
+  ];
+
+  return (
+    <Card className="finance-card">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Bank apps</CardTitle>
+        <CardDescription>
+          Open je bank om saldo of afschrijvingen te controleren.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+          {bankLinks.map((bank) => (
+            <a
+              key={bank.name}
+              href={bank.href}
+              target="_blank"
+              rel="noreferrer"
+              className="accent-glow-hover inline-flex h-12 items-center justify-between gap-3 rounded-[var(--radius-btn)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-sm font-medium text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-card-hover)]"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  className={cn(
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-[10px] font-bold tracking-normal shadow-[0_8px_22px_rgba(0,0,0,0.22)]",
+                    bank.badgeClass,
+                  )}
+                >
+                  {bank.badge}
+                </span>
+                <span className="truncate">{bank.label}</span>
+              </span>
+            </a>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ContributionCard({
   amount,
   date,
@@ -2636,17 +3464,73 @@ function ContributionCard({
   onSubmit: () => void;
 }) {
   return (
-    <Card className="h-full">
+    <Card className="finance-card h-full">
       <CardHeader>
-        <CardTitle>Inleg & cashflow</CardTitle>
+        <CardTitle>Stortingen</CardTitle>
         <CardDescription>
-          Standaard maandinleg en losse bijschrijvingen.
+          Wat er deze maand op de gezamenlijke rekening binnenkomt.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <div className="rounded-[16px] border border-[var(--border)] bg-[linear-gradient(135deg,#191924,#13131C)] p-4">
+          <p className="text-xs font-medium text-[var(--text-secondary)]">
+            Gestort deze maand
+          </p>
+          <p className="mt-2 text-4xl font-bold tracking-normal text-[var(--text-primary)] lg:text-[32px]">
+            {currency(receivedTotal)}
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <span className="text-[var(--text-secondary)]">
+              Gepland {currency(plannedTotal)}
+            </span>
+            <span
+              className={cn(
+                "text-right",
+                remainingTotal > 0 ? "text-[var(--accent)]" : "text-[var(--positive)]",
+              )}
+            >
+              Nog {currency(remainingTotal)}
+            </span>
+          </div>
+        </div>
+
+        <div className="divide-y divide-[var(--border)] rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]">
+          {plans.map((plan) => {
+            const isComplete = plan.remaining <= 0;
+
+            return (
+              <div
+                key={plan.id}
+                className="grid grid-cols-[1fr_auto] items-center gap-3 px-3 py-2.5"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+                    {plan.person}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
+                    Rond dag {plan.depositDay} · {currency(plan.received)} binnen
+                  </p>
+                </div>
+                <Badge
+                  className={cn(
+                    "border-[var(--border)] bg-black/10 text-[var(--text-secondary)]",
+                    isComplete &&
+                      "border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]",
+                  )}
+                >
+                  {isComplete ? "op schema" : currency(plan.remaining)}
+                </Badge>
+              </div>
+            );
+          })}
+          {plans.length === 0 && (
+            <p className="p-3 text-sm text-[var(--text-secondary)]">
+              Maandelijkse stortingen verschijnen zodra Supabase chunk 20 is uitgevoerd.
+            </p>
+          )}
+        </div>
+
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <ContributionStat label="Gepland" value={currency(plannedTotal)} />
-          <ContributionStat label="Ontvangen" value={currency(receivedTotal)} />
           <ContributionStat
             label="Nog verwacht"
             value={currency(remainingTotal)}
@@ -2659,140 +3543,131 @@ function ContributionCard({
           />
         </div>
 
-        <div className="space-y-2 rounded-[14px] border border-zinc-800/70 bg-zinc-950/35 p-2">
-          {plans.map((plan) => {
-            const draft = planDrafts[plan.id] ?? {
-              amount: String(plan.monthlyAmount || ""),
-              depositDay: String(plan.depositDay),
-            };
-            const isSavingPlan = savingPlanId === plan.id;
-
-            return (
-              <div
-                key={plan.id}
-                className="grid gap-2 rounded-[12px] border border-zinc-800/70 bg-[#18181B] p-2"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-100">{plan.person}</p>
-                    <p className="text-xs text-zinc-500">
-                      Elke maand rond dag {plan.depositDay} · binnen{" "}
-                      {currency(plan.received)} · nog {currency(plan.remaining)}
-                    </p>
-                  </div>
-                  <Badge
-                    className={cn(
-                      "border-zinc-700 bg-zinc-900 text-zinc-300",
-                      plan.remaining <= 0 &&
-                        "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
-                    )}
-                  >
-                    dag {plan.depositDay}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
-                  <Input
-                    inputMode="decimal"
-                    value={draft.amount}
-                    placeholder="Maandbedrag"
-                    className="h-9"
-                    onChange={(event) =>
-                      onPlanDraftChange(plan.id, "amount", event.target.value)
-                    }
-                  />
-                  <Select
-                    value={draft.depositDay}
-                    className="h-9"
-                    aria-label={`Stortdag ${plan.person}`}
-                    onChange={(event) =>
-                      onPlanDraftChange(plan.id, "depositDay", event.target.value)
-                    }
-                  >
-                    {Array.from({ length: 31 }, (_, index) => index + 1).map(
-                      (day) => (
-                        <option key={day} value={day}>
-                          Dag {day}
-                        </option>
-                      ),
-                    )}
-                  </Select>
-                  <Button
-                    size="icon"
-                    variant="secondary"
-                    title={`Standaardinleg ${plan.person} bewaren`}
-                    className="h-9 w-9"
-                    disabled={isSavingPlan}
-                    onClick={() => onPlanSave(plan)}
-                  >
-                    {isSavingPlan ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-          {plans.length === 0 && (
-            <p className="rounded-[12px] border border-dashed border-zinc-800 p-3 text-sm text-zinc-500">
-              Standaardinleg verschijnt zodra Supabase chunk 20 is uitgevoerd.
-            </p>
-          )}
-        </div>
-
         {planMessage && (
-          <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+          <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)]">
             {planMessage}
           </p>
         )}
 
-        <div className="grid gap-2 border-t border-zinc-800/70 pt-3">
-          <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">
-            Losse inleg
-          </p>
-          <Input
-            inputMode="decimal"
-            placeholder="Bedrag"
-            value={amount}
-            className="h-10 text-sm font-semibold"
-            onChange={(event) => onAmountChange(event.target.value)}
-          />
-          <Input
-            type="date"
-            value={date}
-            className="h-10"
-            onChange={(event) => onDateChange(event.target.value)}
-          />
-          <Input
-            placeholder={`Notitie, bijv. inleg ${person}`}
-            value={note}
-            className="h-10"
-            onChange={(event) => onNoteChange(event.target.value)}
-          />
-        </div>
+        <details className="group rounded-[14px] border border-[var(--border)] bg-black/10">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-[var(--text-primary)]">
+            Aanpassen
+            <Plus className="h-4 w-4 text-[var(--text-muted)] transition group-open:rotate-45" />
+          </summary>
+          <div className="grid gap-3 border-t border-[var(--border)] p-3">
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-normal text-[var(--text-muted)]">
+                Maandelijkse storting
+              </p>
+              {plans.map((plan) => {
+                const draft = planDrafts[plan.id] ?? {
+                  amount: String(plan.monthlyAmount || ""),
+                  depositDay: String(plan.depositDay),
+                };
+                const isSavingPlan = savingPlanId === plan.id;
+
+                return (
+                  <div key={plan.id} className="grid gap-2 rounded-[12px] bg-[var(--bg-surface)] p-2">
+                    <p className="text-xs font-medium text-[var(--text-secondary)]">
+                      {plan.person}
+                    </p>
+                    <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
+                      <Input
+                        inputMode="decimal"
+                        value={draft.amount}
+                        placeholder="Maandbedrag"
+                        className="h-9"
+                        onChange={(event) =>
+                          onPlanDraftChange(plan.id, "amount", event.target.value)
+                        }
+                      />
+                      <Select
+                        value={draft.depositDay}
+                        className="h-9"
+                        aria-label={`Stortdag ${plan.person}`}
+                        onChange={(event) =>
+                          onPlanDraftChange(plan.id, "depositDay", event.target.value)
+                        }
+                      >
+                        {Array.from({ length: 31 }, (_, index) => index + 1).map(
+                          (day) => (
+                            <option key={day} value={day}>
+                              Dag {day}
+                            </option>
+                          ),
+                        )}
+                      </Select>
+                      <Button
+                        size="icon"
+                        variant="secondary"
+                        title={`Maandelijkse storting ${plan.person} bewaren`}
+                        className="h-9 w-9"
+                        disabled={isSavingPlan}
+                        onClick={() => onPlanSave(plan)}
+                      >
+                        {isSavingPlan ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="grid gap-2 border-t border-[var(--border)] pt-3">
+              <p className="text-xs font-medium uppercase tracking-normal text-[var(--text-muted)]">
+                Extra storting
+              </p>
+              <Input
+                inputMode="decimal"
+                placeholder="Bedrag"
+                value={amount}
+                className="h-10 text-sm font-semibold"
+                onChange={(event) => onAmountChange(event.target.value)}
+              />
+              <Input
+                type="date"
+                value={date}
+                className="h-10"
+                onChange={(event) => onDateChange(event.target.value)}
+              />
+              <Input
+                placeholder={`Notitie, bijv. storting ${person}`}
+                value={note}
+                className="h-10"
+                onChange={(event) => onNoteChange(event.target.value)}
+              />
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <p className="text-xs text-[var(--text-muted)]">
+                  Ingevoerd door {person}
+                </p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={onSubmit}
+                  disabled={isSaving}
+                  className="border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10"
+                >
+                  {isSaving ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowDownToLine className="h-4 w-4" />
+                  )}
+                  Opslaan
+                </Button>
+              </div>
+            </div>
+          </div>
+        </details>
+
         {message && (
-          <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+          <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)]">
             {message}
           </p>
         )}
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <p className="text-xs text-zinc-500">Ingevoerd door {person}</p>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={onSubmit}
-            disabled={isSaving}
-            className="border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10"
-          >
-            {isSaving ? (
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowDownToLine className="h-4 w-4" />
-            )}
-            Opslaan
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );
@@ -2810,17 +3685,19 @@ function ContributionStat({
   return (
     <div
       className={cn(
-        "rounded-[12px] border bg-zinc-950/40 p-2.5",
-        tone === "zinc" && "border-zinc-800",
-        tone === "indigo" && "border-indigo-400/25 bg-indigo-500/10",
-        tone === "emerald" && "border-emerald-400/20 bg-emerald-500/10",
-        tone === "red" && "border-red-400/25 bg-red-500/10",
+        "rounded-[12px] border bg-black/10 p-2.5",
+        tone === "zinc" && "border-[var(--border)]",
+        tone === "indigo" && "border-[var(--border-strong)] bg-[var(--accent-light)]",
+        tone === "emerald" && "border-emerald-400/20 bg-[var(--positive-light)]",
+        tone === "red" && "border-red-400/25 bg-[var(--negative-light)]",
       )}
     >
-      <p className="text-[11px] font-medium uppercase tracking-normal text-zinc-500">
+      <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
         {label}
       </p>
-      <p className="mt-1 text-sm font-semibold text-zinc-50">{value}</p>
+      <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+        {value}
+      </p>
     </div>
   );
 }
@@ -2883,7 +3760,7 @@ function QuickEntryCard({
   );
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="finance-card max-w-full overflow-hidden lg:max-w-[480px]">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>
@@ -2975,15 +3852,36 @@ function QuickEntryCard({
           </div>
         )}
 
+        <div className="flex gap-2 overflow-x-auto sm:hidden">
+          {accounts.map((item) => {
+            const isActive = account === item.id;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onAccountChange(item.id)}
+                className={cn(
+                  "shrink-0 rounded-[var(--radius-chip)] border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)]",
+                  isActive &&
+                    "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
+                )}
+              >
+                {item.name}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="grid grid-cols-3 gap-2 sm:hidden">
           {variableCategories.map((item) => (
             <button
               type="button"
               key={item.id}
               className={cn(
-                "flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-[13px] border border-zinc-800 bg-zinc-950/45 p-2 text-xs font-medium text-zinc-400 transition sm:min-h-14",
+                "flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-[13px] border border-[var(--border)] bg-[var(--bg-surface)] p-2 text-xs font-medium text-[var(--text-secondary)] transition",
                 category === item.id &&
-                  "border-indigo-400/70 bg-indigo-500/15 text-zinc-50",
+                  "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--text-primary)]",
               )}
               onClick={() => onCategoryChange(item.id)}
             >
@@ -2993,7 +3891,7 @@ function QuickEntryCard({
           ))}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+        <div className="hidden gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-1">
           <FieldLabel label="Rekening">
             <Select
               value={account}
@@ -3027,7 +3925,7 @@ function QuickEntryCard({
           inputMode="decimal"
           placeholder="Bedrag"
           value={amount}
-          className="h-11 text-base font-semibold"
+          className="h-16 text-center text-[40px] font-bold tracking-normal sm:h-11 sm:text-left sm:text-base sm:font-semibold"
           onChange={(event) => onAmountChange(event.target.value)}
         />
 
@@ -3048,7 +3946,7 @@ function QuickEntryCard({
         />
 
         <div className="sticky bottom-3 z-10 flex justify-end pt-2 sm:static">
-          <Button className="h-12 w-full text-sm sm:h-11 sm:w-auto" onClick={onSubmit}>
+          <Button className="accent-glow-hover h-14 w-full text-base font-semibold sm:h-11 sm:w-auto sm:text-sm" onClick={onSubmit}>
             <Plus className="h-5 w-5" />
             Afschrijving toevoegen
           </Button>
@@ -3093,10 +3991,11 @@ function MetricCard({
 }
 
 const tooltipStyle = {
-  background: "#18181B",
-  border: "1px solid #27272A",
-  borderRadius: 12,
-  color: "#FAFAFA",
+  background: "#1E1E28",
+  border: "1px solid rgba(255,255,255,0.13)",
+  borderRadius: 10,
+  color: "#F4F4F6",
+  padding: "10px 14px",
 };
 
 function parseCurrencyInput(value: string) {
@@ -3167,12 +4066,12 @@ function agendaState(
 
 function agendaStateLabel(state: FixedAgendaState) {
   const labels: Record<FixedAgendaState, string> = {
-    processed: "verwerkt",
-    changed: "aangepast",
-    skipped: "overgeslagen",
-    overdue: "verwacht geweest",
-    today: "vandaag",
-    upcoming: "komt eraan",
+        processed: "afgelopen",
+        changed: "aangepast",
+        skipped: "overgeslagen",
+        overdue: "had al moeten komen",
+        today: "vandaag",
+        upcoming: "komt eraan",
   };
 
   return labels[state];
