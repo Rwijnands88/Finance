@@ -98,6 +98,7 @@ inleg en cashflow.
 - [x] Inleg als apart type behandelen, niet als gewone uitgave.
 - [x] Gezamenlijke maandcashflow tonen: inleg - vaste lasten - variabel = over/tekort.
 - [x] Maandelijkse standaardinleg kunnen instellen.
+- [x] Stortdag kiezen via compacte dag-picker; standaardinleg geldt maandelijks.
 - [x] Per persoon tonen: gepland, ontvangen en nog verwacht.
 - [x] Historie van inleg tonen in maandrapport.
 

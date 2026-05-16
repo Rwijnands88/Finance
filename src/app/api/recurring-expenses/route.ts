@@ -185,11 +185,26 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
   }
 
+  const { data: existingExpense, error: existingError } = await supabase
+    .from("recurring_expenses")
+    .select("starts_on")
+    .eq("id", body.id)
+    .eq("household_id", body.householdId)
+    .single();
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 400 });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const endsOn =
+    existingExpense.starts_on > today ? existingExpense.starts_on : today;
+
   const { data: recurringExpense, error } = await supabase
     .from("recurring_expenses")
     .update({
       is_active: false,
-      ends_on: new Date().toISOString().slice(0, 10),
+      ends_on: endsOn,
     })
     .eq("id", body.id)
     .eq("household_id", body.householdId)

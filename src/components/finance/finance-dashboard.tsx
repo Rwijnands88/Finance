@@ -2008,8 +2008,8 @@ function ContributionCard({
                   <div>
                     <p className="text-sm font-medium text-zinc-100">{plan.person}</p>
                     <p className="text-xs text-zinc-500">
-                      Binnen: {currency(plan.received)} · nog{" "}
-                      {currency(plan.remaining)}
+                      Elke maand rond dag {plan.depositDay} · binnen{" "}
+                      {currency(plan.received)} · nog {currency(plan.remaining)}
                     </p>
                   </div>
                   <Badge
@@ -2022,7 +2022,7 @@ function ContributionCard({
                     dag {plan.depositDay}
                   </Badge>
                 </div>
-                <div className="grid grid-cols-[1fr_4.8rem_auto] gap-2">
+                <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
                   <Input
                     inputMode="decimal"
                     value={draft.amount}
@@ -2032,17 +2032,22 @@ function ContributionCard({
                       onPlanDraftChange(plan.id, "amount", event.target.value)
                     }
                   />
-                  <Input
-                    type="number"
-                    min={1}
-                    max={31}
+                  <Select
                     value={draft.depositDay}
                     className="h-9"
                     aria-label={`Stortdag ${plan.person}`}
                     onChange={(event) =>
                       onPlanDraftChange(plan.id, "depositDay", event.target.value)
                     }
-                  />
+                  >
+                    {Array.from({ length: 31 }, (_, index) => index + 1).map(
+                      (day) => (
+                        <option key={day} value={day}>
+                          Dag {day}
+                        </option>
+                      ),
+                    )}
+                  </Select>
                   <Button
                     size="icon"
                     variant="secondary"
