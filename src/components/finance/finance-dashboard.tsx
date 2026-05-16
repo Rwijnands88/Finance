@@ -157,6 +157,24 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }, [defaultAccount, personalAccount]);
   const selectedAccount = accountsById.get(selectedAccountId);
   const isSharedView = selectedAccount?.kind === "shared";
+  const viewCopy = isSharedView
+    ? {
+        label: "Gezamenlijke rekening",
+        description:
+          "Voor vaste lasten, boodschappen, tanken en alles wat jullie samen betalen.",
+        quickTitle: "Gezamenlijke uitgave",
+        monthTitle: "Gezamenlijk maandoverzicht",
+        monthDescription: `${selectedAccount?.name ?? "Gezamenlijke rekening"} in ${monthLabel(initialData.selectedMonth)}.`,
+      }
+    : {
+        label: "Mijn rekening",
+        description:
+          "Alleen prive-uitgaven van de ingelogde gebruiker. Geen vaste lasten beheer.",
+        quickTitle: "Prive-uitgave",
+        monthTitle: "Prive maandoverzicht",
+        monthDescription: `${selectedAccount?.name ?? "Mijn rekening"} in ${monthLabel(initialData.selectedMonth)}.`,
+      };
+
   const selectedTransactions = useMemo(
     () =>
       selectedAccountId === "all"
@@ -199,6 +217,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .sort((a, b) => b.date.localeCompare(a.date)),
     [currentMonth, selectedTransactions],
   );
+  const topCategory = categoryRows[0];
   const fixedAgendaItems = useMemo(
     () =>
       buildFixedAgendaItems(
@@ -625,7 +644,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setSelectedAccountId(tab.id)}
+                  onClick={() => {
+                    setSelectedAccountId(tab.id);
+                    setQuickAccount(tab.id);
+                  }}
                   className={cn(
                     "rounded-[10px] border px-3 py-2 text-left transition sm:min-w-44",
                     isActive
@@ -643,41 +665,76 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </div>
         </section>
 
+        <section className="order-1 rounded-[16px] border border-zinc-800/70 bg-zinc-950/35 px-4 py-3 lg:order-none">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-zinc-100">
+                {viewCopy.label}
+              </p>
+              <p className="mt-0.5 text-xs leading-5 text-zinc-500">
+                {viewCopy.description}
+              </p>
+            </div>
+            <Badge className="w-fit border-zinc-800 bg-zinc-950/70 text-zinc-400">
+              {monthLabel(currentMonth)}
+            </Badge>
+          </div>
+        </section>
+
         <section className="order-2 grid gap-3 lg:order-none lg:grid-cols-4">
-          <MetricCard
-            icon={<Landmark className="h-5 w-5" />}
-            label="Vaste lasten"
-            value={currency(monthTotals.fixedTotal)}
-            tone="indigo"
-          />
+          {isSharedView ? (
+            <MetricCard
+              icon={<Landmark className="h-5 w-5" />}
+              label="Vaste lasten"
+              value={currency(monthTotals.fixedTotal)}
+              tone="indigo"
+            />
+          ) : (
+            <MetricCard
+              icon={<WalletCards className="h-5 w-5" />}
+              label="Prive totaal"
+              value={currency(monthTotals.total)}
+              tone="indigo"
+            />
+          )}
           <MetricCard
             icon={<WalletCards className="h-5 w-5" />}
-            label="Variabel"
+            label={isSharedView ? "Variabel samen" : "Variabel prive"}
             value={currency(monthTotals.variableTotal)}
             tone="emerald"
           />
           <MetricCard
             icon={<ReceiptText className="h-5 w-5" />}
-            label={monthLabel(currentMonth)}
-            value={currency(monthTotals.total)}
+            label={isSharedView ? "Maand totaal" : "Transacties"}
+            value={isSharedView ? currency(monthTotals.total) : `${monthTransactions.length}`}
             tone="zinc"
           />
-          <MetricCard
-            icon={<ListChecks className="h-5 w-5" />}
-            label="Open vast"
-            value={currency(openFixedTotal)}
-            tone={
-              fixedAgendaItems.some((item) => item.state === "overdue")
-                ? "red"
-                : openFixedTotal > 0
-                  ? "indigo"
-                  : "emerald"
-            }
-          />
+          {isSharedView ? (
+            <MetricCard
+              icon={<ListChecks className="h-5 w-5" />}
+              label="Open vast"
+              value={currency(openFixedTotal)}
+              tone={
+                fixedAgendaItems.some((item) => item.state === "overdue")
+                  ? "red"
+                  : openFixedTotal > 0
+                    ? "indigo"
+                    : "emerald"
+              }
+            />
+          ) : (
+            <MetricCard
+              icon={<ListChecks className="h-5 w-5" />}
+              label="Grootste categorie"
+              value={topCategory ? topCategory.name : "-"}
+              tone="zinc"
+            />
+          )}
         </section>
 
         <section className="order-1 grid gap-4 lg:order-none lg:grid-cols-[0.78fr_1.22fr]">
           <QuickEntryCard
+            title={viewCopy.quickTitle}
             amount={quickAmount}
             account={quickAccount}
             date={quickDate}
@@ -702,11 +759,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
-                <CardTitle>Maandoverzicht</CardTitle>
-                <CardDescription>
-                  {selectedAccount?.name ?? "Alle rekeningen"} in{" "}
-                  {monthLabel(currentMonth)}.
-                </CardDescription>
+                <CardTitle>{viewCopy.monthTitle}</CardTitle>
+                <CardDescription>{viewCopy.monthDescription}</CardDescription>
               </div>
               <div className="flex gap-2">
                 <Button size="icon" variant="secondary" onClick={exportExcel} title="Exporteer Excel">
@@ -746,7 +800,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                             vast
                           </Badge>
                         )}
-                        {transaction.accountName && (
+                        {transaction.accountName && selectedAccountId === "all" && (
                           <Badge className="h-6 border-zinc-700 bg-zinc-900 text-zinc-300">
                             {transaction.accountName}
                           </Badge>
@@ -904,23 +958,22 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </Card>
         </section>
 
-        <section className="order-3 grid gap-4 lg:order-none lg:grid-cols-[1fr_1fr]">
-          <PersonCostInsight
-            people={initialData.people}
-            personTotals={personTotals}
-            categoryRows={categoryPersonRows}
-            isSharedView={isSharedView}
-          />
-
-          {isSharedView && (
+        {isSharedView && (
+          <section className="order-3 grid gap-4 lg:order-none lg:grid-cols-[1fr_1fr]">
+            <PersonCostInsight
+              people={initialData.people}
+              personTotals={personTotals}
+              categoryRows={categoryPersonRows}
+              isSharedView={isSharedView}
+            />
             <FixedExpenseAgenda
               items={fixedAgendaItems}
               currentMonth={currentMonth}
               message={fixedMessage}
               highlightedId={highlightedFixedInstanceId}
             />
-          )}
-        </section>
+          </section>
+        )}
 
         {isSharedView && (
           <section className="order-5 lg:order-none">
@@ -1577,6 +1630,7 @@ function FieldLabel({
 }
 
 function QuickEntryCard({
+  title,
   amount,
   account,
   date,
@@ -1597,6 +1651,7 @@ function QuickEntryCard({
   onScanReceipt,
   onSubmit,
 }: {
+  title: string;
   amount: string;
   account: string;
   date: string;
@@ -1627,7 +1682,7 @@ function QuickEntryCard({
   return (
     <Card className="overflow-hidden">
       <CardHeader>
-        <CardTitle>Snelle invoer</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription>
           Bedrag erin, categorie kiezen, klaar.
         </CardDescription>
