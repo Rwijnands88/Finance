@@ -3203,6 +3203,7 @@ function FixedExpenseManager({
   onDelete: (expense: RecurringExpense) => void;
   onCancel: () => void;
 }) {
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const activeExpenses = expenses
     .filter((expense) => expense.isActive)
     .sort((first, second) => {
@@ -3214,6 +3215,7 @@ function FixedExpenseManager({
       );
     });
   const formTitle = editingId ? "Vaste last wijzigen" : "Nieuwe vaste last";
+  const showForm = Boolean(editingId) || isFormOpen;
   const monthlyTotal = activeExpenses.reduce(
     (total, expense) => total + expense.currentAmount,
     0,
@@ -3266,8 +3268,7 @@ function FixedExpenseManager({
           <div className="grid gap-3">
             {activeExpenses.length === 0 && (
               <div className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-                Nog geen vaste lasten toegevoegd. Gebruik Nieuwe vaste last
-                hieronder voor de eerste terugkerende afschrijving.
+                Nog geen vaste lasten toegevoegd voor deze rekening.
               </div>
             )}
 
@@ -3285,14 +3286,29 @@ function FixedExpenseManager({
           </div>
         </div>
 
-        <details
-          className="group rounded-[16px] border border-zinc-800 bg-zinc-950/30"
-          open={Boolean(editingId) || activeExpenses.length === 0}
-        >
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-zinc-100">
+        <div className="rounded-[16px] border border-zinc-800 bg-zinc-950/30">
+          <button
+            type="button"
+            onClick={() => {
+              if (editingId) {
+                onCancel();
+                setIsFormOpen(false);
+                return;
+              }
+
+              setIsFormOpen((open) => !open);
+            }}
+            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium text-zinc-100"
+          >
             {formTitle}
-            <Plus className="h-4 w-4 text-zinc-500 transition group-open:rotate-45" />
-          </summary>
+            <Plus
+              className={cn(
+                "h-4 w-4 text-zinc-500 transition",
+                showForm && "rotate-45",
+              )}
+            />
+          </button>
+          {showForm && (
           <div className="space-y-3 border-t border-zinc-900 p-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <FieldLabel label="Naam">
@@ -3357,7 +3373,8 @@ function FixedExpenseManager({
               {editingId ? "Wijziging opslaan" : "Vaste last toevoegen"}
             </Button>
           </div>
-        </details>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
