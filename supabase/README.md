@@ -39,6 +39,7 @@ succeeded:
 18. `18_recurring_billing_day.sql`
 19. `19_contributions_cashflow.sql`
 20. `20_contribution_plans.sql`
+21. `21_account_balances_income.sql`
 
 These chunks are non-destructive. They keep the current app working while adding
 the account/rekening layer needed for the v2 UI.
@@ -50,6 +51,8 @@ Chunk 18 prepares the fixed-expense calendar by adding `billing_day` to
 Chunk 19 enables `contribution` transactions and creates the `Inleg` category.
 Chunk 20 adds monthly contribution plans per household member for the shared
 account, so the app can show planned, received and remaining inleg.
+Chunk 21 adds saldo snapshots per account and enables `income` transactions
+for salary and extra private income.
 
 ## First household
 

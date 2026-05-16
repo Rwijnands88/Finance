@@ -1,5 +1,6 @@
 import type {
   Account,
+  AccountBalanceSnapshot,
   ContributionPlan,
   DashboardData,
   Transaction,
@@ -51,6 +52,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     membersResult,
     currentProfileResult,
     contributionPlansResult,
+    balanceSnapshotsResult,
     recurringResult,
     fixedInstancesResult,
   ] = await Promise.all([
@@ -81,6 +83,12 @@ export async function getDashboardData(): Promise<DashboardData> {
       .eq("is_active", true)
       .order("deposit_day", { ascending: true }),
     supabase
+      .from("account_balance_snapshots")
+      .select("*")
+      .eq("household_id", membership.household_id)
+      .order("snapshot_date", { ascending: false })
+      .order("created_at", { ascending: false }),
+    supabase
       .from("recurring_expenses")
       .select("*")
       .eq("household_id", membership.household_id)
@@ -98,6 +106,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   throwIfError(membersResult.error);
   throwIfError(currentProfileResult.error);
   throwIfErrorUnlessMissingContributionPlans(contributionPlansResult.error);
+  throwIfErrorUnlessMissingBalanceSnapshots(balanceSnapshotsResult.error);
   throwIfError(recurringResult.error);
   throwIfError(fixedInstancesResult.error);
 
@@ -167,6 +176,10 @@ export async function getDashboardData(): Promise<DashboardData> {
       contributionPlansResult.data ?? [],
       memberNameByUserId,
     ),
+    balanceSnapshots: mapBalanceSnapshots(
+      balanceSnapshotsResult.data ?? [],
+      memberNameByUserId,
+    ),
     categories,
     recurringExpenses: (recurringResult.data ?? []).map((expense) => ({
       id: expense.id,
@@ -200,6 +213,31 @@ export async function getDashboardData(): Promise<DashboardData> {
       .sort((a, b) => b.date.localeCompare(a.date)),
     sixMonthTrend: buildSixMonthTrend(historicalTransactionsResult, monthStart),
   };
+}
+
+function mapBalanceSnapshots(
+  rows: Array<{
+    id: string;
+    account_id: string;
+    balance: number;
+    snapshot_date: string;
+    note: string | null;
+    entered_by: string;
+  }>,
+  memberNameByUserId: Map<string, string>,
+) {
+  return rows.map(
+    (snapshot) =>
+      ({
+        id: snapshot.id,
+        accountId: snapshot.account_id,
+        balance: Number(snapshot.balance),
+        snapshotDate: snapshot.snapshot_date,
+        note: snapshot.note ?? undefined,
+        enteredById: snapshot.entered_by,
+        enteredBy: memberNameByUserId.get(snapshot.entered_by) ?? "Onbekend",
+      }) satisfies AccountBalanceSnapshot,
+  );
 }
 
 async function fetchTransactions(
@@ -275,6 +313,20 @@ function throwIfErrorUnlessMissingContributionPlans(
   error: { code?: string; message: string } | null,
 ) {
   if (!error || error.code === "42P01") return;
+  throw new Error(error.message);
+}
+
+function throwIfErrorUnlessMissingBalanceSnapshots(
+  error: { code?: string; message: string } | null,
+) {
+  if (
+    !error ||
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    error.message.includes("account_balance_snapshots")
+  ) {
+    return;
+  }
   throw new Error(error.message);
 }
 

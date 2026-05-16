@@ -31,6 +31,7 @@ import {
   YAxis,
 } from "recharts";
 import {
+  type AccountBalanceSnapshot,
   type ContributionPlan,
   type DashboardData,
   type FixedExpenseInstance,
@@ -88,6 +89,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>(
     initialData.recurringExpenses,
   );
+  const [balanceSnapshots, setBalanceSnapshots] = useState(
+    initialData.balanceSnapshots,
+  );
   const [contributionPlans, setContributionPlans] = useState<ContributionPlan[]>(
     initialData.contributionPlans,
   );
@@ -123,6 +127,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [contributionNote, setContributionNote] = useState("");
   const [contributionMessage, setContributionMessage] = useState("");
   const [isSavingContribution, setIsSavingContribution] = useState(false);
+  const [balanceAmount, setBalanceAmount] = useState("");
+  const [balanceDate, setBalanceDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [balanceMessage, setBalanceMessage] = useState("");
+  const [isSavingBalance, setIsSavingBalance] = useState(false);
+  const [incomeAmount, setIncomeAmount] = useState("");
+  const [incomeDate, setIncomeDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [incomeKind, setIncomeKind] = useState<"salary" | "extra">("salary");
+  const [incomeNote, setIncomeNote] = useState("");
+  const [incomeMessage, setIncomeMessage] = useState("");
+  const [isSavingIncome, setIsSavingIncome] = useState(false);
   const [contributionPlanMessage, setContributionPlanMessage] = useState("");
   const [savingContributionPlanId, setSavingContributionPlanId] = useState<
     string | null
@@ -194,6 +212,17 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }, [defaultAccount, personalAccount]);
   const selectedAccount = accountsById.get(selectedAccountId);
   const isSharedView = selectedAccount?.kind === "shared";
+  const latestBalanceSnapshot = useMemo(
+    () =>
+      balanceSnapshots
+        .filter((snapshot) => snapshot.accountId === selectedAccountId)
+        .sort(
+          (first, second) =>
+            second.snapshotDate.localeCompare(first.snapshotDate) ||
+            second.id.localeCompare(first.id),
+        )[0],
+    [balanceSnapshots, selectedAccountId],
+  );
   const viewCopy = isSharedView
     ? {
         label: "Gezamenlijke rekening",
@@ -254,6 +283,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .sort((a, b) => b.date.localeCompare(a.date)),
     [currentMonth, selectedTransactions],
   );
+  const incomeTransactions = monthTransactions.filter(
+    (transaction) => transaction.type === "income",
+  );
+  const incomeTotal = incomeTransactions.reduce(
+    (total, transaction) => total + transaction.amount,
+    0,
+  );
   const sharedContributionPlans = useMemo(
     () =>
       contributionPlans.filter(
@@ -303,7 +339,18 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     0,
   );
   const projectedNetTotal = plannedContributionTotal - monthTotals.expenseTotal;
-  const topCategory = categoryRows[0];
+  const expectedIncomeTotal = isSharedView
+    ? plannedContributionTotal + monthTotals.contributionTotal
+    : incomeTotal;
+  const expectedMonthDelta = expectedIncomeTotal - monthTotals.expenseTotal;
+  const calculatedBalance = latestBalanceSnapshot
+    ? latestBalanceSnapshot.balance +
+      selectedTransactions
+        .filter((transaction) => transaction.date > latestBalanceSnapshot.snapshotDate)
+        .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0)
+    : null;
+  const expectedMonthEndBalance =
+    calculatedBalance === null ? null : calculatedBalance + expectedMonthDelta;
   const fixedAgendaItems = useMemo(
     () =>
       buildFixedAgendaItems(
@@ -358,26 +405,26 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     : [
         {
           icon: <WalletCards className="h-5 w-5" />,
-          label: "Prive totaal",
-          value: currency(monthTotals.total),
-          tone: "indigo" as const,
-        },
-        {
-          icon: <WalletCards className="h-5 w-5" />,
-          label: "Variabel prive",
-          value: currency(monthTotals.variableTotal),
+          label: "Inkomsten",
+          value: currency(monthTotals.incomeTotal),
           tone: "emerald" as const,
         },
         {
-          icon: <ReceiptText className="h-5 w-5" />,
-          label: "Transacties",
-          value: `${monthTransactions.length}`,
+          icon: <WalletCards className="h-5 w-5" />,
+          label: "Uitgaven",
+          value: currency(monthTotals.variableTotal),
           tone: "zinc" as const,
         },
         {
+          icon: <ReceiptText className="h-5 w-5" />,
+          label: "Over / tekort",
+          value: currency(monthTotals.netTotal),
+          tone: monthTotals.netTotal < 0 ? "red" : "indigo",
+        },
+        {
           icon: <ListChecks className="h-5 w-5" />,
-          label: "Grootste categorie",
-          value: topCategory ? topCategory.name : "-",
+          label: "Transacties",
+          value: `${monthTransactions.length}`,
           tone: "zinc" as const,
         },
       ];
@@ -524,6 +571,126 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setContributionMessage("Inleg toegevoegd.");
     setSelectedAccountId(defaultAccount.id);
     setQuickAccount(defaultAccount.id);
+  }
+
+  async function saveBalanceSnapshot() {
+    const amount = parseCurrencyInput(balanceAmount);
+
+    if (!selectedAccount || Number.isNaN(amount)) {
+      setBalanceMessage("Vul een geldig saldo in.");
+      return;
+    }
+
+    setIsSavingBalance(true);
+    setBalanceMessage("");
+
+    const response = await fetch("/api/account-balance-snapshots", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        accountId: selectedAccount.id,
+        balance: amount,
+        snapshotDate: balanceDate,
+        note: "Saldo aangepast",
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingBalance(false);
+
+    if (!response.ok) {
+      setBalanceMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Saldo opslaan lukte niet.",
+      );
+      return;
+    }
+
+    setBalanceSnapshots((items) => [result.snapshot, ...items]);
+    setBalanceAmount("");
+    setBalanceMessage("Saldo bijgewerkt.");
+  }
+
+  async function addIncome() {
+    const amount = parseCurrencyInput(incomeAmount);
+
+    if (!selectedAccount || !amount || amount <= 0) {
+      setIncomeMessage("Vul een geldig bedrag in.");
+      return;
+    }
+
+    setIsSavingIncome(true);
+    setIncomeMessage("");
+
+    const response = await fetch("/api/transactions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        accountId: selectedAccount.id,
+        amount,
+        date: incomeDate,
+        note:
+          incomeNote ||
+          (incomeKind === "salary" ? "Salaris" : "Extra inkomsten"),
+        type: "income",
+        incomeKind,
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingIncome(false);
+
+    if (!response.ok) {
+      setIncomeMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Inkomsten opslaan lukte niet.",
+      );
+      return;
+    }
+
+    const incomeCategory =
+      initialData.categories.find((category) =>
+        incomeKind === "salary"
+          ? category.name === "Salaris"
+          : category.name === "Extra inkomsten",
+      ) ??
+      ({
+        id: result.transaction.categoryId,
+        name: incomeKind === "salary" ? "Salaris" : "Extra inkomsten",
+        kind: "variable",
+        color: incomeKind === "salary" ? "#10B981" : "#22C55E",
+        averageMonthly: 0,
+      } satisfies DashboardData["categories"][number]);
+
+    setTransactions((items) => [
+      {
+        id: result.transaction.id,
+        type: "income",
+        accountId: selectedAccount.id,
+        accountName: selectedAccount.name,
+        accountKind: selectedAccount.kind,
+        categoryId: incomeCategory.id,
+        amount,
+        date: incomeDate,
+        note:
+          incomeNote ||
+          (incomeKind === "salary" ? "Salaris" : "Extra inkomsten"),
+        enteredById: initialData.currentUserId,
+        enteredBy: initialData.currentPerson,
+      },
+      ...items,
+    ]);
+    setIncomeAmount("");
+    setIncomeNote("");
+    setIncomeMessage("Inkomsten toegevoegd.");
   }
 
   function updateContributionPlanDraft(
@@ -885,12 +1052,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       Type:
         transaction.type === "fixed"
           ? "Vaste last"
+          : transaction.type === "income"
+            ? "Inkomsten"
           : transaction.type === "contribution"
             ? "Inleg"
             : "Variabel",
       Categorie:
         transaction.type === "contribution"
           ? "Inleg"
+          : transaction.type === "income"
+            ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
       IngevoerdDoor: transaction.type === "fixed" ? "" : transaction.enteredBy,
@@ -975,6 +1146,36 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         </section>
 
         <section className="lg:hidden">
+          <AccountBalanceCard
+            accountName={selectedAccount?.name ?? viewCopy.label}
+            snapshot={latestBalanceSnapshot}
+            calculatedBalance={calculatedBalance}
+            expectedMonthEndBalance={expectedMonthEndBalance}
+            expectedIncomeTotal={expectedIncomeTotal}
+            expenseTotal={monthTotals.expenseTotal}
+            balanceAmount={balanceAmount}
+            balanceDate={balanceDate}
+            balanceMessage={balanceMessage}
+            isSavingBalance={isSavingBalance}
+            incomeAmount={incomeAmount}
+            incomeDate={incomeDate}
+            incomeKind={incomeKind}
+            incomeNote={incomeNote}
+            incomeMessage={incomeMessage}
+            isSavingIncome={isSavingIncome}
+            showIncomeForm={!isSharedView}
+            onBalanceAmountChange={setBalanceAmount}
+            onBalanceDateChange={setBalanceDate}
+            onSaveBalance={saveBalanceSnapshot}
+            onIncomeAmountChange={setIncomeAmount}
+            onIncomeDateChange={setIncomeDate}
+            onIncomeKindChange={setIncomeKind}
+            onIncomeNoteChange={setIncomeNote}
+            onAddIncome={addIncome}
+          />
+        </section>
+
+        <section className="lg:hidden">
           <QuickEntryCard
             title={viewCopy.quickTitle}
             amount={quickAmount}
@@ -1051,6 +1252,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 const category = labels.get(transaction.categoryId);
                 const isDeleting = deletingTransactionId === transaction.id;
                 const isContribution = transaction.type === "contribution";
+                const isIncome = transaction.type === "income";
                   const transactionMetadata = [
                     transaction.date,
                     transaction.type === "fixed" ? null : transaction.enteredBy,
@@ -1069,13 +1271,17 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                         <span
                           className="h-2.5 w-2.5 rounded-full"
                           style={{
-                            backgroundColor: isContribution
+                            backgroundColor: isContribution || isIncome
                               ? "#34D399"
                               : category?.color,
                           }}
                         />
                         <p className="truncate text-sm font-medium text-zinc-100">
-                          {isContribution ? "Inleg" : category?.name}
+                          {isContribution
+                            ? "Inleg"
+                            : isIncome
+                              ? category?.name ?? "Inkomsten"
+                              : category?.name}
                         </p>
                         {transaction.type !== "variable" && (
                           <Badge
@@ -1085,9 +1291,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                                 "border-indigo-400/20 bg-indigo-500/10 text-indigo-200",
                               isContribution &&
                                 "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
+                              isIncome &&
+                                "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
                             )}
                           >
-                            {isContribution ? "inleg" : "vast"}
+                            {isContribution ? "inleg" : isIncome ? "inkomsten" : "vast"}
                           </Badge>
                         )}
                         {transaction.accountName && selectedAccountId === "all" && (
@@ -1102,7 +1310,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                     </div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-zinc-50">
-                        {isContribution ? "+" : ""}
+                        {isContribution || isIncome ? "+" : ""}
                         {preciseCurrency(transaction.amount)}
                       </p>
                       <Button
@@ -1282,6 +1490,36 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           </section>
 
           <aside className="grid gap-4 lg:sticky lg:top-4 lg:self-start">
+            <div className="hidden lg:block">
+              <AccountBalanceCard
+                accountName={selectedAccount?.name ?? viewCopy.label}
+                snapshot={latestBalanceSnapshot}
+                calculatedBalance={calculatedBalance}
+                expectedMonthEndBalance={expectedMonthEndBalance}
+                expectedIncomeTotal={expectedIncomeTotal}
+                expenseTotal={monthTotals.expenseTotal}
+                balanceAmount={balanceAmount}
+                balanceDate={balanceDate}
+                balanceMessage={balanceMessage}
+                isSavingBalance={isSavingBalance}
+                incomeAmount={incomeAmount}
+                incomeDate={incomeDate}
+                incomeKind={incomeKind}
+                incomeNote={incomeNote}
+                incomeMessage={incomeMessage}
+                isSavingIncome={isSavingIncome}
+                showIncomeForm={!isSharedView}
+                onBalanceAmountChange={setBalanceAmount}
+                onBalanceDateChange={setBalanceDate}
+                onSaveBalance={saveBalanceSnapshot}
+                onIncomeAmountChange={setIncomeAmount}
+                onIncomeDateChange={setIncomeDate}
+                onIncomeKindChange={setIncomeKind}
+                onIncomeNoteChange={setIncomeNote}
+                onAddIncome={addIncome}
+              />
+            </div>
+
             <div className="hidden lg:block">
               <QuickEntryCard
                 title={viewCopy.quickTitle}
@@ -2125,6 +2363,226 @@ function FieldLabel({
   );
 }
 
+function AccountBalanceCard({
+  accountName,
+  snapshot,
+  calculatedBalance,
+  expectedMonthEndBalance,
+  expectedIncomeTotal,
+  expenseTotal,
+  balanceAmount,
+  balanceDate,
+  balanceMessage,
+  isSavingBalance,
+  incomeAmount,
+  incomeDate,
+  incomeKind,
+  incomeNote,
+  incomeMessage,
+  isSavingIncome,
+  showIncomeForm,
+  onBalanceAmountChange,
+  onBalanceDateChange,
+  onSaveBalance,
+  onIncomeAmountChange,
+  onIncomeDateChange,
+  onIncomeKindChange,
+  onIncomeNoteChange,
+  onAddIncome,
+}: {
+  accountName: string;
+  snapshot?: AccountBalanceSnapshot;
+  calculatedBalance: number | null;
+  expectedMonthEndBalance: number | null;
+  expectedIncomeTotal: number;
+  expenseTotal: number;
+  balanceAmount: string;
+  balanceDate: string;
+  balanceMessage: string;
+  isSavingBalance: boolean;
+  incomeAmount: string;
+  incomeDate: string;
+  incomeKind: "salary" | "extra";
+  incomeNote: string;
+  incomeMessage: string;
+  isSavingIncome: boolean;
+  showIncomeForm: boolean;
+  onBalanceAmountChange: (value: string) => void;
+  onBalanceDateChange: (value: string) => void;
+  onSaveBalance: () => void;
+  onIncomeAmountChange: (value: string) => void;
+  onIncomeDateChange: (value: string) => void;
+  onIncomeKindChange: (value: "salary" | "extra") => void;
+  onIncomeNoteChange: (value: string) => void;
+  onAddIncome: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Saldo</CardTitle>
+        <CardDescription>{accountName}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <ContributionStat
+            label="Berekend nu"
+            value={
+              calculatedBalance === null ? "Nog geen saldo" : currency(calculatedBalance)
+            }
+            tone={calculatedBalance === null ? "zinc" : "indigo"}
+          />
+          <ContributionStat
+            label="Eind maand"
+            value={
+              expectedMonthEndBalance === null
+                ? "Nog geen saldo"
+                : currency(expectedMonthEndBalance)
+            }
+            tone={
+              expectedMonthEndBalance !== null && expectedMonthEndBalance < 0
+                ? "red"
+                : "emerald"
+            }
+          />
+          <ContributionStat label="Inkomsten" value={currency(expectedIncomeTotal)} />
+          <ContributionStat
+            label="Uitgaven"
+            value={currency(expenseTotal)}
+            tone={expenseTotal > expectedIncomeTotal ? "red" : "zinc"}
+          />
+        </div>
+
+        <div className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-zinc-100">
+                {snapshot ? currency(snapshot.balance) : "Geen startsaldo"}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">
+                {snapshot
+                  ? `Ingevuld op ${snapshot.snapshotDate}`
+                  : "Vul het huidige saldo in als startpunt."}
+              </p>
+            </div>
+            {snapshot && (
+              <Badge className="border-zinc-800 bg-zinc-950/70 text-zinc-400">
+                {snapshot.enteredBy}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        <details className="group rounded-[14px] border border-zinc-800 bg-zinc-950/30">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-zinc-100">
+            Saldo aanpassen
+            <Plus className="h-4 w-4 text-zinc-500 transition group-open:rotate-45" />
+          </summary>
+          <div className="grid gap-2 border-t border-zinc-900 p-3">
+            <Input
+              inputMode="decimal"
+              placeholder="Huidig saldo"
+              value={balanceAmount}
+              className="h-10"
+              onChange={(event) => onBalanceAmountChange(event.target.value)}
+            />
+            <Input
+              type="date"
+              value={balanceDate}
+              className="h-10"
+              onChange={(event) => onBalanceDateChange(event.target.value)}
+            />
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={onSaveBalance}
+                disabled={isSavingBalance}
+              >
+                {isSavingBalance ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Bewaar
+              </Button>
+            </div>
+          </div>
+        </details>
+
+        {balanceMessage && (
+          <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+            {balanceMessage}
+          </p>
+        )}
+
+        {showIncomeForm && (
+          <details className="group rounded-[14px] border border-emerald-400/15 bg-emerald-500/5">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-emerald-100">
+              Salaris / inkomsten
+              <Plus className="h-4 w-4 text-emerald-300 transition group-open:rotate-45" />
+            </summary>
+            <div className="grid gap-2 border-t border-emerald-400/10 p-3">
+              <div className="grid grid-cols-[1fr_8rem] gap-2">
+                <Input
+                  inputMode="decimal"
+                  placeholder="Bedrag"
+                  value={incomeAmount}
+                  className="h-10"
+                  onChange={(event) => onIncomeAmountChange(event.target.value)}
+                />
+                <Select
+                  value={incomeKind}
+                  className="h-10"
+                  onChange={(event) =>
+                    onIncomeKindChange(event.target.value as "salary" | "extra")
+                  }
+                >
+                  <option value="salary">Salaris</option>
+                  <option value="extra">Extra</option>
+                </Select>
+              </div>
+              <Input
+                type="date"
+                value={incomeDate}
+                className="h-10"
+                onChange={(event) => onIncomeDateChange(event.target.value)}
+              />
+              <Input
+                placeholder="Notitie optioneel"
+                value={incomeNote}
+                className="h-10"
+                onChange={(event) => onIncomeNoteChange(event.target.value)}
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={onAddIncome}
+                  disabled={isSavingIncome}
+                  className="border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10"
+                >
+                  {isSavingIncome ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ArrowDownToLine className="h-4 w-4" />
+                  )}
+                  Toevoegen
+                </Button>
+              </div>
+            </div>
+          </details>
+        )}
+
+        {incomeMessage && (
+          <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
+            {incomeMessage}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ContributionCard({
   amount,
   date,
@@ -2643,6 +3101,14 @@ const tooltipStyle = {
 
 function parseCurrencyInput(value: string) {
   return Number(value.trim().replace(/\s/g, "").replace(",", "."));
+}
+
+function signedTransactionAmount(transaction: Transaction) {
+  if (transaction.type === "income" || transaction.type === "contribution") {
+    return transaction.amount;
+  }
+
+  return -transaction.amount;
 }
 
 function buildFixedAgendaItems(

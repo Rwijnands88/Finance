@@ -9,7 +9,8 @@ type CreateTransactionBody = {
   amount?: number;
   date?: string;
   note?: string | null;
-  type?: "variable" | "contribution";
+  type?: "variable" | "contribution" | "income";
+  incomeKind?: "salary" | "extra";
 };
 
 type DeleteTransactionBody = {
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!["variable", "contribution"].includes(transactionType)) {
+  if (!["variable", "contribution", "income"].includes(transactionType)) {
     return NextResponse.json(
       { error: "Transactietype is ongeldig." },
       { status: 400 },
@@ -76,6 +77,26 @@ export async function POST(request: Request) {
     }
   }
 
+  if (transactionType === "income") {
+    try {
+      categoryId = await getOrCreateIncomeCategory(
+        supabase,
+        body.householdId,
+        body.incomeKind === "salary" ? "Salaris" : "Extra inkomsten",
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Inkomstencategorie kon niet worden gemaakt.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   const { data: transaction, error: transactionError } = await supabase
     .from("transactions")
     .insert({
@@ -107,6 +128,45 @@ export async function POST(request: Request) {
       enteredBy: user.id,
     },
   });
+}
+
+async function getOrCreateIncomeCategory(
+  supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>,
+  householdId: string,
+  name: "Salaris" | "Extra inkomsten",
+) {
+  const { data: existingCategory, error: existingError } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("household_id", householdId)
+    .eq("name", name)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  if (existingCategory) {
+    return existingCategory.id;
+  }
+
+  const { data: category, error } = await supabase
+    .from("categories")
+    .insert({
+      household_id: householdId,
+      name,
+      kind: "variable",
+      color: name === "Salaris" ? "#10B981" : "#22C55E",
+      sort_order: name === "Salaris" ? 105 : 110,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return category.id;
 }
 
 async function getOrCreateContributionCategory(

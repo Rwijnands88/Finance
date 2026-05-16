@@ -42,7 +42,7 @@ export type FixedExpenseInstance = {
 
 export type Transaction = {
   id: string;
-  type: "fixed" | "variable" | "contribution";
+  type: "fixed" | "variable" | "contribution" | "income";
   accountId?: string;
   accountName?: string;
   accountKind?: Account["kind"];
@@ -53,6 +53,16 @@ export type Transaction = {
   enteredById?: string;
   enteredBy: Person;
   fixedInstanceId?: string;
+};
+
+export type AccountBalanceSnapshot = {
+  id: string;
+  accountId: string;
+  balance: number;
+  snapshotDate: string;
+  note?: string;
+  enteredById?: string;
+  enteredBy: Person;
 };
 
 export type ContributionPlan = {
@@ -74,6 +84,7 @@ export type DashboardData = {
   accounts: Account[];
   categories: Category[];
   contributionPlans: ContributionPlan[];
+  balanceSnapshots: AccountBalanceSnapshot[];
   recurringExpenses: RecurringExpense[];
   fixedInstances: FixedExpenseInstance[];
   transactions: Transaction[];
@@ -88,6 +99,7 @@ export type DashboardData = {
 export type MonthSummary = {
   month: string;
   contributionTotal: number;
+  incomeTotal: number;
   fixedTotal: number;
   variableTotal: number;
   expenseTotal: number;

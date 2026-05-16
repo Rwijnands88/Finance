@@ -36,6 +36,7 @@ export function MonthReportDocument({
 
         <View style={styles.summary}>
           <SummaryBox label="Inleg" value={currency(totals.contributionTotal)} />
+          <SummaryBox label="Inkomsten" value={currency(totals.incomeTotal)} />
           <SummaryBox label="Vaste lasten" value={currency(totals.fixedTotal)} />
           <SummaryBox label="Uitgaven" value={currency(totals.expenseTotal)} />
           <SummaryBox label="Over" value={currency(totals.netTotal)} />
@@ -55,6 +56,8 @@ export function MonthReportDocument({
               <Text style={styles.cellCategory}>
                 {transaction.type === "contribution"
                   ? "Inleg"
+                  : transaction.type === "income"
+                    ? labels.get(transaction.categoryId)?.name ?? "Inkomsten"
                   : labels.get(transaction.categoryId)?.name ?? "Onbekend"}
               </Text>
               <Text style={styles.cellNote}>

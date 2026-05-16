@@ -268,7 +268,7 @@ export type Database = {
           category_id: string;
           amount: number;
           transaction_date: string;
-          type: "fixed" | "variable" | "contribution";
+          type: "fixed" | "variable" | "contribution" | "income";
           note: string | null;
           entered_by: string;
           created_at: string;
@@ -282,7 +282,7 @@ export type Database = {
           category_id: string;
           amount: number;
           transaction_date: string;
-          type: "fixed" | "variable" | "contribution";
+          type: "fixed" | "variable" | "contribution" | "income";
           note?: string | null;
           entered_by: string;
           created_at?: string;
@@ -294,6 +294,34 @@ export type Database = {
           transaction_date?: string;
           note?: string | null;
           category_id?: string;
+        };
+        Relationships: [];
+      };
+      account_balance_snapshots: {
+        Row: {
+          id: string;
+          household_id: string;
+          account_id: string;
+          balance: number;
+          snapshot_date: string;
+          note: string | null;
+          entered_by: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          household_id: string;
+          account_id: string;
+          balance: number;
+          snapshot_date: string;
+          note?: string | null;
+          entered_by: string;
+          created_at?: string;
+        };
+        Update: {
+          balance?: number;
+          snapshot_date?: string;
+          note?: string | null;
         };
         Relationships: [];
       };

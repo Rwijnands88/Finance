@@ -107,6 +107,18 @@ klaar om de standaardinleg live te testen. Daarna is de volgende inhoudelijke
 stap Fase 5: mobiele invoer en scanner afronden met een duidelijke
 concept/bevestig-flow.
 
+#### Fase 4B - Saldo en inkomsten
+
+- [x] Supabase chunk 21 voorbereiden: `account_balance_snapshots` en transactietype `income`.
+- [x] Per rekening een huidig saldo/startpunt kunnen opslaan.
+- [x] Verwacht saldo tonen op basis van saldo + inkomsten/inleg - uitgaven.
+- [x] Prive-rekening uitbreiden met salaris en extra inkomsten.
+- [x] Gezamenlijke rekening blijven rekenen met standaardinleg, extra inleg, vaste lasten en variabele kosten.
+- [x] Dashboard tolerant houden zolang chunk 21 nog niet in Supabase is uitgevoerd.
+
+**Status:** Fase 4B is gebouwd en Supabase chunk 21 is uitgevoerd. De app kan nu
+saldo per rekening opslaan en prive-inkomsten boeken.
+
 #### Fase 5 - Mobiele invoer en scanner
 
 - [x] Mobiele quick-entry met rekeningkeuze voorbereiden.
