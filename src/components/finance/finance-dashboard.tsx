@@ -1505,12 +1505,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
             {isSharedView && (
               <>
-                <FixedExpenseAgenda
+                <UpcomingFixedExpensesCard
                   items={fixedAgendaItems}
                   currentMonth={currentMonth}
-                  message={fixedMessage}
-                  highlightedId={highlightedFixedInstanceId}
-                  compact
                 />
                 <ContributionCard
                   amount={contributionAmount}
@@ -2470,6 +2467,94 @@ function FixedExpenseAgenda({
             )}
           </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function UpcomingFixedExpensesCard({
+  items,
+  currentMonth,
+}: {
+  items: FixedAgendaItem[];
+  currentMonth: string;
+}) {
+  const upcomingItems = items
+    .filter(
+      (item) =>
+        item.state === "overdue" ||
+        item.state === "today" ||
+        item.state === "upcoming",
+    )
+    .slice(0, 4);
+  const upcomingTotal = upcomingItems.reduce((total, item) => total + item.amount, 0);
+
+  return (
+    <Card className="finance-card">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>Komende afschrijvingen</CardTitle>
+            <CardDescription>
+              Eerstvolgende vaste lasten op de gezamenlijke rekening.
+            </CardDescription>
+          </div>
+          <Badge className="w-fit border-indigo-400/25 bg-indigo-500/10 text-indigo-200">
+            {monthLabel(currentMonth)}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
+          <p className="text-[11px] font-medium uppercase text-[var(--text-muted)]">
+            Nog gepland
+          </p>
+          <p className="mt-1 text-xl font-semibold text-[var(--text-primary)]">
+            {currency(upcomingTotal)}
+          </p>
+        </div>
+
+        {upcomingItems.length === 0 ? (
+          <div className="rounded-[14px] border border-dashed border-[var(--border)] bg-black/10 p-4 text-sm leading-6 text-[var(--text-secondary)]">
+            Geen komende afschrijvingen. Voeg vaste lasten toe bij Vaste lasten;
+            daarna verschijnen ze hier automatisch.
+          </div>
+        ) : (
+          <div className="divide-y divide-[var(--border)] rounded-[14px] border border-[var(--border)] bg-black/10">
+            {upcomingItems.map((item) => (
+              <div
+                key={item.id}
+                className="grid grid-cols-[44px_1fr_auto] items-center gap-3 px-3 py-3"
+              >
+                <div className="rounded-[12px] bg-[var(--accent-light)] px-2 py-1 text-center">
+                  <p className="text-[10px] font-medium uppercase text-[var(--text-secondary)]">
+                    {monthShort(item.date)}
+                  </p>
+                  <p className="text-sm font-semibold text-[var(--accent)]">
+                    {item.day}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: item.categoryColor }}
+                    />
+                    <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+                      {item.name}
+                    </p>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-[var(--text-secondary)]">
+                    {item.categoryName} · {agendaStateLabel(item.state)}
+                  </p>
+                </div>
+                <p className="text-right text-sm font-semibold text-[var(--text-primary)]">
+                  {currency(item.amount)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
