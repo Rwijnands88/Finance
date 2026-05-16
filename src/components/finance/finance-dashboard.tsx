@@ -440,7 +440,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   async function deleteTransaction(transaction: Transaction) {
     const confirmed = window.confirm(
       transaction.type === "fixed"
-        ? "Definitief verwijderen?\n\nDeze vaste-last transactie wordt verwijderd. De maandregel wordt daarna weer opengezet, zodat je hem opnieuw kunt bevestigen of aanpassen."
+        ? "Definitief verwijderen?\n\nDeze vaste-last transactie verdwijnt uit dit maandoverzicht. De vaste last zelf blijft in de agenda staan."
         : "Definitief verwijderen?\n\nDeze ingevoerde uitgave wordt permanent uit het maandoverzicht verwijderd.",
     );
 
@@ -668,7 +668,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           ? "Inleg"
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
-      IngevoerdDoor: transaction.enteredBy,
+      IngevoerdDoor: transaction.type === "fixed" ? "" : transaction.enteredBy,
       Notitie: transaction.note ?? "",
       Liters: transaction.fuel?.liters ?? "",
       Auto: transaction.fuel?.vehicle ?? "",
@@ -871,6 +871,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 const category = labels.get(transaction.categoryId);
                 const isDeleting = deletingTransactionId === transaction.id;
                 const isContribution = transaction.type === "contribution";
+                const transactionMetadata = [
+                  transaction.date,
+                  transaction.type === "fixed" ? null : transaction.enteredBy,
+                  transaction.fuel
+                    ? `${transaction.fuel.liters} liter · ${transaction.fuel.vehicle}`
+                    : null,
+                  transaction.note,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
 
                 return (
                   <div
@@ -910,11 +920,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                         )}
                       </div>
                       <p className="mt-1 truncate text-xs text-zinc-500">
-                        {transaction.date} · {transaction.enteredBy}
-                        {transaction.fuel
-                          ? ` · ${transaction.fuel.liters} liter · ${transaction.fuel.vehicle}`
-                          : ""}
-                        {transaction.note ? ` · ${transaction.note}` : ""}
+                        {transactionMetadata}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
