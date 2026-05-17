@@ -76,6 +76,7 @@ export type ContributionPlan = {
   accountId: string;
   userId: string;
   person: Person;
+  label: string;
   monthlyAmount: number;
   depositDay: number;
   isActive: boolean;

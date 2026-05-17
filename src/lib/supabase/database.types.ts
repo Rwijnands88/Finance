@@ -125,9 +125,10 @@ export type Database = {
         Row: {
           id: string;
           household_id: string;
-          account_id: string;
-          user_id: string;
-          monthly_amount: number;
+	          account_id: string;
+	          user_id: string;
+	          label: string;
+	          monthly_amount: number;
           deposit_day: number;
           is_active: boolean;
           created_at: string;
@@ -136,18 +137,20 @@ export type Database = {
         Insert: {
           id?: string;
           household_id: string;
-          account_id: string;
-          user_id: string;
-          monthly_amount?: number;
+	          account_id: string;
+	          user_id: string;
+	          label?: string;
+	          monthly_amount?: number;
           deposit_day?: number;
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
-          account_id?: string;
-          user_id?: string;
-          monthly_amount?: number;
+	          account_id?: string;
+	          user_id?: string;
+	          label?: string;
+	          monthly_amount?: number;
           deposit_day?: number;
           is_active?: boolean;
         };

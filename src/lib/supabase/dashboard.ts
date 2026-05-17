@@ -76,12 +76,13 @@ export async function getDashboardData(): Promise<DashboardData> {
       .select("display_name")
       .eq("id", user.id)
       .maybeSingle(),
-    supabase
-      .from("contribution_plans")
-      .select("*")
-      .eq("household_id", membership.household_id)
-      .eq("is_active", true)
-      .order("deposit_day", { ascending: true }),
+	    supabase
+	      .from("contribution_plans")
+	      .select("*")
+	      .eq("household_id", membership.household_id)
+	      .eq("is_active", true)
+	      .order("user_id", { ascending: true })
+	      .order("deposit_day", { ascending: true }),
     supabase
       .from("account_balance_snapshots")
       .select("*")
@@ -303,12 +304,13 @@ async function fetchTransactions(
 
 function mapContributionPlans(
   rows: Array<{
-    id: string;
-    account_id: string;
-    user_id: string;
-    monthly_amount: number;
-    deposit_day: number;
-    is_active: boolean;
+	    id: string;
+	    account_id: string;
+	    user_id: string;
+	    label?: string | null;
+	    monthly_amount: number;
+	    deposit_day: number;
+	    is_active: boolean;
   }>,
   memberNameByUserId: Map<string, string>,
 ) {
@@ -316,10 +318,11 @@ function mapContributionPlans(
     (plan) =>
       ({
         id: plan.id,
-        accountId: plan.account_id,
-        userId: plan.user_id,
-        person: memberNameByUserId.get(plan.user_id) ?? "Onbekend",
-        monthlyAmount: Number(plan.monthly_amount),
+	        accountId: plan.account_id,
+	        userId: plan.user_id,
+	        person: memberNameByUserId.get(plan.user_id) ?? "Onbekend",
+	        label: plan.label ?? "Reguliere storting",
+	        monthlyAmount: Number(plan.monthly_amount),
         depositDay: plan.deposit_day,
         isActive: plan.is_active,
       }) satisfies ContributionPlan,

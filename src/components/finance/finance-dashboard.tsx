@@ -87,7 +87,12 @@ type DashboardMetric = {
   tone: "indigo" | "emerald" | "red" | "zinc";
 };
 
-type ActiveSection = "dashboard" | "fixed" | "input" | "month" | "export";
+type ActiveSection = "dashboard" | "fixed" | "input" | "month";
+type ContributionPlanDraft = {
+  label: string;
+  amount: string;
+  depositDay: string;
+};
 type MonthOption = {
   value: string;
   label: string;
@@ -155,7 +160,6 @@ function sectionNavItems() {
     { id: "fixed", label: "Vaste lasten", icon: ListChecks },
     { id: "input", label: "Invoeren", icon: Plus },
     { id: "month", label: "Maand", icon: CalendarDays },
-    { id: "export", label: "Export", icon: FileSpreadsheet },
   ] satisfies Array<{
     id: ActiveSection;
     label: string;
@@ -259,7 +263,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         {
           amount: String(plan.monthlyAmount || ""),
           depositDay: String(plan.depositDay),
+          label: plan.label,
         },
+      ]),
+    ),
+  );
+  const [newContributionPlanDrafts, setNewContributionPlanDrafts] = useState(() =>
+    Object.fromEntries(
+      initialData.householdMembers.map((member) => [
+        member.userId,
+        {
+          label: "",
+          amount: "",
+          depositDay: "1",
+        } satisfies ContributionPlanDraft,
       ]),
     ),
   );
@@ -661,18 +678,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   );
   const contributionPlanRows = useMemo(
     () =>
-      sharedContributionPlans.map((plan) => {
-        const received =
-          plannedContributionReceivedByUser.get(plan.userId) ??
-          plannedContributionReceivedByUser.get(plan.person) ??
-          0;
-
-        return {
-          ...plan,
-          received,
-          remaining: Math.max(plan.monthlyAmount - received, 0),
-        };
-      }),
+      buildContributionPlanRows(
+        sharedContributionPlans,
+        plannedContributionReceivedByUser,
+      ),
     [plannedContributionReceivedByUser, sharedContributionPlans],
   );
   const plannedContributionTotal = contributionPlanRows.reduce(
@@ -1546,12 +1555,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   function updateContributionPlanDraft(
     planId: string,
-    field: "amount" | "depositDay",
+    field: keyof ContributionPlanDraft,
     value: string,
   ) {
     setContributionPlanDrafts((drafts) => ({
       ...drafts,
       [planId]: {
+        label: drafts[planId]?.label ?? "",
         amount: drafts[planId]?.amount ?? "",
         depositDay: drafts[planId]?.depositDay ?? "1",
         [field]: value,
@@ -1559,10 +1569,32 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }));
   }
 
+  function updateNewContributionPlanDraft(
+    userId: string,
+    field: keyof ContributionPlanDraft,
+    value: string,
+  ) {
+    setNewContributionPlanDrafts((drafts) => ({
+      ...drafts,
+      [userId]: {
+        label: drafts[userId]?.label ?? "",
+        amount: drafts[userId]?.amount ?? "",
+        depositDay: drafts[userId]?.depositDay ?? "1",
+        [field]: value,
+      },
+    }));
+  }
+
   async function saveContributionPlan(plan: ContributionPlan) {
     const draft = contributionPlanDrafts[plan.id];
+    const label = draft?.label?.trim() ?? "";
     const amount = parseCurrencyInput(draft?.amount ?? "");
     const depositDay = Number(draft?.depositDay);
+
+    if (!label) {
+      setContributionPlanMessage("Vul een naam voor deze planning in.");
+      return;
+    }
 
     if (Number.isNaN(amount) || amount < 0) {
       setContributionPlanMessage("Vul een geldig maandbedrag in.");
@@ -1585,6 +1617,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       body: JSON.stringify({
         id: plan.id,
         householdId: initialData.householdId,
+        label,
         monthlyAmount: amount,
         depositDay,
       }),
@@ -1604,16 +1637,97 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
     const updatedPlan = result.plan as ContributionPlan;
     setContributionPlans((plans) =>
-      plans.map((item) => (item.id === updatedPlan.id ? updatedPlan : item)),
+      sortContributionPlans(
+        plans.map((item) => (item.id === updatedPlan.id ? updatedPlan : item)),
+      ),
     );
     setContributionPlanDrafts((drafts) => ({
       ...drafts,
       [updatedPlan.id]: {
+        label: updatedPlan.label,
         amount: String(updatedPlan.monthlyAmount || ""),
         depositDay: String(updatedPlan.depositDay),
       },
     }));
-    setContributionPlanMessage(`Geplande storting voor ${updatedPlan.person} bewaard.`);
+    setContributionPlanMessage(`${updatedPlan.label} voor ${updatedPlan.person} bewaard.`);
+  }
+
+  async function createContributionPlan(member: DashboardData["householdMembers"][number]) {
+    const draft = newContributionPlanDrafts[member.userId];
+    const label = draft?.label?.trim() ?? "";
+    const amount = parseCurrencyInput(draft?.amount ?? "");
+    const depositDay = Number(draft?.depositDay);
+
+    if (!defaultAccount) {
+      setContributionPlanMessage("Gezamenlijke rekening ontbreekt.");
+      return;
+    }
+
+    if (!label) {
+      setContributionPlanMessage("Vul een naam voor deze planning in.");
+      return;
+    }
+
+    if (Number.isNaN(amount) || amount < 0) {
+      setContributionPlanMessage("Vul een geldig maandbedrag in.");
+      return;
+    }
+
+    if (!Number.isInteger(depositDay) || depositDay < 1 || depositDay > 31) {
+      setContributionPlanMessage("Kies een dag tussen 1 en 31.");
+      return;
+    }
+
+    const savingId = `new:${member.userId}`;
+    setSavingContributionPlanId(savingId);
+    setContributionPlanMessage("");
+
+    const response = await fetch("/api/contribution-plans", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        accountId: defaultAccount.id,
+        userId: member.userId,
+        label,
+        monthlyAmount: amount,
+        depositDay,
+      }),
+    });
+    const result = await response.json();
+
+    setSavingContributionPlanId(null);
+
+    if (!response.ok) {
+      setContributionPlanMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Planning toevoegen lukte niet.",
+      );
+      return;
+    }
+
+    const createdPlan = result.plan as ContributionPlan;
+    setContributionPlans((plans) => sortContributionPlans([...plans, createdPlan]));
+    setContributionPlanDrafts((drafts) => ({
+      ...drafts,
+      [createdPlan.id]: {
+        label: createdPlan.label,
+        amount: String(createdPlan.monthlyAmount || ""),
+        depositDay: String(createdPlan.depositDay),
+      },
+    }));
+    setNewContributionPlanDrafts((drafts) => ({
+      ...drafts,
+      [member.userId]: {
+        label: "",
+        amount: "",
+        depositDay: "1",
+      },
+    }));
+    setContributionPlanMessage(`${createdPlan.label} voor ${createdPlan.person} toegevoegd.`);
   }
 
   async function scanReceipt(file: File) {
@@ -2905,6 +3019,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               householdMembers={initialData.householdMembers}
               plans={contributionPlanRows}
               planDrafts={contributionPlanDrafts}
+              newPlanDrafts={newContributionPlanDrafts}
               planMessage={contributionPlanMessage}
               savingPlanId={savingContributionPlanId}
               plannedTotal={plannedContributionTotal}
@@ -2922,7 +3037,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onPaidByChange={setContributionPaidById}
               onNoteChange={setContributionNote}
               onPlanDraftChange={updateContributionPlanDraft}
+              onNewPlanDraftChange={updateNewContributionPlanDraft}
               onPlanSave={saveContributionPlan}
+              onPlanCreate={createContributionPlan}
               onSubmit={addContribution}
             />
           )}
@@ -2944,17 +3061,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             currentMonth={currentMonth}
             rows={outgoingTransactionRows}
           />
-          <MonthTransactionsCard
+          <MonthSummaryCard
             title={viewCopy.monthTitle}
             description={viewCopy.monthDescription}
             currentMonth={currentMonth}
-            rows={outgoingTransactionRows}
-            selectedAccountId={selectedAccountId}
+            totals={monthTotals}
             monthMessage={monthMessage}
-            deletingTransactionId={deletingTransactionId}
-            onDeleteTransaction={deleteTransaction}
-            onEditTransaction={startEditingTransaction}
-            onOpenReceipt={setReceiptViewer}
+            onExportExcel={exportExcel}
+            onExportPdf={(month) => void exportPdf(month)}
           />
           <ChartsPanel
             categoryRows={categoryRows}
@@ -2969,24 +3083,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               isSharedView={isSharedView}
             />
           )}
-        </section>
-
-        <section
-          className={cn(
-            "finance-view gap-4 lg:hidden",
-            activeSection === "export" ? "grid" : "hidden",
-          )}
-        >
-          <MobileSectionHeader title="Export" subtitle={viewCopy.label} />
-          <ExportCenterCard
-            accountName={selectedAccount?.name ?? viewCopy.label}
-            currentMonth={currentMonth}
-            receiptCount={selectedTransactions.filter(
-              (transaction) =>
-                transaction.date.startsWith(currentMonth) && transaction.receiptUrl,
-            ).length}
-            onOpenExport={() => setIsExportDialogOpen(true)}
-          />
         </section>
 
         <div className="hidden gap-4 lg:grid lg:h-[calc(100dvh-2rem)] lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)_320px] lg:overflow-hidden xl:grid-cols-[232px_minmax(0,1fr)_340px] 2xl:grid-cols-[240px_minmax(0,1fr)_360px]">
@@ -3031,31 +3127,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 monthTitle={viewCopy.monthTitle}
                 monthDescription={viewCopy.monthDescription}
                 outgoingRows={outgoingTransactionRows}
-                selectedAccountId={selectedAccountId}
+                totals={monthTotals}
                 monthMessage={monthMessage}
-                deletingTransactionId={deletingTransactionId}
                 categoryRows={categoryRows}
                 selectedSixMonthTrend={selectedSixMonthTrend}
                 chartsReady={chartsReady}
                 monthOptions={monthOptions}
                 onMonthChange={changeCurrentMonth}
-                onDeleteTransaction={deleteTransaction}
-                onEditTransaction={startEditingTransaction}
-                onOpenReceipt={setReceiptViewer}
+                onExportExcel={exportExcel}
+                onExportPdf={(month) => void exportPdf(month)}
               />
-
-              <section id="finance-export" className="scroll-mt-4">
-                <ExportCenterCard
-                  accountName={selectedAccount?.name ?? viewCopy.label}
-                  currentMonth={currentMonth}
-                  receiptCount={selectedTransactions.filter(
-                    (transaction) =>
-                      transaction.date.startsWith(currentMonth) &&
-                      transaction.receiptUrl,
-                  ).length}
-                  onOpenExport={() => setIsExportDialogOpen(true)}
-                />
-              </section>
 
               {isSharedView && (
                 <PersonCostInsight
@@ -3180,6 +3261,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 householdMembers={initialData.householdMembers}
                 plans={contributionPlanRows}
                 planDrafts={contributionPlanDrafts}
+                newPlanDrafts={newContributionPlanDrafts}
                 planMessage={contributionPlanMessage}
                 savingPlanId={savingContributionPlanId}
                 plannedTotal={plannedContributionTotal}
@@ -3197,7 +3279,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 onPaidByChange={setContributionPaidById}
                 onNoteChange={setContributionNote}
                 onPlanDraftChange={updateContributionPlanDraft}
+                onNewPlanDraftChange={updateNewContributionPlanDraft}
                 onPlanSave={saveContributionPlan}
+                onPlanCreate={createContributionPlan}
                 onSubmit={addContribution}
               />
             )}
@@ -4068,6 +4152,113 @@ function MonthTransactionsCard({
   );
 }
 
+function MonthSummaryCard({
+  title,
+  description,
+  currentMonth,
+  totals,
+  monthMessage,
+  onExportExcel,
+  onExportPdf,
+}: {
+  title: string;
+  description: string;
+  currentMonth: string;
+  totals: ReturnType<typeof totalsForMonth>;
+  monthMessage: string;
+  onExportExcel: (month: string) => void;
+  onExportPdf: (month: string) => void;
+}) {
+  const summaryRows = [
+    {
+      label: "Uitgaven",
+      value: totals.expenseTotal,
+      tone: "red" as const,
+      detail: "Vaste lasten + variabel",
+    },
+    {
+      label: "Stortingen",
+      value: totals.contributionTotal,
+      tone: "emerald" as const,
+      detail: "Op de gezamenlijke rekening",
+    },
+    {
+      label: "Inkomen",
+      value: totals.incomeTotal,
+      tone: "emerald" as const,
+      detail: "Salaris en extra inkomsten",
+    },
+  ];
+
+  return (
+    <Card className="finance-card">
+      <CardHeader className="grid gap-3 pb-3 sm:grid-cols-[1fr_auto] sm:items-start">
+        <div className="min-w-0">
+          <CardTitle>{title}</CardTitle>
+          <CardDescription className="max-w-[34rem]">{description}</CardDescription>
+        </div>
+        <Badge className="w-fit border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)]">
+          {monthLabel(currentMonth)}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {monthMessage && (
+          <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)]">
+            {monthMessage}
+          </p>
+        )}
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          {summaryRows.map((row) => (
+            <div
+              key={row.label}
+              className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3"
+            >
+              <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+                {row.label}
+              </p>
+              <p
+                className={cn(
+                  "mt-2 text-lg font-semibold",
+                  row.tone === "emerald"
+                    ? "text-[var(--positive)]"
+                    : "text-[var(--negative)]",
+                )}
+              >
+                {preciseCurrency(row.value)}
+              </p>
+              <p className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                {row.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-10 justify-center"
+            onClick={() => onExportExcel(currentMonth)}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Excel
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-10 justify-center"
+            onClick={() => onExportPdf(currentMonth)}
+          >
+            <ReceiptText className="h-4 w-4" />
+            PDF
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AllTransactionsCard({
   currentMonth,
   rows,
@@ -4575,32 +4766,28 @@ function MonthInsightsSection({
   monthTitle,
   monthDescription,
   outgoingRows,
-  selectedAccountId,
+  totals,
   monthMessage,
-  deletingTransactionId,
   categoryRows,
   selectedSixMonthTrend,
   chartsReady,
   onMonthChange,
-  onDeleteTransaction,
-  onEditTransaction,
-  onOpenReceipt,
+  onExportExcel,
+  onExportPdf,
 }: {
   currentMonth: string;
   monthOptions: MonthOption[];
   monthTitle: string;
   monthDescription: string;
   outgoingRows: OutgoingTransactionRow[];
-  selectedAccountId: string;
+  totals: ReturnType<typeof totalsForMonth>;
   monthMessage: string;
-  deletingTransactionId: string | null;
   categoryRows: ReturnType<typeof categoryTotals>;
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
   chartsReady: boolean;
   onMonthChange: (month: string) => void;
-  onDeleteTransaction: (transaction: Transaction) => void;
-  onEditTransaction: (transaction: Transaction) => void;
-  onOpenReceipt: (receipt: ReceiptViewerState) => void;
+  onExportExcel: (month: string) => void;
+  onExportPdf: (month: string) => void;
 }) {
   return (
     <section id="finance-month" className="scroll-mt-4 grid gap-4">
@@ -4627,18 +4814,14 @@ function MonthInsightsSection({
       />
 
       <div className="grid items-start gap-4 2xl:grid-cols-[minmax(460px,0.95fr)_minmax(0,1.05fr)]">
-        <MonthTransactionsCard
+        <MonthSummaryCard
           title={monthTitle}
           description={monthDescription}
           currentMonth={currentMonth}
-          rows={outgoingRows}
-          selectedAccountId={selectedAccountId}
+          totals={totals}
           monthMessage={monthMessage}
-          deletingTransactionId={deletingTransactionId}
-          onDeleteTransaction={onDeleteTransaction}
-          onEditTransaction={onEditTransaction}
-          onOpenReceipt={onOpenReceipt}
-          compact
+          onExportExcel={onExportExcel}
+          onExportPdf={onExportPdf}
         />
         <ChartsPanel
           categoryRows={categoryRows}
@@ -6294,6 +6477,7 @@ function ContributionCard({
   householdMembers,
   plans,
   planDrafts,
+  newPlanDrafts,
   planMessage,
   savingPlanId,
   plannedTotal,
@@ -6311,7 +6495,9 @@ function ContributionCard({
   onPaidByChange,
   onNoteChange,
   onPlanDraftChange,
+  onNewPlanDraftChange,
   onPlanSave,
+  onPlanCreate,
   onSubmit,
 }: {
   amount: string;
@@ -6327,7 +6513,8 @@ function ContributionCard({
       remaining: number;
     }
   >;
-  planDrafts: Record<string, { amount: string; depositDay: string }>;
+  planDrafts: Record<string, ContributionPlanDraft>;
+  newPlanDrafts: Record<string, ContributionPlanDraft>;
   planMessage: string;
   savingPlanId: string | null;
   plannedTotal: number;
@@ -6346,13 +6533,29 @@ function ContributionCard({
   onNoteChange: (value: string) => void;
   onPlanDraftChange: (
     planId: string,
-    field: "amount" | "depositDay",
+    field: keyof ContributionPlanDraft,
+    value: string,
+  ) => void;
+  onNewPlanDraftChange: (
+    userId: string,
+    field: keyof ContributionPlanDraft,
     value: string,
   ) => void;
   onPlanSave: (plan: ContributionPlan) => void;
+  onPlanCreate: (member: DashboardData["householdMembers"][number]) => void;
   onSubmit: () => boolean | Promise<boolean>;
 }) {
   const [isBookingOpen, setIsBookingOpen] = useState(false);
+  const plansByPerson = householdMembers.map((member) => ({
+    member,
+    plans: plans
+      .filter((plan) => plan.userId === member.userId)
+      .sort(
+        (first, second) =>
+          first.depositDay - second.depositDay ||
+          first.label.localeCompare(second.label, "nl"),
+      ),
+  }));
 
   return (
     <Card className="finance-card h-full">
@@ -6386,34 +6589,48 @@ function ContributionCard({
         </div>
 
         <div className="divide-y divide-[var(--border)] rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]">
-          {plans.map((plan) => {
-            const isComplete = plan.remaining <= 0;
+          {plansByPerson.map(({ member, plans: personPlans }) => (
+            <div key={member.userId} className="space-y-2 px-3 py-2.5">
+              <p className="text-sm font-medium text-[var(--text-primary)]">
+                {member.displayName}
+              </p>
+              <div className="space-y-1.5">
+                {personPlans.map((plan) => {
+                  const isComplete = plan.remaining <= 0;
 
-            return (
-              <div
-                key={plan.id}
-                className="grid grid-cols-[1fr_auto] items-center gap-3 px-3 py-2.5"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[var(--text-primary)]">
-                    {plan.person}
+                  return (
+                    <div
+                      key={plan.id}
+                      className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[10px] bg-black/10 px-2.5 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-[var(--text-primary)]">
+                          {plan.label}
+                        </p>
+                        <p className="mt-0.5 truncate text-[11px] text-[var(--text-secondary)]">
+                          {currency(plan.monthlyAmount)} · dag {plan.depositDay} · {currency(plan.received)} binnen
+                        </p>
+                      </div>
+                      <Badge
+                        className={cn(
+                          "border-[var(--border)] bg-black/10 text-[var(--text-secondary)]",
+                          isComplete &&
+                            "border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]",
+                        )}
+                      >
+                        {isComplete ? "op schema" : currency(plan.remaining)}
+                      </Badge>
+                    </div>
+                  );
+                })}
+                {personPlans.length === 0 && (
+                  <p className="rounded-[10px] bg-black/10 px-2.5 py-2 text-xs text-[var(--text-secondary)]">
+                    Nog geen geplande storting.
                   </p>
-                  <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
-                    Rond dag {plan.depositDay} · {currency(plan.received)} binnen
-                  </p>
-                </div>
-                <Badge
-                  className={cn(
-                    "border-[var(--border)] bg-black/10 text-[var(--text-secondary)]",
-                    isComplete &&
-                      "border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]",
-                  )}
-                >
-                  {isComplete ? "op schema" : currency(plan.remaining)}
-                </Badge>
+                )}
               </div>
-            );
-          })}
+            </div>
+          ))}
           {plans.length === 0 && (
             <p className="p-3 text-sm text-[var(--text-secondary)]">
               Geplande stortingen verschijnen zodra Supabase chunk 20 is uitgevoerd.
@@ -6465,70 +6682,138 @@ function ContributionCard({
             Geplande storting instellen
             <Plus className="h-4 w-4 text-[var(--text-muted)] transition group-open:rotate-45" />
           </summary>
-          <div className="grid gap-3 border-t border-[var(--border)] p-3">
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-normal text-[var(--text-muted)]">
-                Geplande storting
-              </p>
-              {plans.map((plan) => {
-                const draft = planDrafts[plan.id] ?? {
-                  amount: String(plan.monthlyAmount || ""),
-                  depositDay: String(plan.depositDay),
-                };
-                const isSavingPlan = savingPlanId === plan.id;
-
-                return (
-                  <div key={plan.id} className="grid gap-2 rounded-[12px] bg-[var(--bg-surface)] p-2">
-                    <p className="text-xs font-medium text-[var(--text-secondary)]">
-                      {plan.person}
-                    </p>
-                    <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
-                      <Input
-                        inputMode="decimal"
-                        value={draft.amount}
-                        placeholder="Maandbedrag"
-                        className="h-9"
-                        onChange={(event) =>
-                          onPlanDraftChange(plan.id, "amount", event.target.value)
-                        }
-                      />
-                      <Select
-                        value={draft.depositDay}
-                        className="h-9"
-                        aria-label={`Stortdag ${plan.person}`}
-                        onChange={(event) =>
-                          onPlanDraftChange(plan.id, "depositDay", event.target.value)
-                        }
-                      >
-                        {Array.from({ length: 31 }, (_, index) => index + 1).map(
-                          (day) => (
-                            <option key={day} value={day}>
-                              Dag {day}
-                            </option>
-                          ),
-                        )}
-                      </Select>
-                      <Button
-                        size="icon"
-                        variant="secondary"
-                        title={`Geplande storting ${plan.person} bewaren`}
-                        className="h-9 w-9"
-                        disabled={isSavingPlan}
-                        onClick={() => onPlanSave(plan)}
-                      >
-                        {isSavingPlan ? (
-                          <LoaderCircle className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Save className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </details>
+	          <div className="grid gap-3 border-t border-[var(--border)] p-3">
+	            {plansByPerson.map(({ member, plans: personPlans }) => {
+	              const newDraft = newPlanDrafts[member.userId] ?? {
+	                label: "",
+	                amount: "",
+	                depositDay: "1",
+	              };
+	              const isSavingNewPlan = savingPlanId === `new:${member.userId}`;
+	
+	              return (
+	                <div key={member.userId} className="grid gap-2 rounded-[12px] bg-[var(--bg-surface)] p-2">
+	                  <p className="text-xs font-medium text-[var(--text-secondary)]">
+	                    {member.displayName}
+	                  </p>
+	                  {personPlans.map((plan) => {
+	                    const draft = planDrafts[plan.id] ?? {
+	                      label: plan.label,
+	                      amount: String(plan.monthlyAmount || ""),
+	                      depositDay: String(plan.depositDay),
+	                    };
+	                    const isSavingPlan = savingPlanId === plan.id;
+	
+	                    return (
+	                      <div key={plan.id} className="grid gap-2 rounded-[10px] bg-black/10 p-2">
+	                        <Input
+	                          value={draft.label}
+	                          placeholder="Naam"
+	                          className="h-9"
+	                          onChange={(event) =>
+	                            onPlanDraftChange(plan.id, "label", event.target.value)
+	                          }
+	                        />
+	                        <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
+	                          <Input
+	                            inputMode="decimal"
+	                            value={draft.amount}
+	                            placeholder="Maandbedrag"
+	                            className="h-9"
+	                            onChange={(event) =>
+	                              onPlanDraftChange(plan.id, "amount", event.target.value)
+	                            }
+	                          />
+	                          <Select
+	                            value={draft.depositDay}
+	                            className="h-9"
+	                            aria-label={`Stortdag ${plan.label}`}
+	                            onChange={(event) =>
+	                              onPlanDraftChange(plan.id, "depositDay", event.target.value)
+	                            }
+	                          >
+	                            {Array.from({ length: 31 }, (_, index) => index + 1).map(
+	                              (day) => (
+	                                <option key={day} value={day}>
+	                                  Dag {day}
+	                                </option>
+	                              ),
+	                            )}
+	                          </Select>
+	                          <Button
+	                            size="icon"
+	                            variant="secondary"
+	                            title={`${plan.label} bewaren`}
+	                            className="h-9 w-9"
+	                            disabled={isSavingPlan}
+	                            onClick={() => onPlanSave(plan)}
+	                          >
+	                            {isSavingPlan ? (
+	                              <LoaderCircle className="h-4 w-4 animate-spin" />
+	                            ) : (
+	                              <Save className="h-4 w-4" />
+	                            )}
+	                          </Button>
+	                        </div>
+	                      </div>
+	                    );
+	                  })}
+	                  <div className="grid gap-2 rounded-[10px] border border-dashed border-[var(--border)] p-2">
+	                    <Input
+	                      value={newDraft.label}
+	                      placeholder="Nieuwe planning"
+	                      className="h-9"
+	                      onChange={(event) =>
+	                        onNewPlanDraftChange(member.userId, "label", event.target.value)
+	                      }
+	                    />
+	                    <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
+	                      <Input
+	                        inputMode="decimal"
+	                        value={newDraft.amount}
+	                        placeholder="Bedrag"
+	                        className="h-9"
+	                        onChange={(event) =>
+	                          onNewPlanDraftChange(member.userId, "amount", event.target.value)
+	                        }
+	                      />
+	                      <Select
+	                        value={newDraft.depositDay}
+	                        className="h-9"
+	                        aria-label={`Nieuwe stortdag ${member.displayName}`}
+	                        onChange={(event) =>
+	                          onNewPlanDraftChange(member.userId, "depositDay", event.target.value)
+	                        }
+	                      >
+	                        {Array.from({ length: 31 }, (_, index) => index + 1).map(
+	                          (day) => (
+	                            <option key={day} value={day}>
+	                              Dag {day}
+	                            </option>
+	                          ),
+	                        )}
+	                      </Select>
+	                      <Button
+	                        size="icon"
+	                        variant="secondary"
+	                        title={`Planning voor ${member.displayName} toevoegen`}
+	                        className="h-9 w-9"
+	                        disabled={isSavingNewPlan}
+	                        onClick={() => onPlanCreate(member)}
+	                      >
+	                        {isSavingNewPlan ? (
+	                          <LoaderCircle className="h-4 w-4 animate-spin" />
+	                        ) : (
+	                          <Plus className="h-4 w-4" />
+	                        )}
+	                      </Button>
+	                    </div>
+	                  </div>
+	                </div>
+	              );
+	            })}
+	          </div>
+	        </details>
 
         {message && (
           <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)]">
@@ -7974,6 +8259,30 @@ function transactionRowMetaLabel(
   return "Uitgave";
 }
 
+function buildContributionPlanRows(
+  plans: ContributionPlan[],
+  receivedByUser: Map<string, number>,
+) {
+  const remainingReceivedByUser = new Map(receivedByUser);
+
+  return sortContributionPlans(plans).map((plan) => {
+    const receivedKey = receivedByUser.has(plan.userId) ? plan.userId : plan.person;
+    const availableReceived = remainingReceivedByUser.get(receivedKey) ?? 0;
+    const received = Math.min(plan.monthlyAmount, availableReceived);
+
+    remainingReceivedByUser.set(
+      receivedKey,
+      Math.max(availableReceived - received, 0),
+    );
+
+    return {
+      ...plan,
+      received,
+      remaining: Math.max(plan.monthlyAmount - received, 0),
+    };
+  });
+}
+
 function buildContributionBreakdown({
   transactions,
   plans,
@@ -8461,6 +8770,15 @@ function mergeById<T extends { id: string }>(currentItems: T[], nextItems: T[]) 
   nextItems.forEach((item) => itemsById.set(item.id, item));
 
   return Array.from(itemsById.values());
+}
+
+function sortContributionPlans(plans: ContributionPlan[]) {
+  return [...plans].sort(
+    (first, second) =>
+      first.person.localeCompare(second.person, "nl") ||
+      first.depositDay - second.depositDay ||
+      first.label.localeCompare(second.label, "nl"),
+  );
 }
 
 function categoryUsageByCurrentUser(
