@@ -686,20 +686,29 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const ownRemainingContributionTotal = contributionPlanRows
     .filter((plan) => plan.userId === initialData.currentUserId)
     .reduce((total, plan) => total + plan.remaining, 0);
+  const today = new Date().toISOString().slice(0, 10);
   const calculatedBalance = latestBalanceSnapshot
     ? latestBalanceSnapshot.balance +
       selectedTransactions
         .filter((transaction) => transaction.date > latestBalanceSnapshot.snapshotDate)
+        .filter((transaction) => transaction.date <= today)
         .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
         .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0)
     : null;
+  const remainingPersonalIncomeTotal = selectedTransactions
+    .filter((transaction) => transaction.type === "income")
+    .filter((transaction) => transaction.date.startsWith(currentMonth))
+    .filter((transaction) => transaction.date > today)
+    .reduce((total, transaction) => total + transaction.amount, 0);
   const expectedMonthEndForecast = useMemo(
     () =>
       buildExpectedMonthEndForecast({
         transactions: selectedTransactions,
         month: currentMonth,
         calculatedBalance,
-        remainingIncomeTotal: isSharedView ? remainingContributionTotal : 0,
+        remainingIncomeTotal: isSharedView
+          ? remainingContributionTotal
+          : remainingPersonalIncomeTotal,
         remainingFixedTotal:
           openFixedTotalForCurrentMonth +
           (isSharedView ? 0 : ownRemainingContributionTotal),
@@ -710,6 +719,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       isSharedView,
       openFixedTotalForCurrentMonth,
       ownRemainingContributionTotal,
+      remainingPersonalIncomeTotal,
       remainingContributionTotal,
       selectedTransactions,
     ],
@@ -738,8 +748,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     (total, item) => (item.state === "skipped" ? total : total + item.amount),
     0,
   );
-  const displayedExpenseTotal =
-    fixedTotalForCurrentMonth + monthTotals.variableTotal;
+  const displayedExpenseTotal = monthTotals.expenseTotal;
   const displayedNetTotal =
     monthTotals.contributionTotal + monthTotals.incomeTotal - displayedExpenseTotal;
   const contributionCoverage = useMemo(
@@ -783,7 +792,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     if (isSharedView) {
       return [
         ...fixedAgendaItems
-          .filter((item) => item.state !== "skipped")
+          .filter((item) => item.canSkip && item.date > today)
           .map((item) => ({
             date: item.date,
             day: item.day,
@@ -818,6 +827,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const incomeEvents = selectedTransactions
       .filter((transaction) => transaction.type === "income")
       .filter((transaction) => transaction.date.startsWith(currentMonth))
+      .filter((transaction) => transaction.date > today)
       .map((transaction) => ({
         date: transaction.date,
         day: Number(transaction.date.slice(8, 10)),
@@ -832,6 +842,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     initialData.currentUserId,
     isSharedView,
     selectedTransactions,
+    today,
   ]);
   const cashflowTimeline = useMemo(
     () =>
