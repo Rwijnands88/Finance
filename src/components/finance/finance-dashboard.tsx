@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   ArrowDownToLine,
@@ -103,8 +103,13 @@ type CashflowPoint = {
   day: number;
   balance: number;
 };
+type CashflowEvent = {
+  date: string;
+  day: number;
+  amount: number;
+};
 
-const cashflowBufferStorageKey = "finance-cashflow-buffer";
+const cashflowBufferStorageKeyPrefix = "finance-cashflow-buffer";
 
 function sectionNavItems() {
   return [
@@ -323,14 +328,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       initialData.categories[0]?.id ??
       "",
   );
-  const [cashflowBuffer, setCashflowBuffer] = useState(() => {
-    if (typeof window === "undefined") return 500;
-
-    const savedValue = window.localStorage.getItem(cashflowBufferStorageKey);
-    const parsedValue = savedValue ? Number(savedValue) : 500;
-
-    return Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 500;
-  });
+  const [cashflowBuffers, setCashflowBuffers] = useState<Record<string, number>>(
+    () =>
+      Object.fromEntries(
+        initialData.accounts.map((account) => [
+          account.id,
+          readCashflowBuffer(account.id, account.id === defaultAccount?.id),
+        ]),
+      ),
+  );
   const [chartsReady, setChartsReady] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(false);
 
@@ -346,10 +352,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     window.addEventListener("resize", syncViewport);
     return () => window.removeEventListener("resize", syncViewport);
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(cashflowBufferStorageKey, String(cashflowBuffer));
-  }, [cashflowBuffer]);
 
   const labels = useMemo(
     () => categoryById(categories),
@@ -382,6 +384,23 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }, [defaultAccount, personalAccount]);
   const selectedAccount = accountsById.get(selectedAccountId);
   const isSharedView = selectedAccount?.kind === "shared";
+  const cashflowBuffer = cashflowBuffers[selectedAccountId] ?? 500;
+  function updateCashflowBuffer(value: number) {
+    const nextValue = Number.isFinite(value) && value >= 0 ? value : 0;
+
+    setCashflowBuffers((buffers) => ({
+      ...buffers,
+      [selectedAccountId]: nextValue,
+    }));
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        cashflowBufferStorageKey(selectedAccountId),
+        String(nextValue),
+      );
+    }
+  }
+
   const mobileChartsReady = chartsReady && !isDesktopViewport;
   const monthOptions = useMemo(
     () =>
@@ -501,14 +520,25 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [fixedInstances, selectedRecurringExpenseIds],
   );
-  const openFixedTotalForCurrentMonth = useMemo(
-    () =>
+  const openFixedTotalForCurrentMonth = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const currentMonthInstances = new Map(
       selectedFixedInstances
         .filter((instance) => instance.month === currentMonth)
-        .filter((instance) => instance.status === "pending")
-        .reduce((total, instance) => total + instance.amount, 0),
-    [currentMonth, selectedFixedInstances],
-  );
+        .map((instance) => [instance.recurringExpenseId, instance]),
+    );
+
+    return selectedRecurringExpenses.reduce((total, expense) => {
+      const instance = currentMonthInstances.get(expense.id);
+      const billingDate = dateForBillingDay(currentMonth, expense.billingDay);
+
+      if (instance?.status !== "pending" || billingDate < today) {
+        return total;
+      }
+
+      return total + instance.amount;
+    }, 0);
+  }, [currentMonth, selectedFixedInstances, selectedRecurringExpenses]);
   const sharedContributionPlans = useMemo(
     () =>
       contributionPlans.filter(
@@ -596,19 +626,71 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
   );
+  const cashflowEvents = useMemo(() => {
+    if (isSharedView) {
+      return [
+        ...fixedAgendaItems
+          .filter((item) => item.state !== "skipped")
+          .map((item) => ({
+            date: item.date,
+            day: item.day,
+            amount: -item.amount,
+          })),
+        ...contributionPlanRows
+          .filter((plan) => plan.remaining > 0)
+          .map((plan) => {
+            const date = dateForBillingDay(currentMonth, plan.depositDay);
+
+            return {
+              date,
+              day: Number(date.slice(8, 10)),
+              amount: plan.remaining,
+            };
+          }),
+      ] satisfies CashflowEvent[];
+    }
+
+    const ownContributionPlanEvents = contributionPlanRows
+      .filter((plan) => plan.userId === initialData.currentUserId)
+      .filter((plan) => plan.remaining > 0)
+      .map((plan) => {
+        const date = dateForBillingDay(currentMonth, plan.depositDay);
+
+        return {
+          date,
+          day: Number(date.slice(8, 10)),
+          amount: -plan.remaining,
+        };
+      });
+    const incomeEvents = selectedTransactions
+      .filter((transaction) => transaction.type === "income")
+      .filter((transaction) => transaction.date.startsWith(currentMonth))
+      .map((transaction) => ({
+        date: transaction.date,
+        day: Number(transaction.date.slice(8, 10)),
+        amount: transaction.amount,
+      }));
+
+    return [...ownContributionPlanEvents, ...incomeEvents] satisfies CashflowEvent[];
+  }, [
+    contributionPlanRows,
+    currentMonth,
+    fixedAgendaItems,
+    initialData.currentUserId,
+    isSharedView,
+    selectedTransactions,
+  ]);
   const cashflowTimeline = useMemo(
     () =>
       buildCashflowTimeline({
         startBalance: calculatedBalance ?? 0,
         month: currentMonth,
-        fixedItems: fixedAgendaItems,
-        contributionPlans: contributionPlanRows,
+        events: cashflowEvents,
       }),
     [
       calculatedBalance,
-      contributionPlanRows,
+      cashflowEvents,
       currentMonth,
-      fixedAgendaItems,
     ],
   );
 
@@ -2277,14 +2359,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             metrics={dashboardMetrics.slice(0, 3)}
             mobile
           />
-          {isSharedView && (
-            <CashflowTimelineCard
-              points={cashflowTimeline}
-              buffer={cashflowBuffer}
-              onBufferChange={setCashflowBuffer}
-              compact
-            />
-          )}
+          <CashflowTimelineCard
+            points={cashflowTimeline}
+            buffer={cashflowBuffer}
+            onBufferChange={updateCashflowBuffer}
+            compact
+          />
         </section>
 
         <section
@@ -2493,13 +2573,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 />
               </section>
 
-              {isSharedView && (
-                <CashflowTimelineCard
-                  points={cashflowTimeline}
-                  buffer={cashflowBuffer}
-                  onBufferChange={setCashflowBuffer}
-                />
-              )}
+              <CashflowTimelineCard
+                points={cashflowTimeline}
+                buffer={cashflowBuffer}
+                onBufferChange={updateCashflowBuffer}
+              />
 
               <MonthInsightsSection
                 currentMonth={currentMonth}
@@ -2892,13 +2970,10 @@ function CashflowTimelineCard({
   onBufferChange: (value: number) => void;
   compact?: boolean;
 }) {
+  const generatedGradientId = useId();
   const insight = cashflowInsight(points, buffer);
-  const strokeColor =
-    insight.status === "negative"
-      ? "var(--negative)"
-      : insight.status === "below-buffer"
-        ? "#F59E0B"
-        : "var(--positive)";
+  const gradientId = `cashflow-gradient-${generatedGradientId.replace(/:/g, "")}`;
+  const gradientStops = cashflowGradientStops(points, buffer);
 
   return (
     <Card className="finance-card">
@@ -2928,12 +3003,23 @@ function CashflowTimelineCard({
         <div className="h-32">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={points} margin={{ top: 8, right: 4, bottom: 2, left: 4 }}>
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+                  {gradientStops.map((stop, index) => (
+                    <stop
+                      key={`${stop.offset}-${stop.color}-${index}`}
+                      offset={`${stop.offset}%`}
+                      stopColor={stop.color}
+                    />
+                  ))}
+                </linearGradient>
+              </defs>
               <XAxis dataKey="day" hide />
               <YAxis hide domain={["dataMin", "dataMax"]} />
               <Line
                 type="monotone"
                 dataKey="balance"
-                stroke={strokeColor}
+                stroke={`url(#${gradientId})`}
                 strokeWidth={3}
                 dot={false}
                 activeDot={false}
@@ -6442,16 +6528,31 @@ function signedTransactionAmount(transaction: Transaction) {
   return -transaction.amount;
 }
 
+function cashflowBufferStorageKey(accountId: string) {
+  return `${cashflowBufferStorageKeyPrefix}:${accountId || "default"}`;
+}
+
+function readCashflowBuffer(accountId: string, allowLegacyFallback = false) {
+  if (typeof window === "undefined") return 500;
+
+  const savedValue =
+    window.localStorage.getItem(cashflowBufferStorageKey(accountId)) ??
+    (allowLegacyFallback
+      ? window.localStorage.getItem(cashflowBufferStorageKeyPrefix)
+      : null);
+  const parsedValue = savedValue ? Number(savedValue) : 500;
+
+  return Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 500;
+}
+
 function buildCashflowTimeline({
   startBalance,
   month,
-  fixedItems,
-  contributionPlans,
+  events,
 }: {
   startBalance: number;
   month: string;
-  fixedItems: FixedAgendaItem[];
-  contributionPlans: ContributionPlan[];
+  events: CashflowEvent[];
 }) {
   const [, monthNumber] = month.split("-").map(Number);
   const daysInMonth = new Date(Number(month.slice(0, 4)), monthNumber, 0).getDate();
@@ -6460,24 +6561,16 @@ function buildCashflowTimeline({
   const startDay = today.startsWith(month)
     ? Number(today.slice(8, 10))
     : 1;
+  const startDate = dateForBillingDay(month, startDay);
   const addDailyChange = (day: number, amount: number) => {
     const safeDay = Math.min(Math.max(day, 1), daysInMonth);
     dailyChanges[safeDay - 1] += amount;
   };
 
-  fixedItems
-    .filter((item) => item.state !== "skipped")
-    .filter((item) => item.date >= today)
-    .forEach((item) => addDailyChange(item.day, -item.amount));
-
-  contributionPlans
-    .filter(
-      (plan) =>
-        dateForBillingDay(month, plan.depositDay) >= today,
-    )
-    .forEach((plan) =>
-      addDailyChange(plan.depositDay, plan.monthlyAmount),
-    );
+  events
+    .filter((event) => event.date.startsWith(month))
+    .filter((event) => event.date >= startDate)
+    .forEach((event) => addDailyChange(event.day, event.amount));
 
   let runningBalance = startBalance;
 
@@ -6490,6 +6583,50 @@ function buildCashflowTimeline({
       day,
       balance: runningBalance,
     } satisfies CashflowPoint;
+  });
+}
+
+function cashflowLineColor(balance: number, buffer: number) {
+  if (balance < 0) return "#EF4444";
+  if (balance < buffer) return "#F59E0B";
+  return "#10B981";
+}
+
+function cashflowGradientStops(points: CashflowPoint[], buffer: number) {
+  if (!points.length) {
+    return [
+      { offset: 0, color: "#10B981" },
+      { offset: 100, color: "#10B981" },
+    ];
+  }
+
+  if (points.length === 1) {
+    const color = cashflowLineColor(points[0].balance, buffer);
+
+    return [
+      { offset: 0, color },
+      { offset: 100, color },
+    ];
+  }
+
+  return points.flatMap((point, index) => {
+    const offset = Math.round((index / (points.length - 1)) * 1000) / 10;
+    const color = cashflowLineColor(point.balance, buffer);
+
+    if (index === 0) {
+      return [{ offset, color }];
+    }
+
+    const previousColor = cashflowLineColor(points[index - 1].balance, buffer);
+
+    if (previousColor === color) {
+      return [{ offset, color }];
+    }
+
+    return [
+      { offset, color: previousColor },
+      { offset, color },
+    ];
   });
 }
 
