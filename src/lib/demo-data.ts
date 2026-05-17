@@ -18,7 +18,7 @@ export const categories: Category[] = [
   { id: "groceries", name: "Boodschappen", kind: "variable", color: "#10B981", averageMonthly: 820 },
   { id: "fuel", name: "Tanken", kind: "variable", color: "#38BDF8", averageMonthly: 210 },
   { id: "other", name: "Overig", kind: "variable", color: "#EF4444", averageMonthly: 360 },
-  { id: "contribution", name: "Inleg", kind: "variable", color: "#34D399", averageMonthly: 0 },
+  { id: "contribution", name: "Stortingen", kind: "variable", color: "#34D399", averageMonthly: 0 },
 ];
 
 export const recurringExpenses: RecurringExpense[] = [
@@ -50,7 +50,7 @@ export const transactions: Transaction[] = [
   { id: "txn-6", type: "variable", categoryId: "fuel", amount: 82.1, date: "2026-05-04", enteredBy: "Ralph", note: "Tanken" },
   { id: "txn-7", type: "variable", categoryId: "groceries", amount: 54.8, date: "2026-05-08", enteredBy: "Ralph", note: "Aanvulling" },
   { id: "txn-8", type: "variable", categoryId: "other", amount: 39.95, date: "2026-05-09", enteredBy: "Dorine", note: "Cadeau" },
-  { id: "txn-9", type: "contribution", categoryId: "contribution", amount: 1600, date: "2026-05-01", enteredBy: "Ralph", note: "Maandelijkse inleg" },
+  { id: "txn-9", type: "contribution", categoryId: "contribution", amount: 1600, date: "2026-05-01", enteredBy: "Ralph", note: "Reguliere storting" },
 ];
 
 export const sixMonthTrend = [

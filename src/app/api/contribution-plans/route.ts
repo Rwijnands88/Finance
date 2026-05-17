@@ -14,7 +14,7 @@ export async function PATCH(request: Request) {
 
   if (!body.id || !body.householdId) {
     return NextResponse.json(
-      { error: "Inlegafspraak ontbreekt." },
+      { error: "Stortingsafspraak ontbreekt." },
       { status: 400 },
     );
   }

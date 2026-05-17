@@ -36,6 +36,7 @@ import {
 } from "recharts";
 import {
   type AccountBalanceSnapshot,
+  type ContributionKind,
   type ContributionPlan,
   type DashboardData,
   type FixedExpenseInstance,
@@ -83,6 +84,7 @@ type DashboardMetric = {
   icon: React.ReactNode;
   label: string;
   value: string;
+  detail?: string;
   tone: "indigo" | "emerald" | "red" | "zinc";
 };
 
@@ -114,6 +116,36 @@ type ContributionCoverageResult = {
   dataDays: number;
   tone: "emerald" | "red" | "zinc";
   text: string;
+};
+
+type ExpectedMonthEndForecast = {
+  amount: number | null;
+  basis: "historical" | "current";
+  basisLabel: string;
+  expectedRemainingVariable: number;
+};
+type ContributionPersonBreakdown = {
+  person: string;
+  planned: Array<{
+    id: string;
+    date: string;
+    amount: number;
+  }>;
+  extra: Array<{
+    id: string;
+    date: string;
+    amount: number;
+  }>;
+  taxReturn: Array<{
+    id: string;
+    date: string;
+    amount: number;
+  }>;
+  unknown: Array<{
+    id: string;
+    date: string;
+    amount: number;
+  }>;
 };
 
 const cashflowBufferStorageKeyPrefix = "finance-cashflow-buffer";
@@ -261,7 +293,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [contributionDate, setContributionDate] = useState(
     new Date().toISOString().slice(0, 10),
   );
-  const [contributionKind, setContributionKind] = useState<"planned" | "extra">(
+  const [contributionKind, setContributionKind] = useState<ContributionKind>(
     "extra",
   );
   const [contributionNote, setContributionNote] = useState("");
@@ -312,6 +344,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [editNote, setEditNote] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editPaidById, setEditPaidById] = useState("");
+  const [editContributionKind, setEditContributionKind] =
+    useState<ContributionKind>("extra");
   const [editMessage, setEditMessage] = useState("");
   const [isSavingTransactionEdit, setIsSavingTransactionEdit] = useState(false);
   const [fixedMessage, setFixedMessage] = useState("");
@@ -392,17 +426,18 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const selectedAccount = accountsById.get(selectedAccountId);
   const isSharedView = selectedAccount?.kind === "shared";
   const cashflowBuffer = cashflowBuffers[selectedAccountId] ?? 500;
-  function updateCashflowBuffer(value: number) {
+
+  function updateCashflowBuffer(accountId: string, value: number) {
     const nextValue = Number.isFinite(value) && value >= 0 ? value : 0;
 
     setCashflowBuffers((buffers) => ({
       ...buffers,
-      [selectedAccountId]: nextValue,
+      [accountId]: nextValue,
     }));
 
     if (typeof window !== "undefined") {
       window.localStorage.setItem(
-        cashflowBufferStorageKey(selectedAccountId),
+        cashflowBufferStorageKey(accountId),
         String(nextValue),
       );
     }
@@ -505,8 +540,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     () =>
       selectedTransactions
         .filter((transaction) => transaction.date.startsWith(currentMonth))
-        .sort((a, b) => b.date.localeCompare(a.date)),
-    [currentMonth, selectedTransactions],
+        .sort(
+          (first, second) =>
+            first.date.localeCompare(second.date) ||
+            transactionSortLabel(first, labels).localeCompare(
+              transactionSortLabel(second, labels),
+              "nl",
+            ),
+        ),
+    [currentMonth, labels, selectedTransactions],
   );
   const selectedRecurringExpenses = useMemo(
     () =>
@@ -577,12 +619,42 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .filter(
           (transaction) =>
             transaction.type === "contribution" &&
-            (transaction.contributionKind ?? "extra") === "extra" &&
+            transaction.contributionKind === "extra" &&
             transaction.date.startsWith(currentMonth) &&
             (transaction.accountId ?? defaultAccount?.id) === defaultAccount?.id,
         )
         .reduce((total, transaction) => total + transaction.amount, 0),
     [currentMonth, defaultAccount?.id, transactions],
+  );
+  const taxReturnContributionTotal = useMemo(
+    () =>
+      transactions
+        .filter(
+          (transaction) =>
+            transaction.type === "contribution" &&
+            transaction.contributionKind === "belastingteruggave" &&
+            transaction.date.startsWith(currentMonth) &&
+            (transaction.accountId ?? defaultAccount?.id) === defaultAccount?.id,
+        )
+        .reduce((total, transaction) => total + transaction.amount, 0),
+    [currentMonth, defaultAccount?.id, transactions],
+  );
+  const contributionBreakdown = useMemo(
+    () =>
+      buildContributionBreakdown({
+        transactions,
+        plans: sharedContributionPlans,
+        householdMembers: initialData.householdMembers,
+        currentMonth,
+        sharedAccountId: defaultAccount?.id,
+      }),
+    [
+      currentMonth,
+      defaultAccount?.id,
+      initialData.householdMembers,
+      sharedContributionPlans,
+      transactions,
+    ],
   );
   const contributionPlanRows = useMemo(
     () =>
@@ -608,6 +680,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     (total, plan) => total + plan.remaining,
     0,
   );
+  const ownRemainingContributionTotal = contributionPlanRows
+    .filter((plan) => plan.userId === initialData.currentUserId)
+    .reduce((total, plan) => total + plan.remaining, 0);
   const calculatedBalance = latestBalanceSnapshot
     ? latestBalanceSnapshot.balance +
       selectedTransactions
@@ -615,11 +690,28 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
         .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0)
     : null;
-  const remainingExpectedIncomeTotal = isSharedView ? remainingContributionTotal : 0;
-  const expectedMonthEndBalance =
-    calculatedBalance === null
-      ? null
-      : calculatedBalance + remainingExpectedIncomeTotal - openFixedTotalForCurrentMonth;
+  const expectedMonthEndForecast = useMemo(
+    () =>
+      buildExpectedMonthEndForecast({
+        transactions: selectedTransactions,
+        month: currentMonth,
+        calculatedBalance,
+        remainingIncomeTotal: isSharedView ? remainingContributionTotal : 0,
+        remainingFixedTotal:
+          openFixedTotalForCurrentMonth +
+          (isSharedView ? 0 : ownRemainingContributionTotal),
+      }),
+    [
+      calculatedBalance,
+      currentMonth,
+      isSharedView,
+      openFixedTotalForCurrentMonth,
+      ownRemainingContributionTotal,
+      remainingContributionTotal,
+      selectedTransactions,
+    ],
+  );
+  const expectedMonthEndBalance = expectedMonthEndForecast.amount;
   const fixedAgendaItems = useMemo(
     () =>
       buildFixedAgendaItems(
@@ -630,10 +722,23 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
   );
+  const outgoingTransactionRows = useMemo(
+    () =>
+      buildOutgoingTransactionRows(
+        monthTransactions,
+        fixedAgendaItems,
+        labels,
+      ),
+    [fixedAgendaItems, labels, monthTransactions],
+  );
   const fixedTotalForCurrentMonth = fixedAgendaItems.reduce(
     (total, item) => (item.state === "skipped" ? total : total + item.amount),
     0,
   );
+  const displayedExpenseTotal =
+    fixedTotalForCurrentMonth + monthTotals.variableTotal;
+  const displayedNetTotal =
+    monthTotals.contributionTotal + monthTotals.incomeTotal - displayedExpenseTotal;
   const contributionCoverage = useMemo(
     () =>
       buildContributionCoverage({
@@ -789,7 +894,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   const dashboardPrimaryValue =
     calculatedBalance === null
-      ? currency(monthTotals.netTotal)
+      ? currency(displayedNetTotal)
       : currency(calculatedBalance);
   const dashboardPrimarySubtext =
     calculatedBalance === null
@@ -802,7 +907,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         {
           icon: <ReceiptText className="h-5 w-5" />,
           label: "Uitgaven",
-          value: currency(monthTotals.expenseTotal),
+          value: currency(displayedExpenseTotal),
           tone: "zinc" as const,
         },
         {
@@ -810,8 +915,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           label: "Verwacht eindsaldo",
           value:
             expectedMonthEndBalance === null
-              ? currency(monthTotals.netTotal)
+              ? currency(displayedNetTotal)
               : currency(expectedMonthEndBalance),
+          detail: expectedMonthEndForecast.basisLabel,
           tone:
             expectedMonthEndBalance !== null && expectedMonthEndBalance < 0
               ? "red"
@@ -828,7 +934,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         {
           icon: <ReceiptText className="h-5 w-5" />,
           label: "Uitgaven",
-          value: currency(monthTotals.expenseTotal),
+          value: currency(displayedExpenseTotal),
           tone: "zinc" as const,
         },
         {
@@ -836,8 +942,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           label: "Verwacht eindsaldo",
           value:
             expectedMonthEndBalance === null
-              ? currency(monthTotals.netTotal)
+              ? currency(displayedNetTotal)
               : currency(expectedMonthEndBalance),
+          detail: expectedMonthEndForecast.basisLabel,
           tone:
             expectedMonthEndBalance !== null && expectedMonthEndBalance < 0
               ? "red"
@@ -1044,11 +1151,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         accountId: defaultAccount.id,
         amount,
         date: contributionDate,
-        note:
-          contributionNote ||
-          (contributionKind === "planned"
-            ? "Geplande maandelijkse storting"
-            : "Extra storting gezamenlijke rekening"),
+        note: contributionNote || defaultContributionNote(contributionKind),
         type: "contribution",
         contributionKind,
         paidById: initialData.currentUserId,
@@ -1068,10 +1171,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
 
     const contributionCategory =
-      categories.find((category) => category.name === "Inleg") ??
+      categories.find((category) =>
+        ["Inleg", "Stortingen"].includes(category.name),
+      ) ??
       ({
         id: result.transaction.categoryId,
-        name: "Inleg",
+        name: "Stortingen",
         kind: "variable",
         color: "#34D399",
         averageMonthly: 0,
@@ -1088,11 +1193,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         categoryId: contributionCategory.id,
         amount,
         date: contributionDate,
-        note:
-          contributionNote ||
-          (contributionKind === "planned"
-            ? "Geplande maandelijkse storting"
-            : "Extra storting gezamenlijke rekening"),
+        note: contributionNote || defaultContributionNote(contributionKind),
         enteredById: initialData.currentUserId,
         enteredBy: initialData.currentPerson,
         paidById: result.transaction.paidById ?? initialData.currentUserId,
@@ -1474,7 +1575,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       setContributionPlanMessage(
         typeof result.error === "string"
           ? result.error
-          : "Maandelijkse storting opslaan lukte niet.",
+          : "Geplande storting opslaan lukte niet.",
       );
       return;
     }
@@ -1490,9 +1591,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         depositDay: String(updatedPlan.depositDay),
       },
     }));
-    setContributionPlanMessage(
-      `Maandelijkse storting voor ${updatedPlan.person} bewaard.`,
-    );
+    setContributionPlanMessage(`Geplande storting voor ${updatedPlan.person} bewaard.`);
   }
 
   async function scanReceipt(file: File) {
@@ -1627,6 +1726,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setEditDate(transaction.date);
     setEditNote(transaction.note ?? "");
     setEditCategory(safeCategoryId);
+    setEditContributionKind(transaction.contributionKind ?? "extra");
     setEditPaidById(
       transaction.paidById ??
         transaction.enteredById ??
@@ -1681,6 +1781,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         amount,
         date: editDate,
         note: editNote || null,
+        contributionKind:
+          editingTransaction.type === "contribution"
+            ? editContributionKind
+            : undefined,
         paidById: paidByMember?.userId ?? initialData.currentUserId,
       }),
     });
@@ -1703,6 +1807,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       date: string;
       note?: string;
       paidById?: string;
+      contributionKind?: ContributionKind;
     };
 
     setTransactions((items) =>
@@ -1715,6 +1820,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 amount: Number(updatedTransaction.amount),
                 date: updatedTransaction.date,
                 note: updatedTransaction.note,
+                contributionKind:
+                  editingTransaction.type === "contribution"
+                    ? updatedTransaction.contributionKind ?? editContributionKind
+                    : item.contributionKind,
                 paidById:
                   updatedTransaction.paidById ??
                   paidByMember?.userId ??
@@ -1929,6 +2038,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     );
   }
 
+  function fixedItemsTotal(items: FixedAgendaItem[]) {
+    return items.reduce(
+      (total, item) => (item.state === "skipped" ? total : total + item.amount),
+      0,
+    );
+  }
+
   function transactionsForRange(fromMonth: string, toMonth: string) {
     const [from, to] = normalizeMonthRange(fromMonth, toMonth);
 
@@ -1937,19 +2053,25 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       .sort((a, b) => b.date.localeCompare(a.date));
   }
 
-  function exportExcel(targetMonth = currentMonth) {
+  async function exportExcel(targetMonth = currentMonth) {
     const exportTransactions = transactionsForMonth(targetMonth);
     const exportTotals = totalsForMonth(selectedTransactions, targetMonth);
     const exportFixedItems = fixedAgendaItemsForMonth(targetMonth);
+    const exportFixedTotal = fixedItemsTotal(exportFixedItems);
+    const exportNetTotal =
+      exportTotals.contributionTotal +
+      exportTotals.incomeTotal -
+      exportFixedTotal -
+      exportTotals.variableTotal;
     const summaryRows = [
       {
         Rekening: selectedAccount?.name ?? viewCopy.label,
         Maand: monthLabel(targetMonth),
         Stortingen: exportTotals.contributionTotal,
         Inkomen: exportTotals.incomeTotal,
-        "Vaste lasten": exportTotals.fixedTotal,
+        "Vaste lasten": exportFixedTotal,
         Variabel: exportTotals.variableTotal,
-        "Over/tekort": exportTotals.netTotal,
+        "Over/tekort": exportNetTotal,
         Uitgaven: exportTransactions.length,
         "Bonnen aanwezig": exportTransactions.filter(
           (transaction) => transaction.receiptUrl,
@@ -1969,7 +2091,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             : "Variabel",
       Categorie:
         transaction.type === "contribution"
-          ? "Storting"
+          ? contributionDisplayName(transaction)
           : transaction.type === "income"
             ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
@@ -2035,10 +2157,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         Notitie: 34,
       },
     });
-    XLSX.writeFile(workbook, `huishouden-${targetMonth}.xlsx`);
+    await writeFinanceWorkbook(workbook, `huishouden-${targetMonth}.xlsx`);
   }
 
-  function exportExcelRange(fromMonth: string, toMonth: string) {
+  async function exportExcelRange(fromMonth: string, toMonth: string) {
     const [from, to] = normalizeMonthRange(fromMonth, toMonth);
     const rangeMonths = monthsInRange(from, to);
     const exportTransactions = transactionsForRange(from, to);
@@ -2047,15 +2169,21 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         (transaction) => transaction.date.startsWith(month),
       );
       const totals = totalsForMonth(selectedTransactions, month);
+      const fixedTotal = fixedItemsTotal(fixedAgendaItemsForMonth(month));
+      const netTotal =
+        totals.contributionTotal +
+        totals.incomeTotal -
+        fixedTotal -
+        totals.variableTotal;
 
       return {
         Rekening: selectedAccount?.name ?? viewCopy.label,
         Maand: monthLabel(month),
         Stortingen: totals.contributionTotal,
         Inkomen: totals.incomeTotal,
-        "Vaste lasten": totals.fixedTotal,
+        "Vaste lasten": fixedTotal,
         Variabel: totals.variableTotal,
-        "Over/tekort": totals.netTotal,
+        "Over/tekort": netTotal,
         Uitgaven: monthTransactionsForExport.length,
         "Bonnen aanwezig": monthTransactionsForExport.filter(
           (transaction) => transaction.receiptUrl,
@@ -2076,7 +2204,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             : "Variabel",
       Categorie:
         transaction.type === "contribution"
-          ? "Storting"
+          ? contributionDisplayName(transaction)
           : transaction.type === "income"
             ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
@@ -2147,7 +2275,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         Notitie: 34,
       },
     });
-    XLSX.writeFile(workbook, `huishouden-${from}-tm-${to}.xlsx`);
+    await writeFinanceWorkbook(workbook, `huishouden-${from}-tm-${to}.xlsx`);
   }
 
   function appendFinanceSheet(
@@ -2159,7 +2287,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       widths?: Record<string, number>;
     } = {},
   ) {
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const worksheet = XLSX.utils.json_to_sheet(rows.length > 0 ? rows : [{}]);
 
     formatFinanceWorksheet(worksheet, options);
     XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
@@ -2181,9 +2309,48 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     });
     const currencyColumns = new Set(options.currencyColumns ?? []);
 
-    worksheet["!cols"] = headers.map((header) => ({
-      wch: options.widths?.[header] ?? Math.max(12, header.length + 4),
-    }));
+    worksheet["!autofilter"] = { ref: XLSX.utils.encode_range(range) };
+    (worksheet as XLSX.WorkSheet & {
+      "!freeze"?: {
+        xSplit: number;
+        ySplit: number;
+        topLeftCell: string;
+        activePane: string;
+        state: string;
+      };
+    })["!freeze"] = {
+      xSplit: 0,
+      ySplit: 1,
+      topLeftCell: "A2",
+      activePane: "bottomLeft",
+      state: "frozen",
+    };
+    worksheet["!cols"] = headers.map((header, index) => {
+      let maxLength = header.length;
+
+      for (let row = range.s.r + 1; row <= range.e.r; row += 1) {
+        const cellAddress = XLSX.utils.encode_cell({
+          r: row,
+          c: range.s.c + index,
+        });
+        const cell = worksheet[cellAddress];
+
+        if (!cell || cell.v === null || cell.v === undefined) continue;
+
+        const displayValue =
+          currencyColumns.has(header) && typeof cell.v === "number"
+            ? preciseCurrency(cell.v)
+            : String(cell.v);
+        maxLength = Math.max(maxLength, displayValue.length);
+      }
+
+      return {
+        wch: Math.min(
+          Math.max(options.widths?.[header] ?? 12, maxLength + 3),
+          header === "Notitie" ? 64 : 42,
+        ),
+      };
+    });
 
     for (let row = range.s.r; row <= range.e.r; row += 1) {
       for (let column = range.s.c; column <= range.e.c; column += 1) {
@@ -2196,8 +2363,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
         if (row === range.s.r) {
           cell.s = {
-            font: { bold: true, color: { rgb: "18181B" } },
-            fill: { fgColor: { rgb: "F4F4F5" } },
+            font: { bold: true, color: { rgb: "FFFFFF" } },
+            fill: { fgColor: { rgb: "1E1E2E" } },
           };
           continue;
         }
@@ -2210,6 +2377,137 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         }
       }
     }
+  }
+
+  async function writeFinanceWorkbook(workbook: XLSX.WorkBook, filename: string) {
+    const { default: JSZip } = await import("jszip");
+    const workbookData = XLSX.write(workbook, {
+      bookType: "xlsx",
+      type: "array",
+      cellStyles: true,
+    }) as ArrayBuffer;
+    const zip = await JSZip.loadAsync(workbookData);
+    const stylesEntry = zip.file("xl/styles.xml");
+    const stylesXml = await stylesEntry?.async("string");
+
+    if (stylesXml) {
+      const { xml, headerStyleIndex } = addExcelHeaderStyle(stylesXml);
+      zip.file("xl/styles.xml", xml);
+
+      await Promise.all(
+        workbook.SheetNames.map(async (_, index) => {
+          const path = `xl/worksheets/sheet${index + 1}.xml`;
+          const sheetEntry = zip.file(path);
+          const sheetXml = await sheetEntry?.async("string");
+
+          if (!sheetXml) return;
+
+          zip.file(path, styleFinanceWorksheetXml(sheetXml, headerStyleIndex));
+        }),
+      );
+    }
+
+    const blob = await zip.generateAsync({
+      type: "blob",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    downloadBlob(blob, filename);
+  }
+
+  function addExcelHeaderStyle(stylesXml: string) {
+    const parser = new DOMParser();
+    const document = parser.parseFromString(stylesXml, "application/xml");
+    const namespace = document.documentElement.namespaceURI ?? "";
+    const fonts = document.getElementsByTagName("fonts")[0];
+    const fills = document.getElementsByTagName("fills")[0];
+    const cellXfs = document.getElementsByTagName("cellXfs")[0];
+    const fontId = fonts.children.length;
+    const fillId = fills.children.length;
+    const headerStyleIndex = cellXfs.children.length;
+    const font = document.createElementNS(namespace, "font");
+    const bold = document.createElementNS(namespace, "b");
+    const color = document.createElementNS(namespace, "color");
+    const name = document.createElementNS(namespace, "name");
+    const family = document.createElementNS(namespace, "family");
+    const fill = document.createElementNS(namespace, "fill");
+    const patternFill = document.createElementNS(namespace, "patternFill");
+    const fgColor = document.createElementNS(namespace, "fgColor");
+    const bgColor = document.createElementNS(namespace, "bgColor");
+    const xf = document.createElementNS(namespace, "xf");
+    const alignment = document.createElementNS(namespace, "alignment");
+
+    color.setAttribute("rgb", "FFFFFFFF");
+    name.setAttribute("val", "Calibri");
+    family.setAttribute("val", "2");
+    font.append(bold, color, name, family);
+    fonts.append(font);
+    fonts.setAttribute("count", String(fonts.children.length));
+
+    patternFill.setAttribute("patternType", "solid");
+    fgColor.setAttribute("rgb", "FF1E1E2E");
+    bgColor.setAttribute("indexed", "64");
+    patternFill.append(fgColor, bgColor);
+    fill.append(patternFill);
+    fills.append(fill);
+    fills.setAttribute("count", String(fills.children.length));
+
+    xf.setAttribute("numFmtId", "0");
+    xf.setAttribute("fontId", String(fontId));
+    xf.setAttribute("fillId", String(fillId));
+    xf.setAttribute("borderId", "0");
+    xf.setAttribute("xfId", "0");
+    xf.setAttribute("applyFont", "1");
+    xf.setAttribute("applyFill", "1");
+    xf.setAttribute("applyAlignment", "1");
+    alignment.setAttribute("horizontal", "center");
+    alignment.setAttribute("vertical", "center");
+    xf.append(alignment);
+    cellXfs.append(xf);
+    cellXfs.setAttribute("count", String(cellXfs.children.length));
+
+    return {
+      xml: new XMLSerializer().serializeToString(document),
+      headerStyleIndex,
+    };
+  }
+
+  function styleFinanceWorksheetXml(
+    sheetXml: string,
+    headerStyleIndex: number,
+  ) {
+    const parser = new DOMParser();
+    const document = parser.parseFromString(sheetXml, "application/xml");
+    const namespace = document.documentElement.namespaceURI ?? "";
+    const sheetView = document.getElementsByTagName("sheetView")[0];
+    const headerRow = Array.from(document.getElementsByTagName("row")).find(
+      (row) => row.getAttribute("r") === "1",
+    );
+
+    if (sheetView) {
+      Array.from(sheetView.getElementsByTagName("pane")).forEach((pane) =>
+        pane.remove(),
+      );
+      Array.from(sheetView.getElementsByTagName("selection")).forEach(
+        (selection) => selection.remove(),
+      );
+
+      const pane = document.createElementNS(namespace, "pane");
+      const selection = document.createElementNS(namespace, "selection");
+
+      pane.setAttribute("ySplit", "1");
+      pane.setAttribute("topLeftCell", "A2");
+      pane.setAttribute("activePane", "bottomLeft");
+      pane.setAttribute("state", "frozen");
+      selection.setAttribute("pane", "bottomLeft");
+      sheetView.append(pane, selection);
+    }
+
+    headerRow
+      ?.querySelectorAll("c")
+      .forEach((cell) => cell.setAttribute("s", String(headerStyleIndex)));
+
+    return new XMLSerializer().serializeToString(document);
   }
 
   async function exportPdf(targetMonth = currentMonth) {
@@ -2231,9 +2529,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const blob = await pdf(
       <MonthReportDocument
         month={targetMonth}
+        accountName={selectedAccount?.name ?? viewCopy.label}
         transactions={exportTransactions}
         categories={categories}
         fixedItems={fixedItems}
+        trend={sixMonthTrend(selectedTransactions, targetMonth)}
         generatedAt={new Date().toLocaleDateString("nl-NL")}
         receiptImages={receiptImages}
       />,
@@ -2275,7 +2575,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
         const categoryName =
           transaction.type === "contribution"
-            ? "Storting"
+            ? contributionDisplayName(transaction)
             : transaction.type === "income"
               ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
               : labels.get(transaction.categoryId)?.name ?? "Onbekend";
@@ -2330,7 +2630,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
         const categoryName =
           transaction.type === "contribution"
-            ? "Storting"
+            ? contributionDisplayName(transaction)
             : transaction.type === "income"
               ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
               : labels.get(transaction.categoryId)?.name ?? "Onbekend";
@@ -2407,7 +2707,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           <CashflowTimelineCard
             points={cashflowTimeline}
             buffer={cashflowBuffer}
-            onBufferChange={updateCashflowBuffer}
+            onBufferChange={(value) =>
+              updateCashflowBuffer(selectedAccountId, value)
+            }
             compact
           />
         </section>
@@ -2532,7 +2834,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               plannedTotal={plannedContributionTotal}
               receivedTotal={monthTotals.contributionTotal}
               extraTotal={extraContributionTotal}
+              taxReturnTotal={taxReturnContributionTotal}
               remainingTotal={remainingContributionTotal}
+              breakdown={contributionBreakdown}
               coverage={contributionCoverage}
               message={contributionMessage}
               isSaving={isSavingContribution}
@@ -2559,12 +2863,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             monthOptions={monthOptions}
             onMonthChange={changeCurrentMonth}
           />
+          <AllTransactionsCard
+            currentMonth={currentMonth}
+            rows={outgoingTransactionRows}
+          />
           <MonthTransactionsCard
             title={viewCopy.monthTitle}
             description={viewCopy.monthDescription}
             currentMonth={currentMonth}
-            monthTransactions={monthTransactions}
-            labels={labels}
+            rows={outgoingTransactionRows}
             selectedAccountId={selectedAccountId}
             monthMessage={monthMessage}
             deletingTransactionId={deletingTransactionId}
@@ -2622,15 +2929,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               <CashflowTimelineCard
                 points={cashflowTimeline}
                 buffer={cashflowBuffer}
-                onBufferChange={updateCashflowBuffer}
+                onBufferChange={(value) =>
+                  updateCashflowBuffer(selectedAccountId, value)
+                }
               />
 
               <MonthInsightsSection
                 currentMonth={currentMonth}
                 monthTitle={viewCopy.monthTitle}
                 monthDescription={viewCopy.monthDescription}
-                monthTransactions={monthTransactions}
-                labels={labels}
+                outgoingRows={outgoingTransactionRows}
                 selectedAccountId={selectedAccountId}
                 monthMessage={monthMessage}
                 deletingTransactionId={deletingTransactionId}
@@ -2773,7 +3081,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 plannedTotal={plannedContributionTotal}
                 receivedTotal={monthTotals.contributionTotal}
                 extraTotal={extraContributionTotal}
+                taxReturnTotal={taxReturnContributionTotal}
                 remainingTotal={remainingContributionTotal}
+                breakdown={contributionBreakdown}
                 coverage={contributionCoverage}
                 message={contributionMessage}
                 isSaving={isSavingContribution}
@@ -2803,6 +3113,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           note={editNote}
           category={editCategory}
           paidById={editPaidById}
+          contributionKind={editContributionKind}
           message={editMessage}
           isSaving={isSavingTransactionEdit}
           onAmountChange={setEditAmount}
@@ -2810,6 +3121,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           onNoteChange={setEditNote}
           onCategoryChange={setEditCategory}
           onPaidByChange={setEditPaidById}
+          onContributionKindChange={setEditContributionKind}
           onCreateCategory={createVariableCategory}
           onClose={closeTransactionEditor}
           onSave={saveEditedTransaction}
@@ -2859,6 +3171,20 @@ type FixedAgendaItem = {
   state: FixedAgendaState;
   canSkip: boolean;
   note?: string;
+};
+
+type OutgoingTransactionRow = {
+  id: string;
+  date: string;
+  title: string;
+  subtitle: string;
+  amount: number;
+  signedAmount: number;
+  kind: "fixed" | "variable" | "contribution" | "income";
+  color: string;
+  receiptUrl?: string;
+  state?: FixedAgendaState;
+  transaction?: Transaction;
 };
 
 function MobileBottomNav({
@@ -2998,6 +3324,11 @@ function DashboardHero({
               <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
                 {metric.label}
               </p>
+              {metric.detail && (
+                <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
+                  {metric.detail}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -3047,11 +3378,35 @@ function CashflowTimelineCard({
         <div className="h-32">
           <CashflowSvgChart points={points} buffer={buffer} />
         </div>
+        <CashflowLegend />
         <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-5 text-[var(--text-secondary)]">
           {insight.text}
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+function CashflowLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--text-secondary)]">
+      <CashflowLegendItem color="#10B981" label="Ruim boven buffer" />
+      <CashflowLegendItem color="#F59E0B" label="Binnen buffer" />
+      <CashflowLegendItem color="#EF4444" label="Onder buffer" />
+    </div>
+  );
+}
+
+function CashflowLegendItem({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className="h-2 w-2 rounded-full"
+        style={{ backgroundColor: color }}
+        aria-hidden="true"
+      />
+      {label}
+    </span>
   );
 }
 
@@ -3417,8 +3772,7 @@ function MonthTransactionsCard({
   title,
   description,
   currentMonth,
-  monthTransactions,
-  labels,
+  rows,
   selectedAccountId,
   monthMessage,
   deletingTransactionId,
@@ -3434,8 +3788,7 @@ function MonthTransactionsCard({
   title: string;
   description: string;
   currentMonth: string;
-  monthTransactions: Transaction[];
-  labels: Map<string, DashboardData["categories"][number]>;
+  rows: OutgoingTransactionRow[];
   selectedAccountId: string;
   monthMessage: string;
   deletingTransactionId: string | null;
@@ -3448,12 +3801,10 @@ function MonthTransactionsCard({
   compact?: boolean;
   className?: string;
 }) {
-  const visibleTransactions = compact
-    ? monthTransactions.slice(0, 6)
-    : monthTransactions;
-  const hiddenCount = monthTransactions.length - visibleTransactions.length;
+  const visibleRows = compact ? rows.slice(0, 6) : rows;
+  const hiddenCount = rows.length - visibleRows.length;
   const cardTitle = compact ? "Maandoverzicht" : title;
-  const hasReceipts = monthTransactions.some((transaction) => transaction.receiptUrl);
+  const hasReceipts = rows.some((row) => row.receiptUrl);
 
   return (
     <Card
@@ -3503,64 +3854,67 @@ function MonthTransactionsCard({
           </p>
         )}
 
-        {monthTransactions.length > 0 ? (
+        {rows.length > 0 ? (
           <div className="divide-y divide-[var(--border)]">
-            {visibleTransactions.map((transaction) => {
-              const category = labels.get(transaction.categoryId);
-              const isDeleting = deletingTransactionId === transaction.id;
-              const isContribution = transaction.type === "contribution";
-              const isIncome = transaction.type === "income";
-              const isPositive = isContribution || isIncome;
-              const title =
-                isContribution
-                  ? "Storting"
-                  : isIncome
-                    ? category?.name ?? "Inkomen"
-                    : category?.name ?? "Onbekend";
-              const metadata = [
-                transaction.type === "fixed" ? "Vaste last" : category?.name,
-                transaction.date,
-                transaction.note,
-              ]
-                .filter(Boolean)
-                .join(" · ");
+            {visibleRows.map((row) => {
+              const transaction = row.transaction;
+              const isDeleting =
+                Boolean(transaction) && deletingTransactionId === transaction?.id;
+              const isPositive = row.signedAmount >= 0;
+              const isEditable = Boolean(transaction);
 
               return (
                 <div
-                  key={transaction.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onEditTransaction(transaction)}
+                  key={row.id}
+                  role={isEditable ? "button" : undefined}
+                  tabIndex={isEditable ? 0 : undefined}
+                  onClick={() => {
+                    if (transaction) {
+                      onEditTransaction(transaction);
+                    }
+                  }}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
+                    if (transaction && (event.key === "Enter" || event.key === " ")) {
                       event.preventDefault();
                       onEditTransaction(transaction);
                     }
                   }}
                   className={cn(
-                    "desktop-row-hover grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 transition sm:px-5",
+                    "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 transition sm:px-5",
+                    isEditable && "desktop-row-hover cursor-pointer",
                     compact ? "py-2.5" : "py-3",
                   )}
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-surface)] text-[var(--text-secondary)]">
-                      <ReceiptText className="h-4 w-4" />
+                    <span
+                      className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-surface)]",
+                        isPositive
+                          ? "border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]"
+                          : "text-[var(--text-secondary)]",
+                      )}
+                    >
+                      {isPositive ? (
+                        <ArrowDownToLine className="h-4 w-4" />
+                      ) : (
+                        <ReceiptText className="h-4 w-4" />
+                      )}
                     </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-[var(--text-primary)]">
-                        {title}
+                        {row.title}
                       </p>
                       <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
-                        {metadata}
+                        {row.subtitle}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex min-w-fit items-center gap-2 text-right">
-                    {transaction.receiptUrl && (
+                    {row.receiptUrl && (
                       <ReceiptAttachment
-                        receiptUrl={transaction.receiptUrl}
-                        title={`${title} · ${transaction.date}`}
+                        receiptUrl={row.receiptUrl}
+                        title={`${row.title} · ${row.date}`}
                         onOpen={onOpenReceipt}
                       />
                     )}
@@ -3574,38 +3928,38 @@ function MonthTransactionsCard({
                         )}
                       >
                         {isPositive ? "+" : "-"}
-                        {preciseCurrency(transaction.amount)}
+                        {preciseCurrency(Math.abs(row.signedAmount))}
                       </p>
                       <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                        {selectedAccountId === "all"
-                          ? transaction.accountName
-                          : transaction.paidBy ?? transaction.enteredBy}
+                        {transactionRowMetaLabel(row, selectedAccountId)}
                       </p>
                     </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      title="Verwijder uitgave"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onDeleteTransaction(transaction);
-                      }}
-                      disabled={isDeleting}
-                      className="h-8 w-8 shrink-0 text-[var(--text-muted)] hover:text-[var(--negative)]"
-                    >
-                      {isDeleting ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
+                    {transaction && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="Verwijder transactie"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDeleteTransaction(transaction);
+                        }}
+                        disabled={isDeleting}
+                        className="h-8 w-8 shrink-0 text-[var(--text-muted)] hover:text-[var(--negative)]"
+                      >
+                        {isDeleting ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
             })}
             {hiddenCount > 0 && (
               <div className="px-4 py-3 text-xs text-[var(--text-muted)] sm:px-5">
-                Plus {hiddenCount} extra uitgaven in dit maandoverzicht.
+                Plus {hiddenCount} extra transacties in dit maandoverzicht.
               </div>
             )}
           </div>
@@ -3616,7 +3970,103 @@ function MonthTransactionsCard({
               compact ? "p-3" : "p-4",
             )}
           >
-            Nog geen uitgaven in {monthLabel(currentMonth)}.
+            Nog geen transacties in {monthLabel(currentMonth)}.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AllTransactionsCard({
+  currentMonth,
+  rows,
+}: {
+  currentMonth: string;
+  rows: OutgoingTransactionRow[];
+}) {
+  const total = rows.reduce((sum, row) => sum + row.signedAmount, 0);
+
+  return (
+    <Card className="finance-card overflow-hidden">
+      <CardHeader className="grid gap-3 pb-3 sm:grid-cols-[1fr_auto] sm:items-start">
+        <div>
+          <CardTitle>Alle transacties</CardTitle>
+          <CardDescription>
+            Alle transacties en verwachte afschrijvingen deze maand.
+          </CardDescription>
+        </div>
+        <Badge className="w-fit border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)]">
+          Netto {currency(total)}
+        </Badge>
+      </CardHeader>
+      <CardContent className="p-0">
+        {rows.length > 0 ? (
+          <div className="divide-y divide-[var(--border)]">
+            {rows.map((row) => {
+              const isUpcoming =
+                row.state === "today" || row.state === "upcoming";
+
+              return (
+                <div
+                  key={row.id}
+                  className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:px-5"
+                >
+                  <div className="text-center">
+                    <p className="text-[11px] font-medium uppercase text-[var(--text-muted)]">
+                      {new Intl.DateTimeFormat("nl-NL", {
+                        month: "short",
+                      }).format(new Date(`${row.date}T00:00:00`))}
+                    </p>
+                    <p className="text-base font-semibold text-[var(--text-primary)]">
+                      {Number(row.date.slice(8, 10))}
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-3">
+                    {row.signedAmount >= 0 ? (
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]">
+                        <ArrowDownToLine className="h-4 w-4" />
+                      </span>
+                    ) : (
+                    <span
+                      className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-surface)]",
+                        isUpcoming && "border-[var(--accent)] bg-[var(--accent-light)]",
+                      )}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: row.color }}
+                      />
+                    </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+                        {row.title}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
+                        {row.subtitle}
+                      </p>
+                    </div>
+                  </div>
+                  <p
+                    className={cn(
+                      "text-right text-sm font-semibold",
+                      row.signedAmount >= 0
+                        ? "text-[var(--positive)]"
+                        : "text-[var(--negative)]",
+                    )}
+                  >
+                    {row.signedAmount >= 0 ? "+" : "-"}
+                    {preciseCurrency(Math.abs(row.signedAmount))}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="m-4 rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--bg-surface)] p-4 text-sm text-[var(--text-secondary)] sm:m-5">
+            Nog geen transacties in {monthLabel(currentMonth)}.
           </div>
         )}
       </CardContent>
@@ -3635,6 +4085,7 @@ function TransactionEditDialog({
   note,
   category,
   paidById,
+  contributionKind,
   message,
   isSaving,
   onAmountChange,
@@ -3642,6 +4093,7 @@ function TransactionEditDialog({
   onNoteChange,
   onCategoryChange,
   onPaidByChange,
+  onContributionKindChange,
   onCreateCategory,
   onClose,
   onSave,
@@ -3656,6 +4108,7 @@ function TransactionEditDialog({
   note: string;
   category: string;
   paidById: string;
+  contributionKind: ContributionKind;
   message: string;
   isSaving: boolean;
   onAmountChange: (value: string) => void;
@@ -3663,6 +4116,7 @@ function TransactionEditDialog({
   onNoteChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onPaidByChange: (value: string) => void;
+  onContributionKindChange: (value: ContributionKind) => void;
   onCreateCategory: (name: string) => Promise<{
     category?: DashboardData["categories"][number];
     error?: string;
@@ -3718,9 +4172,9 @@ function TransactionEditDialog({
     transaction.type === "fixed"
       ? labels.get(transaction.categoryId)?.name ?? "Vaste last"
       : transaction.type === "income"
-        ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
+      ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
       : transaction.type === "contribution"
-        ? "Storting"
+        ? contributionDisplayName(transaction, true)
         : labels.get(transaction.categoryId)?.name ?? "Uitgave";
 
   return (
@@ -3860,6 +4314,26 @@ function TransactionEditDialog({
                     {member.displayName}
                   </option>
                 ))}
+              </Select>
+            </FieldLabel>
+          )}
+
+          {transaction.type === "contribution" && (
+            <FieldLabel label="Stortingstype">
+              <Select
+                value={contributionKind}
+                className="h-11"
+                onChange={(event) =>
+                  onContributionKindChange(event.target.value as ContributionKind)
+                }
+              >
+                {(["planned", "extra", "belastingteruggave"] as const).map(
+                  (item) => (
+                    <option key={item} value={item}>
+                      {contributionKindLabel(item)}
+                    </option>
+                  ),
+                )}
               </Select>
             </FieldLabel>
           )}
@@ -4010,8 +4484,7 @@ function MonthInsightsSection({
   monthOptions,
   monthTitle,
   monthDescription,
-  monthTransactions,
-  labels,
+  outgoingRows,
   selectedAccountId,
   monthMessage,
   deletingTransactionId,
@@ -4030,8 +4503,7 @@ function MonthInsightsSection({
   monthOptions: MonthOption[];
   monthTitle: string;
   monthDescription: string;
-  monthTransactions: Transaction[];
-  labels: Map<string, DashboardData["categories"][number]>;
+  outgoingRows: OutgoingTransactionRow[];
   selectedAccountId: string;
   monthMessage: string;
   deletingTransactionId: string | null;
@@ -4054,7 +4526,7 @@ function MonthInsightsSection({
             Maandinzichten
           </p>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            Uitgaven, verdeling en trend in een overzicht.
+            Bij, af, verdeling en trend in een overzicht.
           </p>
         </div>
         <MonthNavigator
@@ -4065,13 +4537,17 @@ function MonthInsightsSection({
         />
       </div>
 
+      <AllTransactionsCard
+        currentMonth={currentMonth}
+        rows={outgoingRows}
+      />
+
       <div className="grid items-start gap-4 2xl:grid-cols-[minmax(460px,0.95fr)_minmax(0,1.05fr)]">
         <MonthTransactionsCard
           title={monthTitle}
           description={monthDescription}
           currentMonth={currentMonth}
-          monthTransactions={monthTransactions}
-          labels={labels}
+          rows={outgoingRows}
           selectedAccountId={selectedAccountId}
           monthMessage={monthMessage}
           deletingTransactionId={deletingTransactionId}
@@ -5353,7 +5829,7 @@ function AccountBalanceCard({
                   }
                 >
                   <option value="salary">Vast inkomen</option>
-                  <option value="extra">Extra</option>
+                  <option value="extra">Extra inkomen</option>
                 </Select>
               </div>
               <Input
@@ -5653,7 +6129,9 @@ function ContributionCard({
   plannedTotal,
   receivedTotal,
   extraTotal,
+  taxReturnTotal,
   remainingTotal,
+  breakdown,
   coverage,
   message,
   isSaving,
@@ -5667,7 +6145,7 @@ function ContributionCard({
 }: {
   amount: string;
   date: string;
-  kind: "planned" | "extra";
+  kind: ContributionKind;
   note: string;
   person: string;
   plans: Array<
@@ -5682,13 +6160,15 @@ function ContributionCard({
   plannedTotal: number;
   receivedTotal: number;
   extraTotal: number;
+  taxReturnTotal: number;
   remainingTotal: number;
+  breakdown: ContributionPersonBreakdown[];
   coverage: ContributionCoverageResult;
   message: string;
   isSaving: boolean;
   onAmountChange: (value: string) => void;
   onDateChange: (value: string) => void;
-  onKindChange: (value: "planned" | "extra") => void;
+  onKindChange: (value: ContributionKind) => void;
   onNoteChange: (value: string) => void;
   onPlanDraftChange: (
     planId: string,
@@ -5716,7 +6196,7 @@ function ContributionCard({
           </p>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
             <span className="text-[var(--text-secondary)]">
-              Gepland {currency(plannedTotal)}
+              Geplande stortingen {currency(plannedTotal)}
             </span>
             <span
               className={cn(
@@ -5760,10 +6240,12 @@ function ContributionCard({
           })}
           {plans.length === 0 && (
             <p className="p-3 text-sm text-[var(--text-secondary)]">
-              Maandelijkse stortingen verschijnen zodra Supabase chunk 20 is uitgevoerd.
+              Geplande stortingen verschijnen zodra Supabase chunk 20 is uitgevoerd.
             </p>
           )}
         </div>
+
+        <ContributionBreakdownList people={breakdown} />
 
         <div className="grid grid-cols-2 gap-2 text-sm">
           <ContributionStat
@@ -5772,9 +6254,14 @@ function ContributionCard({
             tone={remainingTotal > 0 ? "indigo" : "emerald"}
           />
           <ContributionStat
-            label="Extra"
+            label="Extra stortingen"
             value={currency(extraTotal)}
             tone={extraTotal > 0 ? "emerald" : "zinc"}
+          />
+          <ContributionStat
+            label="Belastingteruggave"
+            value={currency(taxReturnTotal)}
+            tone={taxReturnTotal > 0 ? "emerald" : "zinc"}
           />
           <ContributionCoverageCard coverage={coverage} />
         </div>
@@ -5793,7 +6280,7 @@ function ContributionCard({
           <div className="grid gap-3 border-t border-[var(--border)] p-3">
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-normal text-[var(--text-muted)]">
-                Maandelijkse storting
+                Geplande storting
               </p>
               {plans.map((plan) => {
                 const draft = planDrafts[plan.id] ?? {
@@ -5836,7 +6323,7 @@ function ContributionCard({
                       <Button
                         size="icon"
                         variant="secondary"
-                        title={`Maandelijkse storting ${plan.person} bewaren`}
+                        title={`Geplande storting ${plan.person} bewaren`}
                         className="h-9 w-9"
                         disabled={isSavingPlan}
                         onClick={() => onPlanSave(plan)}
@@ -5857,20 +6344,20 @@ function ContributionCard({
               <p className="text-xs font-medium uppercase tracking-normal text-[var(--text-muted)]">
                 Storting boeken
               </p>
-              <div className="grid grid-cols-2 gap-1 rounded-[var(--radius-chip)] bg-[var(--bg-surface)] p-1">
-                {(["extra", "planned"] as const).map((item) => (
+              <div className="grid grid-cols-3 gap-1 rounded-[16px] bg-[var(--bg-surface)] p-1">
+                {(["extra", "planned", "belastingteruggave"] as const).map((item) => (
                   <button
                     key={item}
                     type="button"
                     onClick={() => onKindChange(item)}
                     className={cn(
-                      "rounded-[var(--radius-chip)] px-3 py-2 text-xs font-medium",
+                      "rounded-[var(--radius-chip)] px-2 py-2 text-[11px] font-medium sm:text-xs",
                       kind === item
                         ? "bg-[var(--accent-light)] text-[var(--accent)]"
                         : "text-[var(--text-secondary)] hover:bg-white/[0.04]",
                     )}
                   >
-                    {item === "extra" ? "Extra" : "Gepland"}
+                    {contributionKindLabel(item)}
                   </button>
                 ))}
               </div>
@@ -5954,6 +6441,108 @@ function ContributionStat({
       <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
         {value}
       </p>
+    </div>
+  );
+}
+
+function ContributionBreakdownList({
+  people,
+}: {
+  people: ContributionPersonBreakdown[];
+}) {
+  if (people.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-[14px] border border-[var(--border)] bg-black/10 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-xs font-medium uppercase tracking-normal text-[var(--text-muted)]">
+          Per persoon
+        </p>
+        <p className="text-[11px] text-[var(--text-secondary)]">
+          per stortingstype
+        </p>
+      </div>
+      <div className="grid gap-3">
+        {people.map((person) => (
+          <div key={person.person} className="grid gap-2">
+            <p className="text-sm font-medium text-[var(--text-primary)]">
+              {person.person}
+            </p>
+            <ContributionBreakdownRows
+              label="Reguliere storting"
+              rows={person.planned}
+              emptyText="Nog niet gestort"
+            />
+            <ContributionBreakdownRows
+              label="Extra stortingen"
+              rows={person.extra}
+              emptyText="Geen extra storting"
+            />
+            <ContributionBreakdownRows
+              label={`Belastingteruggave — ${person.person}`}
+              rows={person.taxReturn}
+              emptyText="Geen belastingteruggave"
+              hideWhenEmpty
+            />
+            <ContributionBreakdownRows
+              label="Storting"
+              rows={person.unknown}
+              emptyText="Geen onbekende storting"
+              hideWhenEmpty
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ContributionBreakdownRows({
+  label,
+  rows,
+  emptyText,
+  hideWhenEmpty = false,
+}: {
+  label: string;
+  rows: Array<{
+    id: string;
+    date: string;
+    amount: number;
+  }>;
+  emptyText: string;
+  hideWhenEmpty?: boolean;
+}) {
+  const total = rows.reduce((sum, row) => sum + row.amount, 0);
+
+  if (hideWhenEmpty && rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-[var(--text-secondary)]">{label}</p>
+        <p className="text-xs font-semibold text-[var(--positive)]">
+          {currency(total)}
+        </p>
+      </div>
+      <div className="mt-1 grid gap-1">
+        {rows.length > 0 ? (
+          rows.map((row) => (
+            <div
+              key={row.id}
+              className="flex items-center justify-between gap-3 text-[11px] text-[var(--text-muted)]"
+            >
+              <span>{row.date}</span>
+              <span>{currency(row.amount)}</span>
+            </div>
+          ))
+        ) : (
+          <p className="text-[11px] text-[var(--text-muted)]">{emptyText}</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -6680,6 +7269,88 @@ function signedTransactionAmount(transaction: Transaction) {
   return -transaction.amount;
 }
 
+function buildExpectedMonthEndForecast({
+  transactions,
+  month,
+  calculatedBalance,
+  remainingIncomeTotal,
+  remainingFixedTotal,
+}: {
+  transactions: Transaction[];
+  month: string;
+  calculatedBalance: number | null;
+  remainingIncomeTotal: number;
+  remainingFixedTotal: number;
+}): ExpectedMonthEndForecast {
+  if (calculatedBalance === null) {
+    return {
+      amount: null,
+      basis: "current",
+      basisLabel: "Op basis van deze maand",
+      expectedRemainingVariable: 0,
+    };
+  }
+
+  const daysInMonth = daysInIsoMonth(month);
+  const elapsedDays = dataDaysForMonth(month);
+  const remainingDays = Math.max(daysInMonth - elapsedDays, 0);
+  const currentVariableTotal =
+    elapsedDays > 0
+      ? variableTotalForMonth(transactions, month, elapsedDays)
+      : 0;
+  const actualDailyAverage =
+    currentVariableTotal / Math.max(elapsedDays, 1);
+  const throughDate =
+    elapsedDays > 0 ? dateForBillingDay(month, elapsedDays) : null;
+  const currentVariableDays = throughDate
+    ? new Set(
+        transactions
+          .filter((transaction) => transaction.type === "variable")
+          .filter((transaction) => transaction.date.startsWith(month))
+          .filter((transaction) => transaction.date <= throughDate)
+          .map((transaction) => transaction.date),
+      ).size
+    : 0;
+  const historicalRows = [1, 2, 3]
+    .map((offset) => {
+      const historicalMonth = addIsoMonths(month, -offset);
+
+      return {
+        total: variableTotalForMonth(transactions, historicalMonth),
+        days: daysInIsoMonth(historicalMonth),
+      };
+    })
+    .filter((row) => row.total > 0);
+  const historicalDailyAverage =
+    historicalRows.reduce((total, row) => total + row.total, 0) /
+    Math.max(
+      historicalRows.reduce((total, row) => total + row.days, 0),
+      1,
+    );
+  const monthProgress = elapsedDays / Math.max(daysInMonth, 1);
+  const hasLittleCurrentData = elapsedDays < 10 || currentVariableDays < 3;
+  const useHistoricalAverage =
+    monthProgress < 0.5 &&
+    hasLittleCurrentData &&
+    historicalRows.length >= 2;
+  const expectedRemainingVariable =
+    remainingDays *
+    (useHistoricalAverage ? historicalDailyAverage : actualDailyAverage);
+
+  return {
+    amount:
+      calculatedBalance +
+      remainingIncomeTotal -
+      remainingFixedTotal -
+      expectedRemainingVariable,
+    basis: useHistoricalAverage ? "historical" : "current",
+    basisLabel: useHistoricalAverage
+      ? "Op basis van historisch gemiddelde"
+      : "Op basis van deze maand",
+    expectedRemainingVariable,
+  };
+}
+
 function buildContributionCoverage({
   transactions,
   month,
@@ -6834,6 +7505,235 @@ function buildPersonalContributionCoverage({
     tone: "red",
     text: `Let op: je komt naar verwachting ${currency(Math.abs(amount))} tekort deze maand`,
   };
+}
+
+function buildOutgoingTransactionRows(
+  monthTransactions: Transaction[],
+  fixedItems: FixedAgendaItem[],
+  labels: Map<string, DashboardData["categories"][number]>,
+) {
+  const fixedRows: OutgoingTransactionRow[] = fixedItems
+    .filter((item) => item.state !== "skipped")
+    .map((item) => ({
+      id: `fixed-${item.recurringExpenseId}-${item.date}`,
+      date: item.date,
+      title: item.name,
+      subtitle: `${item.categoryName} · ${agendaStateLabel(item.state)}`,
+      amount: item.amount,
+      signedAmount: -item.amount,
+      kind: "fixed",
+      color: item.categoryColor,
+      state: item.state,
+    }));
+  const variableRows: OutgoingTransactionRow[] = monthTransactions
+    .filter((transaction) => transaction.type === "variable")
+    .map((transaction) => {
+      const category = labels.get(transaction.categoryId);
+
+      return {
+        id: `variable-${transaction.id}`,
+        date: transaction.date,
+        title: category?.name ?? "Uitgave",
+        subtitle: [transaction.note, transaction.paidBy ?? transaction.enteredBy]
+          .filter(Boolean)
+          .join(" · "),
+        amount: transaction.amount,
+        signedAmount: -transaction.amount,
+        kind: "variable",
+        color: category?.color ?? "#6366F1",
+        receiptUrl: transaction.receiptUrl,
+        transaction,
+      };
+    });
+  const positiveRows: OutgoingTransactionRow[] = monthTransactions
+    .filter(
+      (transaction) =>
+        transaction.type === "contribution" || transaction.type === "income",
+    )
+    .map((transaction) => {
+      const category = labels.get(transaction.categoryId);
+      const title =
+        transaction.type === "contribution"
+          ? contributionDisplayName(transaction, true)
+          : category?.name ?? "Inkomen";
+
+      return {
+        id: `${transaction.type}-${transaction.id}`,
+        date: transaction.date,
+        title,
+        subtitle: [transaction.date, transaction.note]
+          .filter(Boolean)
+          .join(" · "),
+        amount: transaction.amount,
+        signedAmount: transaction.amount,
+        kind: transaction.type,
+        color: transaction.type === "contribution" ? "#10B981" : "#22C55E",
+        receiptUrl: transaction.receiptUrl,
+        transaction,
+      };
+    });
+
+  return [...fixedRows, ...variableRows, ...positiveRows].sort(
+    (first, second) =>
+      first.date.localeCompare(second.date) ||
+      first.title.localeCompare(second.title, "nl"),
+  );
+}
+
+function contributionKindLabel(kind: ContributionKind) {
+  if (kind === "planned") return "Geplande storting";
+  if (kind === "belastingteruggave") return "Belastingteruggave";
+  return "Extra storting";
+}
+
+function defaultContributionNote(kind: ContributionKind) {
+  if (kind === "planned") return "Geplande storting";
+  if (kind === "belastingteruggave") return "Belastingteruggave";
+  return "Extra storting";
+}
+
+function contributionDisplayName(
+  transaction: Pick<Transaction, "contributionKind" | "enteredBy" | "paidBy">,
+  includePerson = false,
+) {
+  const label =
+    transaction.contributionKind === "planned"
+      ? "Reguliere storting"
+      : transaction.contributionKind === "extra"
+        ? "Extra storting"
+        : transaction.contributionKind === "belastingteruggave"
+          ? "Belastingteruggave"
+          : "Storting";
+
+  if (!includePerson) {
+    return label;
+  }
+
+  return `${label} — ${transaction.paidBy ?? transaction.enteredBy}`;
+}
+
+function transactionSortLabel(
+  transaction: Transaction,
+  labels: Map<string, DashboardData["categories"][number]>,
+) {
+  if (transaction.type === "contribution") {
+    return contributionDisplayName(transaction, true);
+  }
+
+  return labels.get(transaction.categoryId)?.name ?? transaction.type;
+}
+
+function transactionRowMetaLabel(
+  row: OutgoingTransactionRow,
+  selectedAccountId: string,
+) {
+  if (selectedAccountId === "all") {
+    return row.transaction?.accountName ?? "";
+  }
+
+  if (row.transaction?.paidBy || row.transaction?.enteredBy) {
+    return row.transaction.paidBy ?? row.transaction.enteredBy;
+  }
+
+  if (row.kind === "fixed") return "Vaste last";
+  if (row.kind === "contribution") return "Storting";
+  if (row.kind === "income") return "Inkomen";
+  return "Uitgave";
+}
+
+function buildContributionBreakdown({
+  transactions,
+  plans,
+  householdMembers,
+  currentMonth,
+  sharedAccountId,
+}: {
+  transactions: Transaction[];
+  plans: ContributionPlan[];
+  householdMembers: DashboardData["householdMembers"];
+  currentMonth: string;
+  sharedAccountId?: string;
+}): ContributionPersonBreakdown[] {
+  const rowsByPerson = new Map<string, ContributionPersonBreakdown>();
+  const memberNames = new Map(
+    householdMembers.map((member) => [member.userId, member.displayName]),
+  );
+  const personOrder = new Map(
+    plans.map((plan, index) => [plan.person, index]),
+  );
+  const ensurePerson = (person: string) => {
+    const current = rowsByPerson.get(person);
+
+    if (current) {
+      return current;
+    }
+
+    const row = {
+      person,
+      planned: [],
+      extra: [],
+      taxReturn: [],
+      unknown: [],
+    } satisfies ContributionPersonBreakdown;
+
+    rowsByPerson.set(person, row);
+    return row;
+  };
+
+  plans.forEach((plan) => ensurePerson(plan.person));
+
+  transactions
+    .filter((transaction) => transaction.type === "contribution")
+    .filter((transaction) => transaction.date.startsWith(currentMonth))
+    .filter(
+      (transaction) =>
+        !sharedAccountId ||
+        (transaction.accountId ?? sharedAccountId) === sharedAccountId,
+    )
+    .forEach((transaction) => {
+      const person =
+        (transaction.paidById && memberNames.get(transaction.paidById)) ||
+        transaction.paidBy ||
+        transaction.enteredBy;
+      const row = ensurePerson(person);
+      const target =
+        transaction.contributionKind === "planned"
+          ? row.planned
+          : transaction.contributionKind === "extra"
+            ? row.extra
+            : transaction.contributionKind === "belastingteruggave"
+              ? row.taxReturn
+              : row.unknown;
+
+      target.push({
+        id: transaction.id,
+        date: transaction.date,
+        amount: transaction.amount,
+      });
+    });
+
+  return Array.from(rowsByPerson.values())
+    .map((row) => ({
+      ...row,
+      planned: row.planned.sort((first, second) =>
+        first.date.localeCompare(second.date),
+      ),
+      extra: row.extra.sort((first, second) =>
+        first.date.localeCompare(second.date),
+      ),
+      taxReturn: row.taxReturn.sort((first, second) =>
+        first.date.localeCompare(second.date),
+      ),
+      unknown: row.unknown.sort((first, second) =>
+        first.date.localeCompare(second.date),
+      ),
+    }))
+    .sort(
+      (first, second) =>
+        (personOrder.get(first.person) ?? Number.MAX_SAFE_INTEGER) -
+          (personOrder.get(second.person) ?? Number.MAX_SAFE_INTEGER) ||
+        first.person.localeCompare(second.person, "nl"),
+    );
 }
 
 function variableTotalForMonth(
@@ -7229,7 +8129,7 @@ function variableCategoryOptions(
     .filter(
       (category) =>
         (category.kind === "variable" || category.kind === "both") &&
-        !["Inleg", "Salaris", "Extra inkomsten"].includes(category.name),
+        !["Inleg", "Stortingen", "Salaris", "Extra inkomsten"].includes(category.name),
     )
     .sort((first, second) => {
       const usageDifference =
@@ -7253,7 +8153,10 @@ function transactionCategoryOptions(
     }
 
     if (transaction.type === "contribution") {
-      return category.id === transaction.categoryId || category.name === "Inleg";
+      return (
+        category.id === transaction.categoryId ||
+        ["Inleg", "Stortingen"].includes(category.name)
+      );
     }
 
     if (transaction.type === "income") {

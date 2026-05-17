@@ -1,4 +1,5 @@
 export type Person = string;
+export type ContributionKind = "planned" | "extra" | "belastingteruggave";
 
 export type CategoryKind = "fixed" | "variable" | "both";
 
@@ -44,7 +45,7 @@ export type FixedExpenseInstance = {
 export type Transaction = {
   id: string;
   type: "fixed" | "variable" | "contribution" | "income";
-  contributionKind?: "planned" | "extra";
+  contributionKind?: ContributionKind;
   accountId?: string;
   accountName?: string;
   accountKind?: Account["kind"];

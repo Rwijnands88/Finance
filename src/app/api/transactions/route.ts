@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { FixedExpenseInstance } from "@/lib/types";
+import type { ContributionKind, FixedExpenseInstance } from "@/lib/types";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type CreateTransactionBody = {
@@ -11,7 +11,7 @@ type CreateTransactionBody = {
   note?: string | null;
   receiptUrl?: string | null;
   type?: "variable" | "contribution" | "income";
-  contributionKind?: "planned" | "extra" | null;
+  contributionKind?: ContributionKind | null;
   paidById?: string | null;
   incomeKind?: "salary" | "extra";
 };
@@ -26,6 +26,7 @@ type UpdateTransactionBody = {
   amount?: number;
   date?: string;
   note?: string | null;
+  contributionKind?: ContributionKind | null;
   paidById?: string | null;
 };
 
@@ -169,10 +170,15 @@ export async function POST(request: Request) {
 
   const contributionKind =
     transactionType === "contribution"
-      ? body.contributionKind === "planned"
-        ? "planned"
-        : "extra"
+      ? normalizeContributionKind(body.contributionKind)
       : null;
+
+  if (transactionType === "contribution" && !contributionKind) {
+    return NextResponse.json(
+      { error: "Stortingstype is ongeldig." },
+      { status: 400 },
+    );
+  }
   const paidById =
     typeof body.paidById === "string" && body.paidById
       ? body.paidById
@@ -207,7 +213,7 @@ export async function POST(request: Request) {
           error:
             error instanceof Error
               ? error.message
-              : "Inlegcategorie kon niet worden gemaakt.",
+              : "Stortingencategorie kon niet worden gemaakt.",
         },
         { status: 400 },
       );
@@ -354,6 +360,17 @@ export async function PATCH(request: Request) {
     typeof body.note === "string" && body.note.trim()
       ? body.note.trim()
       : null;
+  const contributionKind =
+    existingTransaction.type === "contribution"
+      ? normalizeContributionKind(body.contributionKind)
+      : null;
+
+  if (existingTransaction.type === "contribution" && !contributionKind) {
+    return NextResponse.json(
+      { error: "Stortingstype is ongeldig." },
+      { status: 400 },
+    );
+  }
 
   const { data: transaction, error: updateError } = await supabase
     .from("transactions")
@@ -363,9 +380,10 @@ export async function PATCH(request: Request) {
       transaction_date: body.date,
       note,
       paid_by: paidById,
+      contribution_kind: contributionKind,
     })
     .eq("id", body.transactionId)
-    .select("id, category_id, amount, transaction_date, note, paid_by")
+    .select("id, category_id, amount, transaction_date, note, paid_by, contribution_kind")
     .single();
 
   if (updateError) {
@@ -405,6 +423,7 @@ export async function PATCH(request: Request) {
       date: transaction.transaction_date,
       note: transaction.note ?? undefined,
       paidById: transaction.paid_by,
+      contributionKind: transaction.contribution_kind,
     },
     fixedInstance,
   });
@@ -586,6 +605,20 @@ function isIsoMonth(value: string) {
 
 function isIsoDate(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function normalizeContributionKind(
+  value: CreateTransactionBody["contributionKind"],
+): ContributionKind | null {
+  if (
+    value === "planned" ||
+    value === "extra" ||
+    value === "belastingteruggave"
+  ) {
+    return value;
+  }
+
+  return null;
 }
 
 function addMonths(isoDate: string, months: number) {

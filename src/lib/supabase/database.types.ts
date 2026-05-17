@@ -269,7 +269,7 @@ export type Database = {
           amount: number;
           transaction_date: string;
           type: "fixed" | "variable" | "contribution" | "income";
-          contribution_kind: "planned" | "extra" | null;
+          contribution_kind: "planned" | "extra" | "belastingteruggave" | null;
           note: string | null;
           receipt_url: string | null;
           entered_by: string;
@@ -286,7 +286,7 @@ export type Database = {
           amount: number;
           transaction_date: string;
           type: "fixed" | "variable" | "contribution" | "income";
-          contribution_kind?: "planned" | "extra" | null;
+          contribution_kind?: "planned" | "extra" | "belastingteruggave" | null;
           note?: string | null;
           receipt_url?: string | null;
           entered_by: string;
@@ -298,7 +298,7 @@ export type Database = {
           account_id?: string | null;
           amount?: number;
           transaction_date?: string;
-          contribution_kind?: "planned" | "extra" | null;
+          contribution_kind?: "planned" | "extra" | "belastingteruggave" | null;
           note?: string | null;
           receipt_url?: string | null;
           category_id?: string;
