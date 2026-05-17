@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   ArrowDownToLine,
@@ -92,6 +92,10 @@ type ContributionPlanDraft = {
   label: string;
   amount: string;
   depositDay: string;
+};
+type ContributionPlanRow = ContributionPlan & {
+  received: number;
+  remaining: number;
 };
 type MonthOption = {
   value: string;
@@ -354,6 +358,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(
     null,
   );
+  const autoConfirmingFixedInstanceIds = useRef(new Set<string>());
+  const [bookingContributionPlanId, setBookingContributionPlanId] = useState<
+    string | null
+  >(null);
   const [skippingFixedInstanceId, setSkippingFixedInstanceId] = useState<
     string | null
   >(null);
@@ -744,14 +752,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
   );
+  useEffect(() => {
+    void autoConfirmDueFixedExpenses(currentMonth);
+  }, [currentMonth, fixedInstances, recurringExpenses, today]);
   const outgoingTransactionRows = useMemo(
     () =>
       buildOutgoingTransactionRows(
         monthTransactions,
         fixedAgendaItems,
+        contributionPlanRows,
         labels,
+        currentMonth,
+        today,
       ),
-    [fixedAgendaItems, labels, monthTransactions],
+    [contributionPlanRows, currentMonth, fixedAgendaItems, labels, monthTransactions, today],
   );
   const fixedTotalForCurrentMonth = fixedAgendaItems.reduce(
     (total, item) => (item.state === "skipped" ? total : total + item.amount),
@@ -866,6 +880,130 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       currentMonth,
     ],
   );
+
+  async function autoConfirmDueFixedExpenses(month: string) {
+    const recurringById = new Map(
+      recurringExpenses.map((expense) => [expense.id, expense]),
+    );
+    const dueInstances = fixedInstances.filter((instance) => {
+      if (instance.month !== month || instance.status !== "pending") {
+        return false;
+      }
+
+      const recurringExpense = recurringById.get(instance.recurringExpenseId);
+
+      if (!recurringExpense?.isActive) {
+        return false;
+      }
+
+      const billingDate = dateForBillingDay(month, recurringExpense.billingDay);
+
+      return (
+        billingDate <= today &&
+        !autoConfirmingFixedInstanceIds.current.has(instance.id)
+      );
+    });
+
+    if (dueInstances.length === 0) {
+      return;
+    }
+
+    dueInstances.forEach((instance) =>
+      autoConfirmingFixedInstanceIds.current.add(instance.id),
+    );
+
+    const results = await Promise.allSettled(
+      dueInstances.map(async (instance) => {
+        const response = await fetch("/api/fixed-expenses/confirm", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            instanceId: instance.id,
+            action: "confirm",
+          }),
+        });
+        const result = await response.json();
+
+        if (response.status === 409) {
+          return {
+            fixedInstance: null,
+            shouldRefreshMonthData: true,
+          };
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            typeof result.error === "string"
+              ? result.error
+              : "Vaste last automatisch verwerken lukte niet.",
+          );
+        }
+
+        return {
+          fixedInstance: result.fixedInstance as FixedExpenseInstance | null,
+          shouldRefreshMonthData: true,
+        };
+      }),
+    );
+
+    dueInstances.forEach((instance) =>
+      autoConfirmingFixedInstanceIds.current.delete(instance.id),
+    );
+
+    const confirmedInstances = results.flatMap((result) =>
+      result.status === "fulfilled" && result.value.fixedInstance
+        ? [result.value.fixedInstance]
+        : [],
+    );
+    const shouldRefreshMonthData = results.some(
+      (result) =>
+        result.status === "fulfilled" && result.value.shouldRefreshMonthData,
+    );
+
+    if (confirmedInstances.length > 0) {
+      setFixedInstances((items) =>
+        mergeById(items, confirmedInstances).sort((first, second) =>
+          first.name.localeCompare(second.name, "nl"),
+        ),
+      );
+    }
+
+    if (!shouldRefreshMonthData) {
+      return;
+    }
+
+    const [transactionsResponse, recurringResponse] = await Promise.all([
+      fetch(`/api/transactions?month=${encodeURIComponent(month)}`),
+      fetch(`/api/recurring-expenses?month=${encodeURIComponent(month)}`),
+    ]);
+    const transactionsResult =
+      (await transactionsResponse.json()) as MonthDataResponse;
+    const recurringResult =
+      (await recurringResponse.json()) as MonthDataResponse;
+
+    if (transactionsResponse.ok) {
+      setTransactions((items) =>
+        mergeById(items, transactionsResult.transactions ?? []).sort((a, b) =>
+          b.date.localeCompare(a.date),
+        ),
+      );
+    }
+
+    if (recurringResponse.ok) {
+      setRecurringExpenses((items) =>
+        mergeById(items, recurringResult.recurringExpenses ?? []).sort((a, b) =>
+          a.name.localeCompare(b.name, "nl"),
+        ),
+      );
+      setFixedInstances((items) =>
+        mergeById(items, recurringResult.fixedInstances ?? []).sort((a, b) =>
+          a.name.localeCompare(b.name, "nl"),
+        ),
+      );
+    }
+  }
 
   async function skipFixedExpense(item: FixedAgendaItem) {
     if (!item.canSkip || skippingFixedInstanceId) return;
@@ -1237,6 +1375,83 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setSelectedAccountId(defaultAccount.id);
     setQuickAccount(defaultAccount.id);
     return true;
+  }
+
+  async function bookExpectedContributionPlan(plan: ContributionPlanRow) {
+    if (!defaultAccount || plan.remaining <= 0) {
+      setMonthMessage("Deze verwachte storting kan niet geboekt worden.");
+      return;
+    }
+
+    const transactionDate = dateForBillingDay(currentMonth, plan.depositDay);
+    const note = plan.label || "Geplande storting";
+
+    setBookingContributionPlanId(plan.id);
+    setMonthMessage("");
+
+    const response = await fetch("/api/transactions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        accountId: defaultAccount.id,
+        amount: plan.remaining,
+        date: transactionDate,
+        note,
+        type: "contribution",
+        contributionKind: "planned",
+        paidById: plan.userId,
+      }),
+    });
+    const result = await response.json();
+
+    setBookingContributionPlanId(null);
+
+    if (!response.ok) {
+      setMonthMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Storting boeken lukte niet. Probeer het nog eens.",
+      );
+      return;
+    }
+
+    const contributionCategory =
+      categories.find((category) =>
+        ["Inleg", "Stortingen"].includes(category.name),
+      ) ??
+      ({
+        id: result.transaction.categoryId,
+        name: "Stortingen",
+        kind: "variable",
+        color: "#34D399",
+        averageMonthly: 0,
+      } satisfies DashboardData["categories"][number]);
+
+    setTransactions((items) => [
+      {
+        id: result.transaction.id,
+        type: "contribution",
+        contributionKind: "planned",
+        accountId: defaultAccount.id,
+        accountName: defaultAccount.name,
+        accountKind: defaultAccount.kind,
+        categoryId: contributionCategory.id,
+        amount: plan.remaining,
+        date: transactionDate,
+        note,
+        enteredById: initialData.currentUserId,
+        enteredBy: initialData.currentPerson,
+        paidById: result.transaction.paidById ?? plan.userId,
+        paidBy: plan.person,
+      },
+      ...items,
+    ]);
+    setSelectedAccountId(defaultAccount.id);
+    setQuickAccount(defaultAccount.id);
+    setMonthMessage(`${plan.label || "Storting"} geboekt.`);
   }
 
   async function saveBalanceSnapshot() {
@@ -1799,6 +2014,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const confirmed = window.confirm(
       transaction.type === "fixed"
         ? "Definitief verwijderen?\n\nDeze vaste-last uitgave verdwijnt uit dit maandoverzicht. De vaste last zelf blijft in de agenda staan."
+        : transaction.type === "contribution"
+          ? "Definitief verwijderen?\n\nDeze geboekte storting wordt permanent uit het overzicht verwijderd."
         : "Definitief verwijderen?\n\nDeze ingevoerde uitgave wordt permanent uit het maandoverzicht verwijderd.",
     );
 
@@ -1842,7 +2059,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       setFixedMessage(`${fixedInstance.name} staat weer open.`);
     }
 
-    setMonthMessage("Uitgave verwijderd.");
+    setMonthMessage(
+      transaction.type === "contribution"
+        ? "Storting verwijderd."
+        : "Uitgave verwijderd.",
+    );
   }
 
   function startEditingTransaction(transaction: Transaction) {
@@ -3060,6 +3281,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           <AllTransactionsCard
             currentMonth={currentMonth}
             rows={outgoingTransactionRows}
+            deletingTransactionId={deletingTransactionId}
+            bookingContributionPlanId={bookingContributionPlanId}
+            onDeleteTransaction={deleteTransaction}
+            onBookExpectedContribution={bookExpectedContributionPlan}
           />
           <MonthSummaryCard
             title={viewCopy.monthTitle}
@@ -3133,9 +3358,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 selectedSixMonthTrend={selectedSixMonthTrend}
                 chartsReady={chartsReady}
                 monthOptions={monthOptions}
+                deletingTransactionId={deletingTransactionId}
+                bookingContributionPlanId={bookingContributionPlanId}
                 onMonthChange={changeCurrentMonth}
                 onExportExcel={exportExcel}
                 onExportPdf={(month) => void exportPdf(month)}
+                onDeleteTransaction={deleteTransaction}
+                onBookExpectedContribution={bookExpectedContributionPlan}
               />
 
               {isSharedView && (
@@ -3374,6 +3603,8 @@ type OutgoingTransactionRow = {
   receiptUrl?: string;
   state?: FixedAgendaState;
   transaction?: Transaction;
+  expectedContributionPlan?: ContributionPlanRow;
+  isExpected?: boolean;
 };
 
 function MobileBottomNav({
@@ -4262,9 +4493,17 @@ function MonthSummaryCard({
 function AllTransactionsCard({
   currentMonth,
   rows,
+  deletingTransactionId,
+  bookingContributionPlanId,
+  onDeleteTransaction,
+  onBookExpectedContribution,
 }: {
   currentMonth: string;
   rows: OutgoingTransactionRow[];
+  deletingTransactionId: string | null;
+  bookingContributionPlanId: string | null;
+  onDeleteTransaction: (transaction: Transaction) => void;
+  onBookExpectedContribution: (plan: ContributionPlanRow) => void;
 }) {
   const total = rows.reduce((sum, row) => sum + row.signedAmount, 0);
 
@@ -4287,11 +4526,20 @@ function AllTransactionsCard({
             {rows.map((row) => {
               const isUpcoming =
                 row.state === "today" || row.state === "upcoming";
+              const isDeleting =
+                !!row.transaction && deletingTransactionId === row.transaction.id;
+              const isBooking =
+                !!row.expectedContributionPlan &&
+                bookingContributionPlanId === row.expectedContributionPlan.id;
 
               return (
                 <div
                   key={row.id}
-                  className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:px-5"
+                  className={cn(
+                    "group/transaction grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:px-5",
+                    row.isExpected &&
+                      "border-l-2 border-dashed border-l-[var(--positive)] bg-[var(--positive-light)]/40 text-[var(--text-secondary)]",
+                  )}
                 >
                   <div className="text-center">
                     <p className="text-[11px] font-medium uppercase text-[var(--text-muted)]">
@@ -4309,17 +4557,18 @@ function AllTransactionsCard({
                         <ArrowDownToLine className="h-4 w-4" />
                       </span>
                     ) : (
-                    <span
-                      className={cn(
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-surface)]",
-                        isUpcoming && "border-[var(--accent)] bg-[var(--accent-light)]",
-                      )}
-                    >
                       <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: row.color }}
-                      />
-                    </span>
+                        className={cn(
+                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-surface)]",
+                          isUpcoming &&
+                            "border-[var(--accent)] bg-[var(--accent-light)]",
+                        )}
+                      >
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: row.color }}
+                        />
+                      </span>
                     )}
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-[var(--text-primary)]">
@@ -4330,17 +4579,62 @@ function AllTransactionsCard({
                       </p>
                     </div>
                   </div>
-                  <p
-                    className={cn(
-                      "text-right text-sm font-semibold",
-                      row.signedAmount >= 0
-                        ? "text-[var(--positive)]"
-                        : "text-[var(--negative)]",
+                  <div className="flex min-w-fit items-center justify-end gap-2 text-right">
+                    <div>
+                      <p
+                        className={cn(
+                          "text-sm font-semibold",
+                          row.signedAmount >= 0
+                            ? "text-[var(--positive)]"
+                            : "text-[var(--negative)]",
+                        )}
+                      >
+                        {row.signedAmount >= 0 ? "+" : "-"}
+                        {preciseCurrency(Math.abs(row.signedAmount))}
+                      </p>
+                      {row.isExpected && (
+                        <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                          Verwacht
+                        </p>
+                      )}
+                    </div>
+                    {row.expectedContributionPlan && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 px-3 text-xs"
+                        disabled={isBooking}
+                        onClick={() =>
+                          onBookExpectedContribution(row.expectedContributionPlan!)
+                        }
+                      >
+                        {isBooking ? (
+                          <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Check className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Boeken
+                      </Button>
                     )}
-                  >
-                    {row.signedAmount >= 0 ? "+" : "-"}
-                    {preciseCurrency(Math.abs(row.signedAmount))}
-                  </p>
+                    {row.transaction && (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        title="Verwijder transactie"
+                        className="h-8 w-8 shrink-0 text-[var(--text-muted)] opacity-100 hover:text-[var(--negative)] sm:opacity-0 sm:transition sm:group-hover/transaction:opacity-100 sm:group-focus-within/transaction:opacity-100"
+                        disabled={isDeleting}
+                        onClick={() => onDeleteTransaction(row.transaction!)}
+                      >
+                        {isDeleting ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -4771,9 +5065,13 @@ function MonthInsightsSection({
   categoryRows,
   selectedSixMonthTrend,
   chartsReady,
+  deletingTransactionId,
+  bookingContributionPlanId,
   onMonthChange,
   onExportExcel,
   onExportPdf,
+  onDeleteTransaction,
+  onBookExpectedContribution,
 }: {
   currentMonth: string;
   monthOptions: MonthOption[];
@@ -4785,9 +5083,13 @@ function MonthInsightsSection({
   categoryRows: ReturnType<typeof categoryTotals>;
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
   chartsReady: boolean;
+  deletingTransactionId: string | null;
+  bookingContributionPlanId: string | null;
   onMonthChange: (month: string) => void;
   onExportExcel: (month: string) => void;
   onExportPdf: (month: string) => void;
+  onDeleteTransaction: (transaction: Transaction) => void;
+  onBookExpectedContribution: (plan: ContributionPlanRow) => void;
 }) {
   return (
     <section id="finance-month" className="scroll-mt-4 grid gap-4">
@@ -4811,6 +5113,10 @@ function MonthInsightsSection({
       <AllTransactionsCard
         currentMonth={currentMonth}
         rows={outgoingRows}
+        deletingTransactionId={deletingTransactionId}
+        bookingContributionPlanId={bookingContributionPlanId}
+        onDeleteTransaction={onDeleteTransaction}
+        onBookExpectedContribution={onBookExpectedContribution}
       />
 
       <div className="grid items-start gap-4 2xl:grid-cols-[minmax(460px,0.95fr)_minmax(0,1.05fr)]">
@@ -8128,7 +8434,10 @@ function buildPersonalContributionCoverage({
 function buildOutgoingTransactionRows(
   monthTransactions: Transaction[],
   fixedItems: FixedAgendaItem[],
+  contributionPlans: ContributionPlanRow[],
   labels: Map<string, DashboardData["categories"][number]>,
+  month: string,
+  today: string,
 ) {
   const fixedRows: OutgoingTransactionRow[] = fixedItems
     .filter((item) => item.state !== "skipped")
@@ -8172,16 +8481,23 @@ function buildOutgoingTransactionRows(
       const category = labels.get(transaction.categoryId);
       const title =
         transaction.type === "contribution"
-          ? contributionDisplayName(transaction, true)
+          ? [
+              transaction.note?.trim() || contributionDisplayName(transaction),
+              transaction.paidBy ?? transaction.enteredBy,
+            ]
+              .filter(Boolean)
+              .join(" — ")
           : category?.name ?? "Inkomen";
+      const subtitle =
+        transaction.type === "contribution"
+          ? transaction.date
+          : [transaction.date, transaction.note].filter(Boolean).join(" · ");
 
       return {
         id: `${transaction.type}-${transaction.id}`,
         date: transaction.date,
         title,
-        subtitle: [transaction.date, transaction.note]
-          .filter(Boolean)
-          .join(" · "),
+        subtitle,
         amount: transaction.amount,
         signedAmount: transaction.amount,
         kind: transaction.type,
@@ -8190,8 +8506,28 @@ function buildOutgoingTransactionRows(
         transaction,
       };
     });
+  const expectedContributionRows: OutgoingTransactionRow[] = contributionPlans
+    .filter((plan) => plan.remaining > 0)
+    .map((plan) => {
+      const date = dateForBillingDay(month, plan.depositDay);
 
-  return [...fixedRows, ...variableRows, ...positiveRows].sort(
+      return { plan, date };
+    })
+    .filter(({ date }) => date <= today)
+    .map(({ plan, date }) => ({
+      id: `expected-contribution-${plan.id}-${date}`,
+      date,
+      title: plan.label || "Geplande storting",
+      subtitle: `${plan.person} · verwacht`,
+      amount: plan.remaining,
+      signedAmount: plan.remaining,
+      kind: "contribution",
+      color: "#10B981",
+      expectedContributionPlan: plan,
+      isExpected: true,
+    }));
+
+  return [...fixedRows, ...variableRows, ...positiveRows, ...expectedContributionRows].sort(
     (first, second) =>
       first.date.localeCompare(second.date) ||
       first.title.localeCompare(second.title, "nl"),
