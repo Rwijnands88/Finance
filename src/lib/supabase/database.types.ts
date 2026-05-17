@@ -269,9 +269,11 @@ export type Database = {
           amount: number;
           transaction_date: string;
           type: "fixed" | "variable" | "contribution" | "income";
+          contribution_kind: "planned" | "extra" | null;
           note: string | null;
           receipt_url: string | null;
           entered_by: string;
+          paid_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -284,9 +286,11 @@ export type Database = {
           amount: number;
           transaction_date: string;
           type: "fixed" | "variable" | "contribution" | "income";
+          contribution_kind?: "planned" | "extra" | null;
           note?: string | null;
           receipt_url?: string | null;
           entered_by: string;
+          paid_by?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -294,9 +298,11 @@ export type Database = {
           account_id?: string | null;
           amount?: number;
           transaction_date?: string;
+          contribution_kind?: "planned" | "extra" | null;
           note?: string | null;
           receipt_url?: string | null;
           category_id?: string;
+          paid_by?: string | null;
         };
         Relationships: [];
       };

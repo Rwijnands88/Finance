@@ -8,6 +8,7 @@ export type Category = {
   kind: CategoryKind;
   color: string;
   averageMonthly: number;
+  sortOrder?: number;
 };
 
 export type Account = {
@@ -43,6 +44,7 @@ export type FixedExpenseInstance = {
 export type Transaction = {
   id: string;
   type: "fixed" | "variable" | "contribution" | "income";
+  contributionKind?: "planned" | "extra";
   accountId?: string;
   accountName?: string;
   accountKind?: Account["kind"];
@@ -53,6 +55,8 @@ export type Transaction = {
   receiptUrl?: string;
   enteredById?: string;
   enteredBy: Person;
+  paidById?: string;
+  paidBy?: Person;
   fixedInstanceId?: string;
 };
 
@@ -82,6 +86,10 @@ export type DashboardData = {
   currentPerson: Person;
   selectedMonth: string;
   people: Person[];
+  householdMembers: Array<{
+    userId: string;
+    displayName: Person;
+  }>;
   accounts: Account[];
   categories: Category[];
   contributionPlans: ContributionPlan[];

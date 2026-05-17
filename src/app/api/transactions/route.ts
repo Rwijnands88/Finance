@@ -11,11 +11,22 @@ type CreateTransactionBody = {
   note?: string | null;
   receiptUrl?: string | null;
   type?: "variable" | "contribution" | "income";
+  contributionKind?: "planned" | "extra" | null;
+  paidById?: string | null;
   incomeKind?: "salary" | "extra";
 };
 
 type DeleteTransactionBody = {
   transactionId?: string;
+};
+
+type UpdateTransactionBody = {
+  transactionId?: string;
+  categoryId?: string;
+  amount?: number;
+  date?: string;
+  note?: string | null;
+  paidById?: string | null;
 };
 
 export async function GET(request: Request) {
@@ -69,7 +80,9 @@ export async function GET(request: Request) {
     accounts?.find((account) => account.kind === "shared") ?? accounts?.[0];
   const { data, error } = await supabase
     .from("transactions")
-    .select("*, profiles(display_name)")
+    .select(
+      "*, entered_profile:profiles!transactions_entered_by_fkey(display_name), paid_profile:profiles!transactions_paid_by_fkey(display_name)",
+    )
     .eq("household_id", membership.household_id)
     .gte("transaction_date", from)
     .lt("transaction_date", to)
@@ -81,9 +94,12 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     transactions: (data ?? []).map((transaction) => {
-      const profile = Array.isArray(transaction.profiles)
-        ? transaction.profiles[0]
-        : transaction.profiles;
+      const enteredProfile = Array.isArray(transaction.entered_profile)
+        ? transaction.entered_profile[0]
+        : transaction.entered_profile;
+      const paidProfile = Array.isArray(transaction.paid_profile)
+        ? transaction.paid_profile[0]
+        : transaction.paid_profile;
       const account =
         accountMap.get(transaction.account_id ?? "") ?? fallbackAccount;
 
@@ -96,10 +112,16 @@ export async function GET(request: Request) {
         categoryId: transaction.category_id,
         amount: Number(transaction.amount),
         date: transaction.transaction_date,
+        contributionKind: transaction.contribution_kind ?? undefined,
         note: transaction.note ?? undefined,
         receiptUrl: transaction.receipt_url ?? undefined,
         enteredById: transaction.entered_by,
-        enteredBy: profile?.display_name ?? "Onbekend",
+        enteredBy: enteredProfile?.display_name ?? "Onbekend",
+        paidById: transaction.paid_by ?? transaction.entered_by,
+        paidBy:
+          paidProfile?.display_name ??
+          enteredProfile?.display_name ??
+          "Onbekend",
         fixedInstanceId: transaction.fixed_expense_instance_id ?? undefined,
       };
     }),
@@ -143,6 +165,32 @@ export async function POST(request: Request) {
 
   if (userError || !user) {
     return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+
+  const contributionKind =
+    transactionType === "contribution"
+      ? body.contributionKind === "planned"
+        ? "planned"
+        : "extra"
+      : null;
+  const paidById =
+    typeof body.paidById === "string" && body.paidById
+      ? body.paidById
+      : user.id;
+
+  const { data: paidByMembership, error: paidByError } = await supabase
+    .from("household_members")
+    .select("user_id")
+    .eq("household_id", body.householdId)
+    .eq("user_id", paidById)
+    .limit(1)
+    .maybeSingle();
+
+  if (paidByError || !paidByMembership) {
+    return NextResponse.json(
+      { error: paidByError?.message ?? "Betaler hoort niet bij dit huishouden." },
+      { status: 400 },
+    );
   }
 
   let categoryId = body.categoryId!;
@@ -195,14 +243,16 @@ export async function POST(request: Request) {
       amount,
       transaction_date: body.date,
       type: transactionType,
+      contribution_kind: contributionKind,
       note: body.note || null,
       receipt_url:
         typeof body.receiptUrl === "string" && body.receiptUrl.trim()
           ? body.receiptUrl.trim()
           : null,
       entered_by: user.id,
+      paid_by: paidById,
     })
-    .select("id, account_id, category_id, type, receipt_url")
+    .select("id, account_id, category_id, type, contribution_kind, receipt_url, paid_by")
     .single();
 
   if (transactionError) {
@@ -218,9 +268,145 @@ export async function POST(request: Request) {
       accountId: transaction.account_id,
       categoryId: transaction.category_id,
       type: transaction.type,
+      contributionKind: transaction.contribution_kind,
       receiptUrl: transaction.receipt_url,
       enteredBy: user.id,
+      paidById: transaction.paid_by,
     },
+  });
+}
+
+export async function PATCH(request: Request) {
+  const body = (await request.json()) as UpdateTransactionBody;
+  const amount = Number(body.amount);
+
+  if (
+    typeof body.transactionId !== "string" ||
+    typeof body.categoryId !== "string" ||
+    !body.date ||
+    !amount ||
+    amount <= 0
+  ) {
+    return NextResponse.json(
+      { error: "Vul bedrag, categorie en datum in." },
+      { status: 400 },
+    );
+  }
+
+  if (!isIsoDate(body.date)) {
+    return NextResponse.json({ error: "Datum is ongeldig." }, { status: 400 });
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+
+  const { data: existingTransaction, error: existingError } = await supabase
+    .from("transactions")
+    .select("id, household_id, type, fixed_expense_instance_id")
+    .eq("id", body.transactionId)
+    .single();
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 400 });
+  }
+
+  const paidById =
+    typeof body.paidById === "string" && body.paidById
+      ? body.paidById
+      : user.id;
+
+  const [{ data: category }, { data: paidByMembership, error: paidByError }] =
+    await Promise.all([
+      supabase
+        .from("categories")
+        .select("id")
+        .eq("id", body.categoryId)
+        .eq("household_id", existingTransaction.household_id)
+        .maybeSingle(),
+      supabase
+        .from("household_members")
+        .select("user_id")
+        .eq("household_id", existingTransaction.household_id)
+        .eq("user_id", paidById)
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+  if (!category) {
+    return NextResponse.json({ error: "Categorie is ongeldig." }, { status: 400 });
+  }
+
+  if (paidByError || !paidByMembership) {
+    return NextResponse.json(
+      { error: paidByError?.message ?? "Betaler hoort niet bij dit huishouden." },
+      { status: 400 },
+    );
+  }
+
+  const note =
+    typeof body.note === "string" && body.note.trim()
+      ? body.note.trim()
+      : null;
+
+  const { data: transaction, error: updateError } = await supabase
+    .from("transactions")
+    .update({
+      category_id: body.categoryId,
+      amount,
+      transaction_date: body.date,
+      note,
+      paid_by: paidById,
+    })
+    .eq("id", body.transactionId)
+    .select("id, category_id, amount, transaction_date, note, paid_by")
+    .single();
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 400 });
+  }
+
+  let fixedInstance: FixedExpenseInstance | null = null;
+
+  if (
+    existingTransaction.type === "fixed" &&
+    existingTransaction.fixed_expense_instance_id
+  ) {
+    const { data: fixedRow, error: fixedError } = await supabase
+      .from("fixed_expense_instances")
+      .update({
+        category_id: body.categoryId,
+        amount_snapshot: amount,
+        status: "adjusted",
+        note,
+      })
+      .eq("id", existingTransaction.fixed_expense_instance_id)
+      .select("*")
+      .single();
+
+    if (fixedError) {
+      return NextResponse.json({ error: fixedError.message }, { status: 400 });
+    }
+
+    fixedInstance = mapFixedInstance(fixedRow);
+  }
+
+  return NextResponse.json({
+    transaction: {
+      id: transaction.id,
+      categoryId: transaction.category_id,
+      amount: Number(transaction.amount),
+      date: transaction.transaction_date,
+      note: transaction.note ?? undefined,
+      paidById: transaction.paid_by,
+    },
+    fixedInstance,
   });
 }
 
@@ -396,6 +582,10 @@ function mapFixedInstance(row: {
 
 function isIsoMonth(value: string) {
   return /^\d{4}-\d{2}$/.test(value);
+}
+
+function isIsoDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function addMonths(isoDate: string, months: number) {

@@ -9,7 +9,7 @@ import {
 import type React from "react";
 import type { Category, Transaction } from "@/lib/types";
 import { categoryById, totalsForMonth } from "@/lib/finance";
-import { currency, monthLabel } from "@/lib/utils";
+import { monthLabel, preciseCurrency } from "@/lib/utils";
 
 export type MonthReportFixedItem = {
   id: string;
@@ -61,11 +61,11 @@ export function MonthReportDocument({
         </View>
 
         <View style={styles.summary}>
-          <SummaryBox label="Stortingen" value={currency(totals.contributionTotal)} />
-          <SummaryBox label="Inkomsten" value={currency(totals.incomeTotal)} />
-          <SummaryBox label="Vaste lasten" value={currency(totals.fixedTotal)} />
-          <SummaryBox label="Variabel" value={currency(totals.variableTotal)} />
-          <SummaryBox label="Over/tekort" value={currency(totals.netTotal)} />
+          <SummaryBox label="Stortingen" value={preciseCurrency(totals.contributionTotal)} />
+          <SummaryBox label="Inkomen" value={preciseCurrency(totals.incomeTotal)} />
+          <SummaryBox label="Vaste lasten" value={preciseCurrency(totals.fixedTotal)} />
+          <SummaryBox label="Variabel" value={preciseCurrency(totals.variableTotal)} />
+          <SummaryBox label="Over/tekort" value={preciseCurrency(totals.netTotal)} />
         </View>
 
         <Section title="Samenvatting per rekening">
@@ -81,11 +81,11 @@ export function MonthReportDocument({
               <View key={account.name} style={styles.row}>
                 <Text style={styles.accountCell}>{account.name}</Text>
                 <Text style={styles.amountCell}>
-                  {currency(account.contribution + account.income)}
+                  {preciseCurrency(account.contribution + account.income)}
                 </Text>
-                <Text style={styles.amountCell}>{currency(account.fixed)}</Text>
-                <Text style={styles.amountCell}>{currency(account.variable)}</Text>
-                <Text style={styles.amountCell}>{currency(account.net)}</Text>
+                <Text style={styles.amountCell}>{preciseCurrency(account.fixed)}</Text>
+                <Text style={styles.amountCell}>{preciseCurrency(account.variable)}</Text>
+                <Text style={styles.amountCell}>{preciseCurrency(account.net)}</Text>
               </View>
             ))}
           </View>
@@ -107,7 +107,7 @@ export function MonthReportDocument({
                   <Text style={styles.nameCell}>{item.name}</Text>
                   <Text style={styles.categoryCell}>{item.categoryName}</Text>
                   <Text style={styles.statusCell}>{item.status}</Text>
-                  <Text style={styles.amountCell}>{currency(item.amount)}</Text>
+                  <Text style={styles.amountCell}>{preciseCurrency(item.amount)}</Text>
                 </View>
               ))
             ) : (
@@ -122,7 +122,7 @@ export function MonthReportDocument({
               <View key={group.categoryName} style={styles.group} wrap={false}>
                 <View style={styles.groupHeader}>
                   <Text style={styles.groupTitle}>{group.categoryName}</Text>
-                  <Text style={styles.groupTotal}>{currency(group.total)}</Text>
+                  <Text style={styles.groupTotal}>{preciseCurrency(group.total)}</Text>
                 </View>
                 {group.transactions.map((transaction) => (
                   <TransactionRow
@@ -143,7 +143,7 @@ export function MonthReportDocument({
             {accountSummaries.map((account) => (
               <View key={`total-${account.name}`} style={styles.totalRow}>
                 <Text style={styles.accountCell}>{account.name}</Text>
-                <Text style={styles.totalAmount}>{currency(account.net)}</Text>
+                <Text style={styles.totalAmount}>{preciseCurrency(account.net)}</Text>
               </View>
             ))}
           </View>
@@ -164,14 +164,23 @@ function TransactionRow({
     <View style={styles.transactionBlock}>
       <View style={styles.transactionRow}>
         <Text style={styles.dateCell}>{transaction.date}</Text>
-        <Text style={styles.transactionNote}>
-          {[transaction.accountName, transaction.note ?? transaction.enteredBy]
-            .filter(Boolean)
-            .join(" - ")}
-        </Text>
-        <Text style={styles.amountCell}>{currency(transaction.amount)}</Text>
+        <View style={styles.transactionDetailCell}>
+          <Text style={styles.transactionAccount}>
+            {transaction.accountName ?? "Onbekende rekening"}
+          </Text>
+          <Text style={styles.transactionMeta}>
+            Betaald door: {transaction.paidBy ?? transaction.enteredBy}
+          </Text>
+          {transaction.note && (
+            <Text style={styles.transactionMeta}>
+              Notitie: {transaction.note}
+            </Text>
+          )}
+        </View>
+        <Text style={styles.amountCell}>{preciseCurrency(transaction.amount)}</Text>
       </View>
       {receiptImage && (
+        // eslint-disable-next-line jsx-a11y/alt-text
         <Image src={receiptImage} style={styles.receiptImage} />
       )}
     </View>
@@ -285,25 +294,29 @@ function groupVariableTransactions(
 
 const styles = StyleSheet.create({
   page: {
-    padding: 32,
+    padding: 34,
     backgroundColor: "#FFFFFF",
     color: "#18181B",
     fontSize: 9,
-    lineHeight: 1.35,
+    lineHeight: 1.4,
   },
   header: {
     display: "flex",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 18,
+    alignItems: "flex-start",
+    paddingBottom: 14,
+    borderBottom: "1px solid #E4E4E7",
+    marginBottom: 16,
   },
   kicker: {
     color: "#6366F1",
     fontSize: 10,
-    marginBottom: 5,
+    fontWeight: 700,
+    marginBottom: 4,
   },
   title: {
-    fontSize: 23,
+    fontSize: 22,
     fontWeight: 700,
   },
   generatedBox: {
@@ -325,13 +338,14 @@ const styles = StyleSheet.create({
     display: "flex",
     flexDirection: "row",
     gap: 7,
-    marginBottom: 18,
+    marginBottom: 16,
   },
   summaryBox: {
     flex: 1,
     border: "1px solid #E4E4E7",
     borderRadius: 9,
-    padding: 9,
+    padding: 8,
+    backgroundColor: "#FAFAFA",
   },
   summaryLabel: {
     color: "#71717A",
@@ -339,33 +353,36 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   summaryValue: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 700,
   },
   section: {
-    marginBottom: 16,
+    marginBottom: 15,
   },
   sectionTitle: {
     fontSize: 13,
     fontWeight: 700,
-    marginBottom: 7,
+    marginBottom: 8,
   },
   table: {
     border: "1px solid #E4E4E7",
     borderRadius: 8,
+    overflow: "hidden",
   },
   rowHeader: {
     display: "flex",
     flexDirection: "row",
     backgroundColor: "#F4F4F5",
-    padding: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
     fontWeight: 700,
   },
   row: {
     display: "flex",
     flexDirection: "row",
     borderTop: "1px solid #E4E4E7",
-    padding: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
   },
   dateCell: { width: 70 },
   accountCell: { flex: 1.3 },
@@ -373,7 +390,16 @@ const styles = StyleSheet.create({
   categoryCell: { flex: 1 },
   statusCell: { width: 78 },
   amountCell: { width: 64, textAlign: "right" },
-  transactionNote: { flex: 1 },
+  transactionDetailCell: { flex: 1 },
+  transactionAccount: {
+    fontWeight: 700,
+    marginBottom: 2,
+  },
+  transactionMeta: {
+    color: "#71717A",
+    fontSize: 8,
+    marginTop: 1,
+  },
   emptyText: {
     padding: 10,
     color: "#71717A",
@@ -381,14 +407,16 @@ const styles = StyleSheet.create({
   group: {
     border: "1px solid #E4E4E7",
     borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: 9,
+    overflow: "hidden",
   },
   groupHeader: {
     display: "flex",
     flexDirection: "row",
     justifyContent: "space-between",
     backgroundColor: "#F9FAFB",
-    padding: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
   },
   groupTitle: {
     fontWeight: 700,
@@ -417,7 +445,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     padding: 9,
-    borderTop: "1px solid #E4E4E7",
+    borderTop: "1px solid #D4D4D8",
+    backgroundColor: "#F4F4F5",
   },
   totalAmount: {
     width: 90,

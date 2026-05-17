@@ -90,12 +90,16 @@ export function totalsByPerson(transactions: Transaction[], month: string) {
     )
     .reduce(
       (result, transaction) => {
-        result[transaction.enteredBy] =
-          (result[transaction.enteredBy] ?? 0) + transaction.amount;
+        const person = personForTransaction(transaction);
+        result[person] = (result[person] ?? 0) + transaction.amount;
         return result;
       },
       {} as Record<string, number>,
     );
+}
+
+function personForTransaction(transaction: Transaction) {
+  return transaction.paidBy ?? transaction.enteredBy;
 }
 
 export function categoryTotalsByPerson(
@@ -109,11 +113,12 @@ export function categoryTotalsByPerson(
   transactions
     .filter((transaction) => transaction.date.startsWith(month))
     .forEach((transaction) => {
+      const person = personForTransaction(transaction);
       const personTotals =
         grouped.get(transaction.categoryId) ?? new Map<string, number>();
       personTotals.set(
-        transaction.enteredBy,
-        (personTotals.get(transaction.enteredBy) ?? 0) + transaction.amount,
+        person,
+        (personTotals.get(person) ?? 0) + transaction.amount,
       );
       grouped.set(transaction.categoryId, personTotals);
     });

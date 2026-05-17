@@ -133,6 +133,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     name: category.name,
     kind: category.kind,
     color: category.color,
+    sortOrder: category.sort_order,
     averageMonthly: averageForCategory(
       historicalTransactionsResult,
       category.id,
@@ -171,6 +172,10 @@ export async function getDashboardData(): Promise<DashboardData> {
     currentPerson,
     selectedMonth,
     people,
+    householdMembers: members.map((member) => ({
+      userId: member.userId,
+      displayName: member.displayName,
+    })),
     accounts,
     contributionPlans: mapContributionPlans(
       contributionPlansResult.data ?? [],
@@ -250,7 +255,9 @@ async function fetchTransactions(
 ) {
   const { data, error } = await supabase
     .from("transactions")
-    .select("*, profiles(display_name)")
+    .select(
+      "*, entered_profile:profiles!transactions_entered_by_fkey(display_name), paid_profile:profiles!transactions_paid_by_fkey(display_name)",
+    )
     .eq("household_id", householdId)
     .gte("transaction_date", from)
     .lt("transaction_date", to)
@@ -259,9 +266,12 @@ async function fetchTransactions(
   throwIfError(error);
 
   return (data ?? []).map((transaction) => {
-    const profile = Array.isArray(transaction.profiles)
-      ? transaction.profiles[0]
-      : transaction.profiles;
+    const enteredProfile = Array.isArray(transaction.entered_profile)
+      ? transaction.entered_profile[0]
+      : transaction.entered_profile;
+    const paidProfile = Array.isArray(transaction.paid_profile)
+      ? transaction.paid_profile[0]
+      : transaction.paid_profile;
 
     return {
       id: transaction.id,
@@ -276,10 +286,16 @@ async function fetchTransactions(
       categoryId: transaction.category_id,
       amount: Number(transaction.amount),
       date: transaction.transaction_date,
+      contributionKind: transaction.contribution_kind ?? undefined,
       note: transaction.note ?? undefined,
       receiptUrl: transaction.receipt_url ?? undefined,
       enteredById: transaction.entered_by,
-      enteredBy: profile?.display_name ?? "Onbekend",
+      enteredBy: enteredProfile?.display_name ?? "Onbekend",
+      paidById: transaction.paid_by ?? transaction.entered_by,
+      paidBy:
+        paidProfile?.display_name ??
+        enteredProfile?.display_name ??
+        "Onbekend",
       fixedInstanceId: transaction.fixed_expense_instance_id ?? undefined,
     } satisfies Transaction;
   });
