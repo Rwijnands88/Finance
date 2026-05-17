@@ -62,7 +62,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import {
   MonthReportDocument,
   type MonthReportFixedItem,
@@ -88,7 +87,7 @@ type DashboardMetric = {
   tone: "indigo" | "emerald" | "red" | "zinc";
 };
 
-type ActiveSection = "dashboard" | "fixed" | "input" | "month";
+type ActiveSection = "dashboard" | "fixed" | "input" | "month" | "export";
 type MonthOption = {
   value: string;
   label: string;
@@ -156,6 +155,7 @@ function sectionNavItems() {
     { id: "fixed", label: "Vaste lasten", icon: ListChecks },
     { id: "input", label: "Invoeren", icon: Plus },
     { id: "month", label: "Maand", icon: CalendarDays },
+    { id: "export", label: "Export", icon: FileSpreadsheet },
   ] satisfies Array<{
     id: ActiveSection;
     label: string;
@@ -295,6 +295,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   );
   const [contributionKind, setContributionKind] = useState<ContributionKind>(
     "extra",
+  );
+  const [contributionPaidById, setContributionPaidById] = useState(
+    initialData.currentUserId,
   );
   const [contributionNote, setContributionNote] = useState("");
   const [contributionMessage, setContributionMessage] = useState("");
@@ -1132,10 +1135,17 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   async function addContribution() {
     const amount = parseCurrencyInput(contributionAmount);
+    const contributionMember =
+      initialData.householdMembers.find(
+        (member) => member.userId === contributionPaidById,
+      ) ??
+      initialData.householdMembers.find(
+        (member) => member.userId === initialData.currentUserId,
+      );
 
-    if (!amount || amount <= 0 || !defaultAccount) {
+    if (!amount || amount <= 0 || !defaultAccount || !contributionMember) {
       setContributionMessage("Vul een geldig bedrag in.");
-      return;
+      return false;
     }
 
     setIsSavingContribution(true);
@@ -1154,7 +1164,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         note: contributionNote || defaultContributionNote(contributionKind),
         type: "contribution",
         contributionKind,
-        paidById: initialData.currentUserId,
+        paidById: contributionMember.userId,
       }),
     });
     const result = await response.json();
@@ -1167,7 +1177,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           ? result.error
           : "Storting opslaan lukte niet. Probeer het nog eens.",
       );
-      return;
+      return false;
     }
 
     const contributionCategory =
@@ -1196,8 +1206,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         note: contributionNote || defaultContributionNote(contributionKind),
         enteredById: initialData.currentUserId,
         enteredBy: initialData.currentPerson,
-        paidById: result.transaction.paidById ?? initialData.currentUserId,
-        paidBy: initialData.currentPerson,
+        paidById: result.transaction.paidById ?? contributionMember.userId,
+        paidBy: contributionMember.displayName,
       },
       ...items,
     ]);
@@ -1206,6 +1216,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setContributionMessage("Storting toegevoegd.");
     setSelectedAccountId(defaultAccount.id);
     setQuickAccount(defaultAccount.id);
+    return true;
   }
 
   async function saveBalanceSnapshot() {
@@ -2308,6 +2319,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       return String(worksheet[cellAddress]?.v ?? "");
     });
     const currencyColumns = new Set(options.currencyColumns ?? []);
+    const subtotalRow = range.e.r + 1;
+    const labelColumn =
+      headers.findIndex((header) => !currencyColumns.has(header)) >= 0
+        ? headers.findIndex((header) => !currencyColumns.has(header))
+        : 0;
 
     worksheet["!autofilter"] = { ref: XLSX.utils.encode_range(range) };
     (worksheet as XLSX.WorkSheet & {
@@ -2325,10 +2341,49 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       activePane: "bottomLeft",
       state: "frozen",
     };
+    worksheet["!ref"] = XLSX.utils.encode_range({
+      s: range.s,
+      e: { r: subtotalRow, c: range.e.c },
+    });
+
+    headers.forEach((header, index) => {
+      const column = range.s.c + index;
+      const cellAddress = XLSX.utils.encode_cell({ r: subtotalRow, c: column });
+
+      if (index === labelColumn) {
+        worksheet[cellAddress] = {
+          t: "s",
+          v: "Totaal",
+          s: {
+            font: { bold: true },
+            fill: { fgColor: { rgb: "F4F4F5" } },
+          },
+        };
+        return;
+      }
+
+      if (!currencyColumns.has(header)) {
+        return;
+      }
+
+      const firstDataCell = XLSX.utils.encode_cell({ r: range.s.r + 1, c: column });
+      const lastDataCell = XLSX.utils.encode_cell({ r: range.e.r, c: column });
+
+      worksheet[cellAddress] = {
+        t: "n",
+        f: `SUBTOTAL(9,${firstDataCell}:${lastDataCell})`,
+        z: '"€" #,##0.00;-"€" #,##0.00',
+        s: {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "F4F4F5" } },
+          alignment: { horizontal: "right" },
+        },
+      };
+    });
     worksheet["!cols"] = headers.map((header, index) => {
       let maxLength = header.length;
 
-      for (let row = range.s.r + 1; row <= range.e.r; row += 1) {
+      for (let row = range.s.r + 1; row <= subtotalRow; row += 1) {
         const cellAddress = XLSX.utils.encode_cell({
           r: row,
           c: range.s.c + index,
@@ -2352,7 +2407,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       };
     });
 
-    for (let row = range.s.r; row <= range.e.r; row += 1) {
+    for (let row = range.s.r; row <= subtotalRow; row += 1) {
       for (let column = range.s.c; column <= range.e.c; column += 1) {
         const cellAddress = XLSX.utils.encode_cell({ r: row, c: column });
         const cell = worksheet[cellAddress] as
@@ -2367,6 +2422,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             fill: { fgColor: { rgb: "1E1E2E" } },
           };
           continue;
+        }
+
+        if (row === subtotalRow) {
+          cell.s = {
+            ...(cell.s ?? {}),
+            font: { bold: true },
+            fill: { fgColor: { rgb: "F4F4F5" } },
+          };
         }
 
         const header = headers[column - range.s.c];
@@ -2826,7 +2889,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               date={contributionDate}
               kind={contributionKind}
               note={contributionNote}
+              paidById={contributionPaidById}
               person={initialData.currentPerson}
+              householdMembers={initialData.householdMembers}
               plans={contributionPlanRows}
               planDrafts={contributionPlanDrafts}
               planMessage={contributionPlanMessage}
@@ -2843,6 +2908,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onAmountChange={setContributionAmount}
               onDateChange={setContributionDate}
               onKindChange={setContributionKind}
+              onPaidByChange={setContributionPaidById}
               onNoteChange={setContributionNote}
               onPlanDraftChange={updateContributionPlanDraft}
               onPlanSave={saveContributionPlan}
@@ -2877,9 +2943,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             deletingTransactionId={deletingTransactionId}
             onDeleteTransaction={deleteTransaction}
             onEditTransaction={startEditingTransaction}
-            onExportExcel={() => setIsExportDialogOpen(true)}
-            onExportPdf={() => setIsExportDialogOpen(true)}
-            onDownloadReceipts={() => setIsExportDialogOpen(true)}
             onOpenReceipt={setReceiptViewer}
           />
           <ChartsPanel
@@ -2895,6 +2958,24 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               isSharedView={isSharedView}
             />
           )}
+        </section>
+
+        <section
+          className={cn(
+            "finance-view gap-4 lg:hidden",
+            activeSection === "export" ? "grid" : "hidden",
+          )}
+        >
+          <MobileSectionHeader title="Export" subtitle={viewCopy.label} />
+          <ExportCenterCard
+            accountName={selectedAccount?.name ?? viewCopy.label}
+            currentMonth={currentMonth}
+            receiptCount={selectedTransactions.filter(
+              (transaction) =>
+                transaction.date.startsWith(currentMonth) && transaction.receiptUrl,
+            ).length}
+            onOpenExport={() => setIsExportDialogOpen(true)}
+          />
         </section>
 
         <div className="hidden gap-4 lg:grid lg:h-[calc(100dvh-2rem)] lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)_320px] lg:overflow-hidden xl:grid-cols-[232px_minmax(0,1fr)_340px] 2xl:grid-cols-[240px_minmax(0,1fr)_360px]">
@@ -2949,11 +3030,21 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 onMonthChange={changeCurrentMonth}
                 onDeleteTransaction={deleteTransaction}
                 onEditTransaction={startEditingTransaction}
-                onExportExcel={() => setIsExportDialogOpen(true)}
-                onExportPdf={() => setIsExportDialogOpen(true)}
-                onDownloadReceipts={() => setIsExportDialogOpen(true)}
                 onOpenReceipt={setReceiptViewer}
               />
+
+              <section id="finance-export" className="scroll-mt-4">
+                <ExportCenterCard
+                  accountName={selectedAccount?.name ?? viewCopy.label}
+                  currentMonth={currentMonth}
+                  receiptCount={selectedTransactions.filter(
+                    (transaction) =>
+                      transaction.date.startsWith(currentMonth) &&
+                      transaction.receiptUrl,
+                  ).length}
+                  onOpenExport={() => setIsExportDialogOpen(true)}
+                />
+              </section>
 
               {isSharedView && (
                 <PersonCostInsight
@@ -3073,7 +3164,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 date={contributionDate}
                 kind={contributionKind}
                 note={contributionNote}
+                paidById={contributionPaidById}
                 person={initialData.currentPerson}
+                householdMembers={initialData.householdMembers}
                 plans={contributionPlanRows}
                 planDrafts={contributionPlanDrafts}
                 planMessage={contributionPlanMessage}
@@ -3090,6 +3183,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 onAmountChange={setContributionAmount}
                 onDateChange={setContributionDate}
                 onKindChange={setContributionKind}
+                onPaidByChange={setContributionPaidById}
                 onNoteChange={setContributionNote}
                 onPlanDraftChange={updateContributionPlanDraft}
                 onPlanSave={saveContributionPlan}
@@ -3197,7 +3291,7 @@ function MobileBottomNav({
   const items = sectionNavItems();
 
   return (
-    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 items-start border-t border-[var(--border)] lg:hidden">
+    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 items-start border-t border-[var(--border)] lg:hidden">
       {items.map((item) => {
         const isActive = activeSection === item.id;
         const Icon = item.icon;
@@ -3778,9 +3872,6 @@ function MonthTransactionsCard({
   deletingTransactionId,
   onDeleteTransaction,
   onEditTransaction,
-  onExportExcel,
-  onExportPdf,
-  onDownloadReceipts,
   onOpenReceipt,
   compact = false,
   className,
@@ -3794,17 +3885,14 @@ function MonthTransactionsCard({
   deletingTransactionId: string | null;
   onDeleteTransaction: (transaction: Transaction) => void;
   onEditTransaction: (transaction: Transaction) => void;
-  onExportExcel: () => void;
-  onExportPdf: () => void;
-  onDownloadReceipts: () => void;
   onOpenReceipt: (receipt: ReceiptViewerState) => void;
   compact?: boolean;
   className?: string;
 }) {
-  const visibleRows = compact ? rows.slice(0, 6) : rows;
+  const [isExpanded, setIsExpanded] = useState(false);
+  const visibleRows = compact && !isExpanded ? rows.slice(0, 6) : rows;
   const hiddenCount = rows.length - visibleRows.length;
   const cardTitle = compact ? "Maandoverzicht" : title;
-  const hasReceipts = rows.some((row) => row.receiptUrl);
 
   return (
     <Card
@@ -3828,23 +3916,6 @@ function MonthTransactionsCard({
           <Badge className="hidden border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)] sm:inline-flex">
             {monthLabel(currentMonth)}
           </Badge>
-          <Button size="icon" variant="secondary" onClick={onExportExcel} title="Exporteer Excel" className="h-9 w-9">
-            <FileSpreadsheet className="h-4 w-4" />
-          </Button>
-          <Button size="icon" variant="secondary" onClick={onExportPdf} title="Exporteer PDF" className="h-9 w-9">
-            <ArrowDownToLine className="h-4 w-4" />
-          </Button>
-          {hasReceipts && (
-            <Button
-              variant="secondary"
-              onClick={onDownloadReceipts}
-              title={`Download bonnen ${monthLabel(currentMonth)}`}
-              className="h-9 px-3 text-xs"
-            >
-              <ReceiptText className="h-4 w-4" />
-              <span className="hidden xl:inline">Bonnen</span>
-            </Button>
-          )}
         </div>
       </CardHeader>
       <CardContent className="p-0">
@@ -3880,7 +3951,7 @@ function MonthTransactionsCard({
                     }
                   }}
                   className={cn(
-                    "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 transition sm:px-5",
+                    "group/transaction grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 transition sm:px-5",
                     isEditable && "desktop-row-hover cursor-pointer",
                     compact ? "py-2.5" : "py-3",
                   )}
@@ -3944,7 +4015,7 @@ function MonthTransactionsCard({
                           onDeleteTransaction(transaction);
                         }}
                         disabled={isDeleting}
-                        className="h-8 w-8 shrink-0 text-[var(--text-muted)] hover:text-[var(--negative)]"
+                        className="h-8 w-8 shrink-0 text-[var(--text-muted)] opacity-0 transition hover:text-[var(--negative)] focus-visible:opacity-100 group-hover/transaction:opacity-100 group-focus-within/transaction:opacity-100 active:opacity-100"
                       >
                         {isDeleting ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -3958,8 +4029,16 @@ function MonthTransactionsCard({
               );
             })}
             {hiddenCount > 0 && (
-              <div className="px-4 py-3 text-xs text-[var(--text-muted)] sm:px-5">
-                Plus {hiddenCount} extra transacties in dit maandoverzicht.
+              <div className="px-4 py-3 sm:px-5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-0 text-xs text-[var(--text-muted)] hover:bg-transparent hover:text-[var(--text-primary)]"
+                  onClick={() => setIsExpanded(true)}
+                >
+                  Plus {hiddenCount} extra transacties tonen
+                </Button>
               </div>
             )}
           </div>
@@ -4494,9 +4573,6 @@ function MonthInsightsSection({
   onMonthChange,
   onDeleteTransaction,
   onEditTransaction,
-  onExportExcel,
-  onExportPdf,
-  onDownloadReceipts,
   onOpenReceipt,
 }: {
   currentMonth: string;
@@ -4513,9 +4589,6 @@ function MonthInsightsSection({
   onMonthChange: (month: string) => void;
   onDeleteTransaction: (transaction: Transaction) => void;
   onEditTransaction: (transaction: Transaction) => void;
-  onExportExcel: () => void;
-  onExportPdf: () => void;
-  onDownloadReceipts: () => void;
   onOpenReceipt: (receipt: ReceiptViewerState) => void;
 }) {
   return (
@@ -4553,9 +4626,6 @@ function MonthInsightsSection({
           deletingTransactionId={deletingTransactionId}
           onDeleteTransaction={onDeleteTransaction}
           onEditTransaction={onEditTransaction}
-          onExportExcel={onExportExcel}
-          onExportPdf={onExportPdf}
-          onDownloadReceipts={onDownloadReceipts}
           onOpenReceipt={onOpenReceipt}
           compact
         />
@@ -4703,16 +4773,18 @@ function ChartsPanel({
                   key={row.categoryId}
                   className="grid grid-cols-[minmax(5rem,1fr)_minmax(80px,200px)_auto] items-center gap-3 text-xs"
                 >
-                  <span className="truncate text-[var(--text-secondary)]">
-                    {row.name}
+                  <span className="flex min-w-0 items-center gap-2 text-[var(--text-secondary)]">
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: row.color }}
+                    />
+                    <span className="truncate">{row.name}</span>
                   </span>
-                  <Progress
+                  <CategoryProgressBar
                     value={row.amount}
                     max={row.average || row.amount}
+                    color={overBudget ? "#EF4444" : row.color}
                     className="max-w-[200px]"
-                    indicatorClassName={
-                      overBudget ? "bg-[var(--negative)]" : "bg-[var(--positive)]"
-                    }
                   />
                   <span
                     className={cn(
@@ -5554,14 +5626,10 @@ function PersonCostInsight({
                     <span className="truncate text-zinc-500">
                       {personRow.person}
                     </span>
-                    <Progress
+                    <CategoryProgressBar
                       value={personRow.amount}
                       max={row.total}
-                      indicatorClassName={
-                        personRow.person === "Ralph"
-                          ? "bg-indigo-500"
-                          : "bg-emerald-500"
-                      }
+                      color={row.color}
                     />
                     <span className="text-zinc-300">
                       {currency(personRow.amount)}
@@ -5574,6 +5642,35 @@ function PersonCostInsight({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function CategoryProgressBar({
+  value,
+  max,
+  color,
+  className,
+}: {
+  value: number;
+  max: number;
+  color: string;
+  className?: string;
+}) {
+  const width = Math.min(100, Math.max(0, (value / Math.max(max, 1)) * 100));
+
+  return (
+    <div
+      className={cn("h-2.5 overflow-hidden rounded-full bg-zinc-950", className)}
+      role="progressbar"
+      aria-valuenow={value}
+      aria-valuemax={max}
+      aria-valuemin={0}
+    >
+      <div
+        className="h-full rounded-full"
+        style={{ width: `${width}%`, backgroundColor: color }}
+      />
+    </div>
   );
 }
 
@@ -5919,6 +6016,66 @@ function BankAppsCard() {
   );
 }
 
+function ExportCenterCard({
+  accountName,
+  currentMonth,
+  receiptCount,
+  onOpenExport,
+}: {
+  accountName: string;
+  currentMonth: string;
+  receiptCount: number;
+  onOpenExport: () => void;
+}) {
+  return (
+    <Card className="finance-card">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle>Export</CardTitle>
+            <CardDescription>
+              Download Excel, PDF maandrapport of bonnen vanaf een vaste plek.
+            </CardDescription>
+          </div>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[var(--border)] bg-[var(--accent-light)] text-[var(--accent)]">
+            <FileSpreadsheet className="h-5 w-5" />
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="grid gap-2 rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[var(--text-secondary)]">Rekening</span>
+            <span className="truncate font-medium text-[var(--text-primary)]">
+              {accountName}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[var(--text-secondary)]">Actieve maand</span>
+            <span className="font-medium text-[var(--text-primary)]">
+              {monthLabel(currentMonth)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[var(--text-secondary)]">Bonnen deze maand</span>
+            <span className="font-medium text-[var(--text-primary)]">
+              {receiptCount}
+            </span>
+          </div>
+        </div>
+        <Button
+          type="button"
+          className="accent-glow-hover h-11 justify-center"
+          onClick={onOpenExport}
+        >
+          <ArrowDownToLine className="h-4 w-4" />
+          Export openen
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ExportDialog({
   currentMonth,
   monthOptions,
@@ -6121,7 +6278,9 @@ function ContributionCard({
   date,
   kind,
   note,
+  paidById,
   person,
+  householdMembers,
   plans,
   planDrafts,
   planMessage,
@@ -6138,6 +6297,7 @@ function ContributionCard({
   onAmountChange,
   onDateChange,
   onKindChange,
+  onPaidByChange,
   onNoteChange,
   onPlanDraftChange,
   onPlanSave,
@@ -6147,7 +6307,9 @@ function ContributionCard({
   date: string;
   kind: ContributionKind;
   note: string;
+  paidById: string;
   person: string;
+  householdMembers: DashboardData["householdMembers"];
   plans: Array<
     ContributionPlan & {
       received: number;
@@ -6169,6 +6331,7 @@ function ContributionCard({
   onAmountChange: (value: string) => void;
   onDateChange: (value: string) => void;
   onKindChange: (value: ContributionKind) => void;
+  onPaidByChange: (value: string) => void;
   onNoteChange: (value: string) => void;
   onPlanDraftChange: (
     planId: string,
@@ -6176,8 +6339,10 @@ function ContributionCard({
     value: string,
   ) => void;
   onPlanSave: (plan: ContributionPlan) => void;
-  onSubmit: () => void;
+  onSubmit: () => boolean | Promise<boolean>;
 }) {
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
+
   return (
     <Card className="finance-card h-full">
       <CardHeader>
@@ -6272,9 +6437,21 @@ function ContributionCard({
           </p>
         )}
 
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-10 justify-center border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10"
+            onClick={() => setIsBookingOpen(true)}
+          >
+            <ArrowDownToLine className="h-4 w-4" />
+            Storting boeken
+          </Button>
+        </div>
+
         <details className="group rounded-[14px] border border-[var(--border)] bg-black/10">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-[var(--text-primary)]">
-            Aanpassen
+            Geplande storting instellen
             <Plus className="h-4 w-4 text-[var(--text-muted)] transition group-open:rotate-45" />
           </summary>
           <div className="grid gap-3 border-t border-[var(--border)] p-3">
@@ -6339,67 +6516,6 @@ function ContributionCard({
                 );
               })}
             </div>
-
-            <div className="grid gap-2 border-t border-[var(--border)] pt-3">
-              <p className="text-xs font-medium uppercase tracking-normal text-[var(--text-muted)]">
-                Storting boeken
-              </p>
-              <div className="grid grid-cols-3 gap-1 rounded-[16px] bg-[var(--bg-surface)] p-1">
-                {(["extra", "planned", "belastingteruggave"] as const).map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => onKindChange(item)}
-                    className={cn(
-                      "rounded-[var(--radius-chip)] px-2 py-2 text-[11px] font-medium sm:text-xs",
-                      kind === item
-                        ? "bg-[var(--accent-light)] text-[var(--accent)]"
-                        : "text-[var(--text-secondary)] hover:bg-white/[0.04]",
-                    )}
-                  >
-                    {contributionKindLabel(item)}
-                  </button>
-                ))}
-              </div>
-              <Input
-                inputMode="decimal"
-                placeholder="Bedrag"
-                value={amount}
-                className="h-10 text-sm font-semibold"
-                onChange={(event) => onAmountChange(event.target.value)}
-              />
-              <Input
-                type="date"
-                value={date}
-                className="h-10"
-                onChange={(event) => onDateChange(event.target.value)}
-              />
-              <Input
-                placeholder={`Notitie, bijv. storting ${person}`}
-                value={note}
-                className="h-10"
-                onChange={(event) => onNoteChange(event.target.value)}
-              />
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <p className="text-xs text-[var(--text-muted)]">
-                  Ingevoerd door {person}
-                </p>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={onSubmit}
-                  disabled={isSaving}
-                  className="border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10"
-                >
-                  {isSaving ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowDownToLine className="h-4 w-4" />
-                  )}
-                  Opslaan
-                </Button>
-              </div>
-            </div>
           </div>
         </details>
 
@@ -6408,8 +6524,214 @@ function ContributionCard({
             {message}
           </p>
         )}
+        <ContributionBookingDialog
+          open={isBookingOpen}
+          amount={amount}
+          date={date}
+          kind={kind}
+          note={note}
+          paidById={paidById}
+          person={person}
+          householdMembers={householdMembers}
+          isSaving={isSaving}
+          message={message}
+          onAmountChange={onAmountChange}
+          onDateChange={onDateChange}
+          onKindChange={onKindChange}
+          onNoteChange={onNoteChange}
+          onPaidByChange={onPaidByChange}
+          onClose={() => setIsBookingOpen(false)}
+          onSubmit={onSubmit}
+        />
       </CardContent>
     </Card>
+  );
+}
+
+function ContributionBookingDialog({
+  open,
+  amount,
+  date,
+  kind,
+  note,
+  paidById,
+  person,
+  householdMembers,
+  isSaving,
+  message,
+  onAmountChange,
+  onDateChange,
+  onKindChange,
+  onNoteChange,
+  onPaidByChange,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  amount: string;
+  date: string;
+  kind: ContributionKind;
+  note: string;
+  paidById: string;
+  person: string;
+  householdMembers: DashboardData["householdMembers"];
+  isSaving: boolean;
+  message: string;
+  onAmountChange: (value: string) => void;
+  onDateChange: (value: string) => void;
+  onKindChange: (value: ContributionKind) => void;
+  onNoteChange: (value: string) => void;
+  onPaidByChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => boolean | Promise<boolean>;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  async function handleSubmit() {
+    const saved = await onSubmit();
+
+    if (saved) {
+      onClose();
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-end bg-black/75 p-0 backdrop-blur-xl sm:place-items-center sm:p-6">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Storting boeken"
+        className="max-h-[92vh] w-full overflow-y-auto rounded-t-[24px] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-2xl sm:max-w-md sm:rounded-[24px] sm:p-5"
+      >
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+              Storting boeken
+            </h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              Losse storting op de gezamenlijke rekening.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-9 w-9 text-[var(--text-muted)]"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="grid gap-4">
+          <div className="grid gap-2">
+            <p className="text-xs font-medium text-zinc-500">Van wie?</p>
+            <div className="grid grid-cols-2 gap-2">
+              {householdMembers.map((member) => {
+                const isActive = paidById === member.userId;
+
+                return (
+                  <button
+                    key={member.userId}
+                    type="button"
+                    onClick={() => onPaidByChange(member.userId)}
+                    className={cn(
+                      "rounded-[var(--radius-btn)] border px-3 py-2 text-sm font-medium transition",
+                      isActive
+                        ? "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]"
+                        : "border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]",
+                    )}
+                  >
+                    {member.displayName}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <FieldLabel label="Bedrag">
+            <Input
+              inputMode="decimal"
+              placeholder="Bedrag"
+              value={amount}
+              className="h-12 text-lg font-semibold"
+              onChange={(event) => onAmountChange(event.target.value)}
+            />
+          </FieldLabel>
+
+          <FieldLabel label="Datum">
+            <Input
+              type="date"
+              value={date}
+              className="h-10"
+              onChange={(event) => onDateChange(event.target.value)}
+            />
+          </FieldLabel>
+
+          <div className="grid gap-2">
+            <p className="text-xs font-medium text-zinc-500">Type</p>
+            <div className="grid grid-cols-3 gap-1 rounded-[16px] bg-[var(--bg-surface)] p-1">
+              {(["extra", "planned", "belastingteruggave"] as const).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => onKindChange(item)}
+                  className={cn(
+                    "rounded-[var(--radius-chip)] px-2 py-2 text-[11px] font-medium sm:text-xs",
+                    kind === item
+                      ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                      : "text-[var(--text-secondary)] hover:bg-white/[0.04]",
+                  )}
+                >
+                  {contributionKindLabel(item)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <FieldLabel label="Notitie">
+            <Input
+              placeholder={`Optioneel, bijv. storting ${person}`}
+              value={note}
+              className="h-10"
+              onChange={(event) => onNoteChange(event.target.value)}
+            />
+          </FieldLabel>
+
+          {message && (
+            <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)]">
+              {message}
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-11"
+              onClick={onClose}
+            >
+              Annuleren
+            </Button>
+            <Button
+              type="button"
+              className="accent-glow-hover h-11"
+              disabled={isSaving}
+              onClick={() => void handleSubmit()}
+            >
+              {isSaving ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowDownToLine className="h-4 w-4" />
+              )}
+              Opslaan
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -7658,28 +7980,68 @@ function buildContributionBreakdown({
   const memberNames = new Map(
     householdMembers.map((member) => [member.userId, member.displayName]),
   );
-  const personOrder = new Map(
-    plans.map((plan, index) => [plan.person, index]),
+  const canonicalPersonNames = new Map(
+    householdMembers.map((member) => [
+      normalizePersonName(member.displayName),
+      member.displayName,
+    ]),
   );
+  const personOrder = new Map<string, number>();
+
+  householdMembers.forEach((member, index) => {
+    personOrder.set(member.displayName, index);
+  });
+  plans.forEach((plan, index) => {
+    if (!personOrder.has(plan.person)) {
+      personOrder.set(plan.person, householdMembers.length + index);
+    }
+  });
   const ensurePerson = (person: string) => {
-    const current = rowsByPerson.get(person);
+    const canonicalPerson =
+      canonicalPersonNames.get(normalizePersonName(person)) ?? person;
+    const current = rowsByPerson.get(canonicalPerson);
 
     if (current) {
       return current;
     }
 
     const row = {
-      person,
+      person: canonicalPerson,
       planned: [],
       extra: [],
       taxReturn: [],
       unknown: [],
     } satisfies ContributionPersonBreakdown;
 
-    rowsByPerson.set(person, row);
+    rowsByPerson.set(canonicalPerson, row);
     return row;
   };
+  const resolveContributionPerson = (transaction: Transaction) => {
+    const candidates = [
+      transaction.paidById ? memberNames.get(transaction.paidById) : undefined,
+      transaction.paidBy,
+      transaction.enteredById
+        ? memberNames.get(transaction.enteredById)
+        : undefined,
+      transaction.enteredBy,
+    ];
 
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+
+      const canonicalPerson = canonicalPersonNames.get(
+        normalizePersonName(candidate),
+      );
+
+      if (canonicalPerson) {
+        return canonicalPerson;
+      }
+    }
+
+    return candidates.find(Boolean) ?? "Onbekend";
+  };
+
+  householdMembers.forEach((member) => ensurePerson(member.displayName));
   plans.forEach((plan) => ensurePerson(plan.person));
 
   transactions
@@ -7691,10 +8053,7 @@ function buildContributionBreakdown({
         (transaction.accountId ?? sharedAccountId) === sharedAccountId,
     )
     .forEach((transaction) => {
-      const person =
-        (transaction.paidById && memberNames.get(transaction.paidById)) ||
-        transaction.paidBy ||
-        transaction.enteredBy;
+      const person = resolveContributionPerson(transaction);
       const row = ensurePerson(person);
       const target =
         transaction.contributionKind === "planned"
@@ -7733,7 +8092,11 @@ function buildContributionBreakdown({
         (personOrder.get(first.person) ?? Number.MAX_SAFE_INTEGER) -
           (personOrder.get(second.person) ?? Number.MAX_SAFE_INTEGER) ||
         first.person.localeCompare(second.person, "nl"),
-    );
+	    );
+}
+
+function normalizePersonName(value: string) {
+  return value.trim().toLocaleLowerCase("nl-NL");
 }
 
 function variableTotalForMonth(

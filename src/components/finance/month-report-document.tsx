@@ -222,6 +222,11 @@ export function MonthReportDocument({
 
           {transactionGroups.length > 0 && (
             <View style={styles.subtotalList}>
+              <View style={styles.subtotalHeader}>
+                <Text style={styles.subtotalHeaderText}>
+                  Subtotalen per type/categorie
+                </Text>
+              </View>
               {transactionGroups.map((group) => (
                 <View key={group.name} style={styles.subtotalRow}>
                   <Text style={styles.subtotalRowLabel}>{group.name}</Text>
@@ -918,6 +923,16 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     marginBottom: 8,
     overflow: "hidden",
+  },
+  subtotalHeader: {
+    backgroundColor: "#F4F4F5",
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+  },
+  subtotalHeaderText: {
+    fontSize: 8,
+    fontWeight: 700,
+    color: DARK,
   },
   subtotalRow: {
     display: "flex",
