@@ -441,12 +441,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [fixedInstances, selectedRecurringExpenseIds],
   );
-  const incomeTransactions = monthTransactions.filter(
-    (transaction) => transaction.type === "income",
-  );
-  const incomeTotal = incomeTransactions.reduce(
-    (total, transaction) => total + transaction.amount,
-    0,
+  const openFixedTotalForCurrentMonth = useMemo(
+    () =>
+      selectedFixedInstances
+        .filter((instance) => instance.month === currentMonth)
+        .filter((instance) => instance.status === "pending")
+        .reduce((total, instance) => total + instance.amount, 0),
+    [currentMonth, selectedFixedInstances],
   );
   const sharedContributionPlans = useMemo(
     () =>
@@ -497,10 +498,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     0,
   );
   const projectedNetTotal = plannedContributionTotal - monthTotals.expenseTotal;
-  const expectedIncomeTotal = isSharedView
-    ? plannedContributionTotal + monthTotals.contributionTotal
-    : incomeTotal;
-  const expectedMonthDelta = expectedIncomeTotal - monthTotals.expenseTotal;
   const calculatedBalance = latestBalanceSnapshot
     ? latestBalanceSnapshot.balance +
       selectedTransactions
@@ -508,8 +505,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
         .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0)
     : null;
+  const remainingExpectedIncomeTotal = isSharedView ? remainingContributionTotal : 0;
   const expectedMonthEndBalance =
-    calculatedBalance === null ? null : calculatedBalance + expectedMonthDelta;
+    calculatedBalance === null
+      ? null
+      : calculatedBalance + remainingExpectedIncomeTotal - openFixedTotalForCurrentMonth;
   const fixedAgendaItems = useMemo(
     () =>
       buildFixedAgendaItems(
