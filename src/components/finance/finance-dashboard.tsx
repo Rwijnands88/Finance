@@ -27,6 +27,8 @@ import {
   Bar,
   BarChart,
   Cell,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -97,6 +99,12 @@ type MonthDataResponse = {
   fixedInstances?: FixedExpenseInstance[];
   error?: string;
 };
+type CashflowPoint = {
+  day: number;
+  balance: number;
+};
+
+const cashflowBufferStorageKey = "finance-cashflow-buffer";
 
 function sectionNavItems() {
   return [
@@ -282,6 +290,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(
     null,
   );
+  const [skippingFixedInstanceId, setSkippingFixedInstanceId] = useState<
+    string | null
+  >(null);
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
   const [editAmount, setEditAmount] = useState("");
@@ -312,6 +323,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       initialData.categories[0]?.id ??
       "",
   );
+  const [cashflowBuffer, setCashflowBuffer] = useState(() => {
+    if (typeof window === "undefined") return 500;
+
+    const savedValue = window.localStorage.getItem(cashflowBufferStorageKey);
+    const parsedValue = savedValue ? Number(savedValue) : 500;
+
+    return Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : 500;
+  });
   const [chartsReady, setChartsReady] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(false);
 
@@ -327,6 +346,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     window.addEventListener("resize", syncViewport);
     return () => window.removeEventListener("resize", syncViewport);
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(cashflowBufferStorageKey, String(cashflowBuffer));
+  }, [cashflowBuffer]);
 
   const labels = useMemo(
     () => categoryById(categories),
@@ -439,6 +462,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     () => categoryUsageByCurrentUser(transactions, initialData.currentUserId),
     [initialData.currentUserId, transactions],
   );
+  const variableCategories = useMemo(
+    () => variableCategoryOptions(categories, categoryUsageCounts),
+    [categories, categoryUsageCounts],
+  );
+  const activeQuickCategory = variableCategories.some(
+    (category) => category.id === quickCategory,
+  )
+    ? quickCategory
+    : variableCategories[0]?.id ?? "";
   const selectedSixMonthTrend = useMemo(
     () => sixMonthTrend(selectedTransactions, currentMonth),
     [currentMonth, selectedTransactions],
@@ -564,6 +596,73 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
   );
+  const cashflowTimeline = useMemo(
+    () =>
+      buildCashflowTimeline({
+        startBalance: calculatedBalance ?? latestBalanceSnapshot?.balance ?? 0,
+        month: currentMonth,
+        fixedItems: fixedAgendaItems,
+        contributionPlans: contributionPlanRows,
+        transactions: selectedTransactions,
+      }),
+    [
+      calculatedBalance,
+      contributionPlanRows,
+      currentMonth,
+      fixedAgendaItems,
+      latestBalanceSnapshot?.balance,
+      selectedTransactions,
+    ],
+  );
+
+  async function skipFixedExpense(item: FixedAgendaItem) {
+    if (!item.canSkip || skippingFixedInstanceId) return;
+
+    const confirmed = window.confirm(
+      `${item.name} overslaan voor ${monthLabel(currentMonth)}?`,
+    );
+
+    if (!confirmed) return;
+
+    setSkippingFixedInstanceId(item.id);
+    setFixedMessage("");
+
+    const response = await fetch("/api/fixed-expenses/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        instanceId: item.id,
+        action: "skip",
+      }),
+    });
+    const result = await response.json();
+
+    setSkippingFixedInstanceId(null);
+
+    if (!response.ok) {
+      setFixedMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Vaste last overslaan lukte niet.",
+      );
+      return;
+    }
+
+    if (result.fixedInstance) {
+      const fixedInstance = result.fixedInstance as FixedExpenseInstance;
+      setFixedInstances((items) =>
+        mergeById(items, [fixedInstance]).sort((first, second) =>
+          first.name.localeCompare(second.name, "nl"),
+        ),
+      );
+      setHighlightedFixedInstanceId(fixedInstance.id);
+    }
+
+    setFixedMessage(`${item.name} is overgeslagen.`);
+  }
+
   const dashboardPrimaryValue =
     calculatedBalance === null
       ? currency(monthTotals.netTotal)
@@ -707,7 +806,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       return;
     }
 
-    if (!quickCategory) {
+    if (!activeQuickCategory) {
       setScanMessage("Kies een categorie.");
       return;
     }
@@ -725,7 +824,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       body: JSON.stringify({
         householdId: initialData.householdId,
         accountId: selectedAccount.id,
-        categoryId: quickCategory,
+        categoryId: activeQuickCategory,
         amount,
         date: quickDate,
         note: quickNote || null,
@@ -749,7 +848,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       accountId: result.transaction.accountId ?? selectedAccount.id,
       accountName: selectedAccount.name,
       accountKind: selectedAccount.kind,
-      categoryId: quickCategory,
+      categoryId: activeQuickCategory,
       amount,
       date: quickDate,
       note: quickNote || undefined,
@@ -1374,11 +1473,22 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }
 
   function startEditingTransaction(transaction: Transaction) {
+    const categoryOptions = transactionCategoryOptions(
+      transaction,
+      categories,
+      variableCategories,
+    );
+    const safeCategoryId = categoryOptions.some(
+      (category) => category.id === transaction.categoryId,
+    )
+      ? transaction.categoryId
+      : categoryOptions[0]?.id ?? transaction.categoryId;
+
     setEditingTransaction(transaction);
     setEditAmount(transaction.amount.toFixed(2));
     setEditDate(transaction.date);
     setEditNote(transaction.note ?? "");
-    setEditCategory(transaction.categoryId);
+    setEditCategory(safeCategoryId);
     setEditPaidById(
       transaction.paidById ??
         transaction.enteredById ??
@@ -2156,6 +2266,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             metrics={dashboardMetrics.slice(0, 3)}
             mobile
           />
+          {isSharedView && (
+            <CashflowTimelineCard
+              points={cashflowTimeline}
+              buffer={cashflowBuffer}
+              onBufferChange={setCashflowBuffer}
+              compact
+            />
+          )}
         </section>
 
         <section
@@ -2170,6 +2288,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             currentMonth={currentMonth}
             message={fixedMessage}
             highlightedId={highlightedFixedInstanceId}
+            skippingId={skippingFixedInstanceId}
+            onSkip={skipFixedExpense}
           />
           <FixedExpenseManager
             expenses={selectedRecurringExpenses}
@@ -2210,7 +2330,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             account={quickAccount}
             date={quickDate}
             note={quickNote}
-            category={quickCategory}
+            category={activeQuickCategory}
             paidById={quickPaidById}
             householdMembers={initialData.householdMembers}
             onAmountChange={setQuickAmount}
@@ -2224,7 +2344,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             receiptDraft={receiptDraft}
             onScanReceipt={scanReceipt}
             onDismissReceiptDraft={dismissReceiptDraft}
-            categories={categories}
+            variableCategories={variableCategories}
             accounts={initialData.accounts}
             categoryUsageCounts={categoryUsageCounts}
             customCategoryName={customCategoryName}
@@ -2362,6 +2482,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 />
               </section>
 
+              {isSharedView && (
+                <CashflowTimelineCard
+                  points={cashflowTimeline}
+                  buffer={cashflowBuffer}
+                  onBufferChange={setCashflowBuffer}
+                />
+              )}
+
               <MonthInsightsSection
                 currentMonth={currentMonth}
                 monthTitle={viewCopy.monthTitle}
@@ -2399,6 +2527,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   currentMonth={currentMonth}
                   message={fixedMessage}
                   highlightedId={highlightedFixedInstanceId}
+                  skippingId={skippingFixedInstanceId}
+                  onSkip={skipFixedExpense}
                 />
                 <FixedExpenseManager
                   expenses={selectedRecurringExpenses}
@@ -2464,7 +2594,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 account={quickAccount}
                 date={quickDate}
                 note={quickNote}
-                category={quickCategory}
+                category={activeQuickCategory}
                 paidById={quickPaidById}
                 householdMembers={initialData.householdMembers}
                 onAmountChange={setQuickAmount}
@@ -2478,7 +2608,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 receiptDraft={receiptDraft}
                 onScanReceipt={scanReceipt}
                 onDismissReceiptDraft={dismissReceiptDraft}
-                categories={categories}
+                variableCategories={variableCategories}
                 accounts={initialData.accounts}
                 categoryUsageCounts={categoryUsageCounts}
                 customCategoryName={customCategoryName}
@@ -2529,8 +2659,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         <TransactionEditDialog
           transaction={editingTransaction}
           categories={categories}
+          variableCategories={variableCategories}
           labels={labels}
-          categoryUsageCounts={categoryUsageCounts}
           householdMembers={initialData.householdMembers}
           amount={editAmount}
           date={editDate}
@@ -2573,6 +2703,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
 type FixedAgendaState =
   | "processed"
+  | "autoProcessed"
   | "changed"
   | "skipped"
   | "overdue"
@@ -2589,6 +2720,7 @@ type FixedAgendaItem = {
   date: string;
   day: number;
   state: FixedAgendaState;
+  canSkip: boolean;
   note?: string;
 };
 
@@ -2734,6 +2866,75 @@ function DashboardHero({
         </div>
       </div>
     </section>
+  );
+}
+
+function CashflowTimelineCard({
+  points,
+  buffer,
+  onBufferChange,
+  compact = false,
+}: {
+  points: CashflowPoint[];
+  buffer: number;
+  onBufferChange: (value: number) => void;
+  compact?: boolean;
+}) {
+  const insight = cashflowInsight(points, buffer);
+  const strokeColor =
+    insight.status === "negative"
+      ? "var(--negative)"
+      : insight.status === "below-buffer"
+        ? "#F59E0B"
+        : "var(--positive)";
+
+  return (
+    <Card className="finance-card">
+      <CardHeader className={cn("pb-3", compact && "text-left")}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>Cashflow</CardTitle>
+            <CardDescription>Lopend saldo deze maand</CardDescription>
+          </div>
+          <div className="w-24">
+            <label className="grid gap-1 text-[11px] font-medium uppercase text-[var(--text-muted)]">
+              Buffer
+              <Input
+                inputMode="decimal"
+                value={String(buffer)}
+                className="h-8 rounded-[10px] px-2 text-right text-xs"
+                onChange={(event) => {
+                  const value = Number(event.target.value.replace(",", "."));
+                  onBufferChange(Number.isFinite(value) && value >= 0 ? value : 0);
+                }}
+              />
+            </label>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="h-32">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={points} margin={{ top: 8, right: 4, bottom: 2, left: 4 }}>
+              <XAxis dataKey="day" hide />
+              <YAxis hide domain={["dataMin", "dataMax"]} />
+              <Line
+                type="monotone"
+                dataKey="balance"
+                stroke={strokeColor}
+                strokeWidth={3}
+                dot={false}
+                activeDot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-5 text-[var(--text-secondary)]">
+          {insight.text}
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -3249,8 +3450,8 @@ function MonthTransactionsCard({
 function TransactionEditDialog({
   transaction,
   categories,
+  variableCategories,
   labels,
-  categoryUsageCounts,
   householdMembers,
   amount,
   date,
@@ -3269,8 +3470,8 @@ function TransactionEditDialog({
 }: {
   transaction: Transaction;
   categories: DashboardData["categories"];
+  variableCategories: DashboardData["categories"];
   labels: Map<string, DashboardData["categories"][number]>;
-  categoryUsageCounts: Map<string, number>;
   householdMembers: DashboardData["householdMembers"];
   amount: string;
   date: string;
@@ -3290,8 +3491,16 @@ function TransactionEditDialog({
   const categoryOptions = transactionCategoryOptions(
     transaction,
     categories,
-    categoryUsageCounts,
+    variableCategories,
   );
+  const selectedCategory = categoryOptions.some((item) => item.id === category)
+    ? category
+    : categoryOptions[0]?.id ?? "";
+  useEffect(() => {
+    if (selectedCategory && selectedCategory !== category) {
+      onCategoryChange(selectedCategory);
+    }
+  }, [category, onCategoryChange, selectedCategory]);
   const title =
     transaction.type === "fixed"
       ? labels.get(transaction.categoryId)?.name ?? "Vaste last"
@@ -3335,7 +3544,7 @@ function TransactionEditDialog({
         <div className="grid gap-3 px-5 py-4">
           <FieldLabel label="Categorie">
             <Select
-              value={category}
+              value={selectedCategory}
               className="h-11"
               onChange={(event) => onCategoryChange(event.target.value)}
             >
@@ -3858,35 +4067,35 @@ function FixedExpenseAgenda({
   currentMonth,
   message,
   highlightedId,
+  skippingId,
+  onSkip,
   compact = false,
 }: {
   items: FixedAgendaItem[];
   currentMonth: string;
   message?: string;
   highlightedId?: string | null;
+  skippingId?: string | null;
+  onSkip?: (item: FixedAgendaItem) => void;
   compact?: boolean;
 }) {
   const monthlyTotal = items.reduce((total, item) => total + item.amount, 0);
   const openTotal = items
     .filter(
       (item) =>
-        item.state === "overdue" ||
         item.state === "today" ||
         item.state === "upcoming",
     )
     .reduce((total, item) => total + item.amount, 0);
   const processedTotal = items
-    .filter((item) => item.state === "processed" || item.state === "changed")
+    .filter((item) => isProcessedAgendaState(item.state))
     .reduce((total, item) => total + item.amount, 0);
   const upcomingItems = items.filter(
     (item) =>
-      item.state === "overdue" ||
       item.state === "today" ||
       item.state === "upcoming",
   );
-  const pastItems = items.filter(
-    (item) => item.state === "processed" || item.state === "changed",
-  );
+  const pastItems = items.filter((item) => isProcessedAgendaState(item.state));
   const skippedItems = items.filter((item) => item.state === "skipped");
   const timelineItems = compact
     ? upcomingItems.slice(0, 4)
@@ -3920,8 +4129,8 @@ function FixedExpenseAgenda({
 
         <div className={cn("grid grid-cols-3 gap-2", compact && "grid-cols-1")}>
           <AgendaTotal label="Deze maand" value={monthlyTotal} tone="indigo" />
-          <AgendaTotal label="Komt eraan" value={openTotal} tone="zinc" />
-          <AgendaTotal label="Afgelopen" value={processedTotal} tone="emerald" />
+          <AgendaTotal label="Verwerkt" value={processedTotal} tone="emerald" />
+          <AgendaTotal label="Nog open" value={openTotal} tone="zinc" />
         </div>
 
         <div
@@ -3957,7 +4166,12 @@ function FixedExpenseAgenda({
                 automatisch op afschrijfdag.
               </div>
             ) : (
-              <AgendaSection items={timelineItems} highlightedId={highlightedId} />
+              <AgendaSection
+                items={timelineItems}
+                highlightedId={highlightedId}
+                skippingId={skippingId}
+                onSkip={onSkip}
+              />
             )}
             {compact && items.length > timelineItems.length && (
               <p className="mt-3 text-xs text-[var(--text-muted)]">
@@ -4032,8 +4246,8 @@ function FixedExpenseCalendar({
         {cells.map((cell) => {
           const hasItems = cell.items.length > 0;
           const isHighlighted = cell.items.some((item) => item.id === highlightedId);
-          const hasProcessed = cell.items.some(
-            (item) => item.state === "processed" || item.state === "changed",
+          const hasProcessed = cell.items.some((item) =>
+            isProcessedAgendaState(item.state),
           );
 
           return (
@@ -4109,9 +4323,13 @@ function AgendaTotal({
 function AgendaSection({
   items,
   highlightedId,
+  skippingId,
+  onSkip,
 }: {
   items: FixedAgendaItem[];
   highlightedId?: string | null;
+  skippingId?: string | null;
+  onSkip?: (item: FixedAgendaItem) => void;
 }) {
   return (
     <div className="relative space-y-0">
@@ -4120,6 +4338,8 @@ function AgendaSection({
           key={item.id}
           item={item}
           isHighlighted={highlightedId === item.id}
+          isSkipping={skippingId === item.id}
+          onSkip={onSkip}
         />
       ))}
     </div>
@@ -4129,11 +4349,15 @@ function AgendaSection({
 function AgendaRow({
   item,
   isHighlighted,
+  isSkipping,
+  onSkip,
 }: {
   item: FixedAgendaItem;
   isHighlighted: boolean;
+  isSkipping: boolean;
+  onSkip?: (item: FixedAgendaItem) => void;
 }) {
-  const isProcessed = item.state === "processed" || item.state === "changed";
+  const isProcessed = isProcessedAgendaState(item.state);
   const isSkipped = item.state === "skipped";
 
   return (
@@ -4189,14 +4413,32 @@ function AgendaRow({
               {item.note ? ` · ${item.note}` : ""}
             </p>
           </div>
-          <p
-            className={cn(
-              "text-sm font-semibold text-[var(--text-primary)]",
-              isSkipped && "text-[var(--text-muted)] line-through",
+          <div className="flex flex-col items-end gap-2">
+            <p
+              className={cn(
+                "text-sm font-semibold text-[var(--text-primary)]",
+                isSkipped && "text-[var(--text-muted)] line-through",
+              )}
+            >
+              {currency(item.amount)}
+            </p>
+            {item.canSkip && onSkip && !isSkipped && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onSkip(item)}
+                disabled={isSkipping}
+                className="h-7 px-2 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                {isSkipping ? (
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  "Overslaan"
+                )}
+              </Button>
             )}
-          >
-            {currency(item.amount)}
-          </p>
+          </div>
         </div>
       </div>
     </div>
@@ -5454,7 +5696,7 @@ function QuickEntryCard({
   note,
   category,
   paidById,
-  categories,
+  variableCategories,
   accounts,
   householdMembers,
   categoryUsageCounts,
@@ -5486,7 +5728,7 @@ function QuickEntryCard({
   note: string;
   category: string;
   paidById: string;
-  categories: DashboardData["categories"];
+  variableCategories: DashboardData["categories"];
   accounts: DashboardData["accounts"];
   householdMembers: DashboardData["householdMembers"];
   categoryUsageCounts: Map<string, number>;
@@ -5513,10 +5755,6 @@ function QuickEntryCard({
 }) {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
-  const variableCategories = variableCategoryOptions(
-    categories,
-    categoryUsageCounts,
-  );
   const customVariableCategories = variableCategories.filter(
     (item) => (item.sortOrder ?? 0) >= 200,
   );
@@ -6096,6 +6334,95 @@ function signedTransactionAmount(transaction: Transaction) {
   return -transaction.amount;
 }
 
+function buildCashflowTimeline({
+  startBalance,
+  month,
+  fixedItems,
+  contributionPlans,
+  transactions,
+}: {
+  startBalance: number;
+  month: string;
+  fixedItems: FixedAgendaItem[];
+  contributionPlans: ContributionPlan[];
+  transactions: Transaction[];
+}) {
+  const [, monthNumber] = month.split("-").map(Number);
+  const daysInMonth = new Date(Number(month.slice(0, 4)), monthNumber, 0).getDate();
+  const dailyChanges = Array.from({ length: daysInMonth }, () => 0);
+  const addDailyChange = (day: number, amount: number) => {
+    const safeDay = Math.min(Math.max(day, 1), daysInMonth);
+    dailyChanges[safeDay - 1] += amount;
+  };
+
+  fixedItems
+    .filter((item) => item.state !== "skipped")
+    .forEach((item) => addDailyChange(item.day, -item.amount));
+
+  contributionPlans.forEach((plan) =>
+    addDailyChange(plan.depositDay, plan.monthlyAmount),
+  );
+
+  transactions
+    .filter((transaction) => transaction.date.startsWith(month))
+    .filter(
+      (transaction) =>
+        transaction.type === "variable" ||
+        (transaction.type === "contribution" &&
+          (transaction.contributionKind ?? "extra") === "extra"),
+    )
+    .forEach((transaction) =>
+      addDailyChange(Number(transaction.date.slice(8, 10)), signedTransactionAmount(transaction)),
+    );
+
+  let runningBalance = startBalance;
+
+  return dailyChanges.map((amount, index) => {
+    runningBalance += amount;
+
+    return {
+      day: index + 1,
+      balance: runningBalance,
+    } satisfies CashflowPoint;
+  });
+}
+
+function cashflowInsight(points: CashflowPoint[], buffer: number) {
+  const lowestPoint = points.reduce(
+    (lowest, point) => (point.balance < lowest.balance ? point : lowest),
+    points[0] ?? { day: 1, balance: 0 },
+  );
+  const firstNegative = points.find((point) => point.balance < 0);
+
+  if (firstNegative) {
+    return {
+      status: "negative" as const,
+      text: `Opgelet: saldo wordt negatief rond dag ${firstNegative.day}. Laagste punt: ${currency(lowestPoint.balance)}.`,
+    };
+  }
+
+  const belowBufferPoints = points.filter((point) => point.balance < buffer);
+
+  if (!belowBufferPoints.length) {
+    return {
+      status: "healthy" as const,
+      text: `Geen stress deze maand. Laagste punt: ${currency(lowestPoint.balance)} op dag ${lowestPoint.day}.`,
+    };
+  }
+
+  const firstBelowIndex = points.findIndex((point) => point.balance < buffer);
+  const recoveryPoint = points
+    .slice(Math.max(firstBelowIndex + 1, 0))
+    .find((point) => point.balance >= buffer);
+
+  return {
+    status: "below-buffer" as const,
+    text: `Jullie komen ${belowBufferPoints.length} dagen onder de buffer — trekt bij rond dag ${
+      recoveryPoint?.day ?? points.at(-1)?.day ?? lowestPoint.day
+    }.`,
+  };
+}
+
 function buildFixedAgendaItems(
   recurringExpenses: RecurringExpense[],
   fixedInstances: FixedExpenseInstance[],
@@ -6127,6 +6454,7 @@ function buildFixedAgendaItems(
         date,
         day: Number(date.slice(8, 10)),
         state,
+        canSkip: instance?.status === "pending",
         note: instance?.note,
       } satisfies FixedAgendaItem;
     })
@@ -6145,7 +6473,7 @@ function agendaState(
   if (status === "confirmed") return "processed";
   if (status === "adjusted") return "changed";
   if (status === "skipped") return "skipped";
-  if (date < today) return "overdue";
+  if (date < today) return "autoProcessed";
   if (date === today) return "today";
   return "upcoming";
 }
@@ -6153,6 +6481,7 @@ function agendaState(
 function agendaStateLabel(state: FixedAgendaState) {
   const labels: Record<FixedAgendaState, string> = {
         processed: "afgelopen",
+        autoProcessed: "afgeschreven",
         changed: "aangepast",
         skipped: "overgeslagen",
         overdue: "had al moeten komen",
@@ -6161,6 +6490,10 @@ function agendaStateLabel(state: FixedAgendaState) {
   };
 
   return labels[state];
+}
+
+function isProcessedAgendaState(state: FixedAgendaState) {
+  return state === "processed" || state === "autoProcessed" || state === "changed";
 }
 
 function dateForBillingDay(month: string, billingDay: number) {
@@ -6323,7 +6656,7 @@ function variableCategoryOptions(
 function transactionCategoryOptions(
   transaction: Transaction,
   categories: DashboardData["categories"],
-  categoryUsageCounts: Map<string, number>,
+  variableCategories: DashboardData["categories"],
 ) {
   const options = categories.filter((category) => {
     if (transaction.type === "fixed") {
@@ -6347,7 +6680,7 @@ function transactionCategoryOptions(
 
   const categoryOptions =
     transaction.type === "variable"
-      ? variableCategoryOptions(categories, categoryUsageCounts)
+      ? variableCategories
       : options;
 
   if (categoryOptions.some((category) => category.id === transaction.categoryId)) {
