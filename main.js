@@ -68,6 +68,8 @@ function startNextServer() {
   nextProcess = spawn(command, args, {
     cwd,
     detached: true,
+    shell: true,
+    windowsHide: true,
     env: {
       ...process.env,
       PORT: port,
@@ -75,7 +77,7 @@ function startNextServer() {
       NODE_ENV: isPackaged ? "production" : "development",
       ...(isPackaged ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
     },
-    stdio: "inherit",
+    stdio: "ignore",
   });
 
   nextProcess.on("exit", () => {

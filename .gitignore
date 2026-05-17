@@ -19,6 +19,8 @@
 
 # production
 /build
+!/build/
+!/build/icon.png
 /dist/
 
 # misc

@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   ArrowDownToLine,
@@ -107,6 +107,15 @@ type CashflowEvent = {
   date: string;
   day: number;
   amount: number;
+};
+type ContributionCoverageResult = {
+  amount: number;
+  expectedVariableTotal: number;
+  currentVariableTotal: number;
+  historyMonths: number;
+  dataDays: number;
+  tone: "emerald" | "red" | "zinc";
+  text: string;
 };
 
 const cashflowBufferStorageKeyPrefix = "finance-cashflow-buffer";
@@ -601,9 +610,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     (total, plan) => total + plan.remaining,
     0,
   );
-  const expectedContributionTotal =
-    monthTotals.contributionTotal + remainingContributionTotal;
-  const projectedNetTotal = expectedContributionTotal - monthTotals.expenseTotal;
   const calculatedBalance = latestBalanceSnapshot
     ? latestBalanceSnapshot.balance +
       selectedTransactions
@@ -625,6 +631,47 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         labels,
       ),
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
+  );
+  const fixedTotalForCurrentMonth = fixedAgendaItems.reduce(
+    (total, item) => (item.state === "skipped" ? total : total + item.amount),
+    0,
+  );
+  const contributionCoverage = useMemo(
+    () =>
+      buildContributionCoverage({
+        transactions: selectedTransactions,
+        month: currentMonth,
+        plannedContributionTotal,
+        fixedTotal: fixedTotalForCurrentMonth,
+        buffer: cashflowBuffer,
+      }),
+    [
+      cashflowBuffer,
+      currentMonth,
+      fixedTotalForCurrentMonth,
+      plannedContributionTotal,
+      selectedTransactions,
+    ],
+  );
+  const ownMonthlyContributionTotal = contributionPlanRows
+    .filter((plan) => plan.userId === initialData.currentUserId)
+    .reduce((total, plan) => total + plan.monthlyAmount, 0);
+  const personalContributionCoverage = useMemo(
+    () =>
+      buildPersonalContributionCoverage({
+        transactions: selectedTransactions,
+        month: currentMonth,
+        incomeTotal: monthTotals.incomeTotal,
+        ownMonthlyContributionTotal,
+        buffer: cashflowBuffer,
+      }),
+    [
+      cashflowBuffer,
+      currentMonth,
+      monthTotals.incomeTotal,
+      ownMonthlyContributionTotal,
+      selectedTransactions,
+    ],
   );
   const cashflowEvents = useMemo(() => {
     if (isSharedView) {
@@ -2462,6 +2509,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             incomeMessage={incomeMessage}
             isSavingIncome={isSavingIncome}
             showIncomeForm={!isSharedView}
+            coverage={!isSharedView ? personalContributionCoverage : undefined}
             onBalanceAmountChange={setBalanceAmount}
             onBalanceDateChange={setBalanceDate}
             onSaveBalance={saveBalanceSnapshot}
@@ -2487,7 +2535,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               receivedTotal={monthTotals.contributionTotal}
               extraTotal={extraContributionTotal}
               remainingTotal={remainingContributionTotal}
-              projectedNetTotal={projectedNetTotal}
+              coverage={contributionCoverage}
               message={contributionMessage}
               isSaving={isSavingContribution}
               onAmountChange={setContributionAmount}
@@ -2665,6 +2713,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               incomeMessage={incomeMessage}
               isSavingIncome={isSavingIncome}
               showIncomeForm={!isSharedView}
+              coverage={!isSharedView ? personalContributionCoverage : undefined}
               onBalanceAmountChange={setBalanceAmount}
               onBalanceDateChange={setBalanceDate}
               onSaveBalance={saveBalanceSnapshot}
@@ -2727,7 +2776,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 receivedTotal={monthTotals.contributionTotal}
                 extraTotal={extraContributionTotal}
                 remainingTotal={remainingContributionTotal}
-                projectedNetTotal={projectedNetTotal}
+                coverage={contributionCoverage}
                 message={contributionMessage}
                 isSaving={isSavingContribution}
                 onAmountChange={setContributionAmount}
@@ -2970,10 +3019,8 @@ function CashflowTimelineCard({
   onBufferChange: (value: number) => void;
   compact?: boolean;
 }) {
-  const generatedGradientId = useId();
   const insight = cashflowInsight(points, buffer);
-  const gradientId = `cashflow-gradient-${generatedGradientId.replace(/:/g, "")}`;
-  const gradientStops = cashflowGradientStops(points, buffer);
+  const lineSegments = cashflowLineSegments(points, buffer);
 
   return (
     <Card className="finance-card">
@@ -3003,28 +3050,21 @@ function CashflowTimelineCard({
         <div className="h-32">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={points} margin={{ top: 8, right: 4, bottom: 2, left: 4 }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-                  {gradientStops.map((stop, index) => (
-                    <stop
-                      key={`${stop.offset}-${stop.color}-${index}`}
-                      offset={`${stop.offset}%`}
-                      stopColor={stop.color}
-                    />
-                  ))}
-                </linearGradient>
-              </defs>
               <XAxis dataKey="day" hide />
               <YAxis hide domain={["dataMin", "dataMax"]} />
-              <Line
-                type="monotone"
-                dataKey="balance"
-                stroke={`url(#${gradientId})`}
-                strokeWidth={3}
-                dot={false}
-                activeDot={false}
-                isAnimationActive={false}
-              />
+              {lineSegments.map((segment) => (
+                <Line
+                  key={segment.id}
+                  data={segment.points}
+                  type="linear"
+                  dataKey="balance"
+                  stroke={segment.color}
+                  strokeWidth={3}
+                  dot={false}
+                  activeDot={false}
+                  isAnimationActive={false}
+                />
+              ))}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -4003,7 +4043,6 @@ function MonthInsightsSection({
           onDownloadReceipts={onDownloadReceipts}
           onOpenReceipt={onOpenReceipt}
           compact
-          className="xl:sticky xl:top-4"
         />
         <ChartsPanel
           categoryRows={categoryRows}
@@ -4033,13 +4072,14 @@ function ChartsPanel({
   const hasCategoryData = totalCategories > 0;
   const topCategory = categoryRows[0];
   const visibleCategoryRows = featured ? categoryRows.slice(0, 5) : categoryRows;
-  const latestTrend = selectedSixMonthTrend.at(-1);
+  const visibleTrendRows = selectedSixMonthTrend.filter(
+    (row) => Number(row.fixed) + Number(row.variable) > 0,
+  );
+  const latestTrend = visibleTrendRows.at(-1);
   const latestTrendTotal = latestTrend
     ? Number(latestTrend.fixed) + Number(latestTrend.variable)
     : 0;
-  const hasTrendData = selectedSixMonthTrend.some(
-    (row) => Number(row.fixed) + Number(row.variable) > 0,
-  );
+  const hasTrendData = visibleTrendRows.length > 0;
 
   return (
     <section
@@ -4199,7 +4239,7 @@ function ChartsPanel({
           {chartsReady && hasTrendData ? (
             <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
               <BarChart
-                data={selectedSixMonthTrend}
+                data={visibleTrendRows}
                 barGap={8}
                 margin={{ top: 16, right: 8, bottom: 4, left: -18 }}
               >
@@ -4216,7 +4256,14 @@ function ChartsPanel({
                   tickFormatter={(value) => `${Number(value) / 1000}k`}
                 />
                 <Tooltip
-                  formatter={(value) => currency(Number(value))}
+                  formatter={(value, name) => [
+                    currency(Number(value)),
+                    name === "fixed"
+                      ? "Vaste lasten"
+                      : name === "variable"
+                        ? "Variabel"
+                        : String(name),
+                  ]}
                   contentStyle={tooltipStyle}
                   cursor={{ fill: "rgba(99, 102, 241, 0.08)" }}
                 />
@@ -4226,7 +4273,7 @@ function ChartsPanel({
             </ResponsiveContainer>
           ) : (
             <div className="flex h-full flex-col justify-center gap-3">
-              {selectedSixMonthTrend.map((row, index) => (
+              {visibleTrendRows.map((row, index) => (
                 <div key={`${row.month}-${index}`} className="grid grid-cols-[2.5rem_1fr] items-center gap-3">
                   <span className="text-xs text-[var(--text-muted)]">{row.month}</span>
                   <div className="h-2 rounded-full bg-[var(--bg-surface)]">
@@ -5118,6 +5165,7 @@ function AccountBalanceCard({
   incomeMessage,
   isSavingIncome,
   showIncomeForm,
+  coverage,
   onBalanceAmountChange,
   onBalanceDateChange,
   onSaveBalance,
@@ -5141,6 +5189,7 @@ function AccountBalanceCard({
   incomeMessage: string;
   isSavingIncome: boolean;
   showIncomeForm: boolean;
+  coverage?: ContributionCoverageResult;
   onBalanceAmountChange: (value: string) => void;
   onBalanceDateChange: (value: string) => void;
   onSaveBalance: () => void;
@@ -5194,6 +5243,10 @@ function AccountBalanceCard({
             )}
           </div>
         </div>
+
+        {coverage && (
+          <ContributionCoverageCard coverage={coverage} showSavingsIndicator />
+        )}
 
         <details className="group rounded-[14px] border border-zinc-800 bg-zinc-950/30">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-zinc-100">
@@ -5562,7 +5615,7 @@ function ContributionCard({
   receivedTotal,
   extraTotal,
   remainingTotal,
-  projectedNetTotal,
+  coverage,
   message,
   isSaving,
   onAmountChange,
@@ -5591,7 +5644,7 @@ function ContributionCard({
   receivedTotal: number;
   extraTotal: number;
   remainingTotal: number;
-  projectedNetTotal: number;
+  coverage: ContributionCoverageResult;
   message: string;
   isSaving: boolean;
   onAmountChange: (value: string) => void;
@@ -5684,12 +5737,7 @@ function ContributionCard({
             value={currency(extraTotal)}
             tone={extraTotal > 0 ? "emerald" : "zinc"}
           />
-          <ContributionStat
-            label="Na uitgaven"
-            value={currency(projectedNetTotal)}
-            tone={projectedNetTotal < 0 ? "red" : "emerald"}
-            className="col-span-2"
-          />
+          <ContributionCoverageCard coverage={coverage} />
         </div>
 
         {planMessage && (
@@ -5866,6 +5914,71 @@ function ContributionStat({
       </p>
       <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
         {value}
+      </p>
+    </div>
+  );
+}
+
+function ContributionCoverageCard({
+  coverage,
+  showSavingsIndicator = false,
+}: {
+  coverage: ContributionCoverageResult;
+  showSavingsIndicator?: boolean;
+}) {
+  const savingsTone =
+    coverage.tone === "zinc"
+      ? "zinc"
+      : coverage.amount > 0
+        ? "emerald"
+        : "amber";
+  const savingsText =
+    savingsTone === "zinc"
+      ? "Nog te vroeg om investeringsruimte te berekenen"
+      : savingsTone === "emerald"
+        ? `Ruimte om te sparen of te investeren: ${currency(coverage.amount)}`
+        : "Deze maand beter niet investeren of sparen";
+
+  return (
+    <div
+      className={cn(
+        "col-span-2 rounded-[12px] border bg-black/10 p-2.5",
+        coverage.tone === "red" && "border-red-400/25 bg-[var(--negative-light)]",
+        coverage.tone === "emerald" &&
+          "border-emerald-400/20 bg-[var(--positive-light)]",
+        coverage.tone === "zinc" && "border-[var(--border)] bg-[var(--bg-surface)]",
+      )}
+    >
+      <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+        Dekking
+      </p>
+      <p
+        className={cn(
+          "mt-1 text-sm font-semibold leading-5",
+          coverage.tone === "red" && "text-[var(--negative)]",
+          coverage.tone === "emerald" && "text-[var(--positive)]",
+          coverage.tone === "zinc" && "text-[var(--text-secondary)]",
+        )}
+      >
+        {coverage.text}
+      </p>
+      {showSavingsIndicator && (
+        <p
+          className={cn(
+            "mt-2 rounded-[10px] border px-2.5 py-2 text-xs font-medium leading-4",
+            savingsTone === "emerald" &&
+              "border-emerald-400/20 bg-emerald-500/10 text-[var(--positive)]",
+            savingsTone === "amber" &&
+              "border-amber-400/20 bg-amber-500/10 text-amber-300",
+            savingsTone === "zinc" &&
+              "border-[var(--border)] bg-black/10 text-[var(--text-secondary)]",
+          )}
+        >
+          {savingsText}
+        </p>
+      )}
+      <p className="mt-1 text-[11px] leading-4 text-[var(--text-muted)]">
+        Verwachte variabele uitgaven: {currency(coverage.expectedVariableTotal)}
       </p>
     </div>
   );
@@ -6528,6 +6641,199 @@ function signedTransactionAmount(transaction: Transaction) {
   return -transaction.amount;
 }
 
+function buildContributionCoverage({
+  transactions,
+  month,
+  plannedContributionTotal,
+  fixedTotal,
+  buffer,
+}: {
+  transactions: Transaction[];
+  month: string;
+  plannedContributionTotal: number;
+  fixedTotal: number;
+  buffer: number;
+}): ContributionCoverageResult {
+  const daysInMonth = daysInIsoMonth(month);
+  const dataDays = dataDaysForMonth(month);
+  const remainingDays = Math.max(daysInMonth - dataDays, 0);
+  const currentVariableTotal = variableTotalForMonth(
+    transactions,
+    month,
+    dataDays,
+  );
+  const historicalMonths = [1, 2, 3].map((offset) => addIsoMonths(month, -offset));
+  const historicalRows = historicalMonths
+    .map((historicalMonth) => ({
+      month: historicalMonth,
+      total: variableTotalForMonth(transactions, historicalMonth),
+      days: daysInIsoMonth(historicalMonth),
+    }))
+    .filter((row) => row.total > 0);
+  const historyMonths = historicalRows.length;
+  const historicalDailyAverage =
+    historicalRows.reduce((total, row) => total + row.total, 0) /
+    Math.max(
+      historicalRows.reduce((total, row) => total + row.days, 0),
+      1,
+    );
+  const hasForecast = dataDays >= 10 && historyMonths >= 3;
+  const expectedVariableTotal = hasForecast
+    ? currentVariableTotal + historicalDailyAverage * remainingDays
+    : currentVariableTotal;
+  const amount =
+    plannedContributionTotal - fixedTotal - expectedVariableTotal - buffer;
+
+  if (!hasForecast) {
+    return {
+      amount,
+      expectedVariableTotal,
+      currentVariableTotal,
+      historyMonths,
+      dataDays,
+      tone: "zinc",
+      text: `Nog te vroeg om te voorspellen — ${dataDays} dagen data deze maand`,
+    };
+  }
+
+  if (amount >= 0) {
+    return {
+      amount,
+      expectedVariableTotal,
+      currentVariableTotal,
+      historyMonths,
+      dataDays,
+      tone: "emerald",
+      text: `Jullie komen uit — verwacht ${currency(amount)} over boven de buffer`,
+    };
+  }
+
+  return {
+    amount,
+    expectedVariableTotal,
+    currentVariableTotal,
+    historyMonths,
+    dataDays,
+    tone: "red",
+    text: `Let op: op basis van jullie gemiddelde komen jullie ${currency(Math.abs(amount))} tekort`,
+  };
+}
+
+function buildPersonalContributionCoverage({
+  transactions,
+  month,
+  incomeTotal,
+  ownMonthlyContributionTotal,
+  buffer,
+}: {
+  transactions: Transaction[];
+  month: string;
+  incomeTotal: number;
+  ownMonthlyContributionTotal: number;
+  buffer: number;
+}): ContributionCoverageResult {
+  const daysInMonth = daysInIsoMonth(month);
+  const dataDays = dataDaysForMonth(month);
+  const remainingDays = Math.max(daysInMonth - dataDays, 0);
+  const currentVariableTotal = variableTotalForMonth(
+    transactions,
+    month,
+    dataDays,
+  );
+  const historicalMonths = [1, 2, 3].map((offset) => addIsoMonths(month, -offset));
+  const historicalRows = historicalMonths
+    .map((historicalMonth) => ({
+      month: historicalMonth,
+      total: variableTotalForMonth(transactions, historicalMonth),
+      days: daysInIsoMonth(historicalMonth),
+    }))
+    .filter((row) => row.total > 0);
+  const historyMonths = historicalRows.length;
+  const historicalDailyAverage =
+    historicalRows.reduce((total, row) => total + row.total, 0) /
+    Math.max(
+      historicalRows.reduce((total, row) => total + row.days, 0),
+      1,
+    );
+  const hasForecast = dataDays >= 10 && historyMonths >= 2;
+  const expectedVariableTotal = hasForecast
+    ? currentVariableTotal + historicalDailyAverage * remainingDays
+    : currentVariableTotal;
+  const amount =
+    incomeTotal - ownMonthlyContributionTotal - expectedVariableTotal - buffer;
+
+  if (!hasForecast) {
+    return {
+      amount,
+      expectedVariableTotal,
+      currentVariableTotal,
+      historyMonths,
+      dataDays,
+      tone: "zinc",
+      text: `Nog te vroeg om te voorspellen — ${dataDays} dagen data deze maand`,
+    };
+  }
+
+  if (amount >= 0) {
+    return {
+      amount,
+      expectedVariableTotal,
+      currentVariableTotal,
+      historyMonths,
+      dataDays,
+      tone: "emerald",
+      text: `Je houdt ${currency(amount)} over boven je buffer na storting en eigen kosten`,
+    };
+  }
+
+  return {
+    amount,
+    expectedVariableTotal,
+    currentVariableTotal,
+    historyMonths,
+    dataDays,
+    tone: "red",
+    text: `Let op: je komt naar verwachting ${currency(Math.abs(amount))} tekort deze maand`,
+  };
+}
+
+function variableTotalForMonth(
+  transactions: Transaction[],
+  month: string,
+  throughDay?: number,
+) {
+  const throughDate =
+    typeof throughDay === "number" && throughDay > 0
+      ? dateForBillingDay(month, throughDay)
+      : null;
+
+  return transactions
+    .filter((transaction) => transaction.type === "variable")
+    .filter((transaction) => transaction.date.startsWith(month))
+    .filter((transaction) => !throughDate || transaction.date <= throughDate)
+    .reduce((total, transaction) => total + transaction.amount, 0);
+}
+
+function dataDaysForMonth(month: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  const currentMonth = today.slice(0, 7);
+
+  if (month === currentMonth) {
+    return Number(today.slice(8, 10));
+  }
+
+  if (month < currentMonth) {
+    return daysInIsoMonth(month);
+  }
+
+  return 0;
+}
+
+function daysInIsoMonth(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(year, monthNumber, 0).getDate();
+}
+
 function cashflowBufferStorageKey(accountId: string) {
   return `${cashflowBufferStorageKeyPrefix}:${accountId || "default"}`;
 }
@@ -6592,41 +6898,15 @@ function cashflowLineColor(balance: number, buffer: number) {
   return "#10B981";
 }
 
-function cashflowGradientStops(points: CashflowPoint[], buffer: number) {
-  if (!points.length) {
-    return [
-      { offset: 0, color: "#10B981" },
-      { offset: 100, color: "#10B981" },
-    ];
-  }
+function cashflowLineSegments(points: CashflowPoint[], buffer: number) {
+  return points.slice(1).map((point, index) => {
+    const previousPoint = points[index];
 
-  if (points.length === 1) {
-    const color = cashflowLineColor(points[0].balance, buffer);
-
-    return [
-      { offset: 0, color },
-      { offset: 100, color },
-    ];
-  }
-
-  return points.flatMap((point, index) => {
-    const offset = Math.round((index / (points.length - 1)) * 1000) / 10;
-    const color = cashflowLineColor(point.balance, buffer);
-
-    if (index === 0) {
-      return [{ offset, color }];
-    }
-
-    const previousColor = cashflowLineColor(points[index - 1].balance, buffer);
-
-    if (previousColor === color) {
-      return [{ offset, color }];
-    }
-
-    return [
-      { offset, color: previousColor },
-      { offset, color },
-    ];
+    return {
+      id: `${previousPoint.day}-${point.day}`,
+      color: cashflowLineColor(point.balance, buffer),
+      points: [previousPoint, point],
+    };
   });
 }
 
