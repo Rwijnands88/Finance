@@ -6457,6 +6457,9 @@ function buildCashflowTimeline({
   const daysInMonth = new Date(Number(month.slice(0, 4)), monthNumber, 0).getDate();
   const dailyChanges = Array.from({ length: daysInMonth }, () => 0);
   const today = new Date().toISOString().slice(0, 10);
+  const startDay = today.startsWith(month)
+    ? Number(today.slice(8, 10))
+    : 1;
   const addDailyChange = (day: number, amount: number) => {
     const safeDay = Math.min(Math.max(day, 1), daysInMonth);
     dailyChanges[safeDay - 1] += amount;
@@ -6476,27 +6479,31 @@ function buildCashflowTimeline({
       addDailyChange(plan.depositDay, plan.monthlyAmount),
     );
 
-  // autoProcessed items hebben geen echte Supabase-transactie en zijn niet in calculatedBalance verwerkt
-  const autoProcessedTotal = fixedItems
-    .filter((item) => item.state === "autoProcessed")
-    .reduce((total, item) => total + item.amount, 0);
+  let runningBalance = startBalance;
 
-  let runningBalance = startBalance - autoProcessedTotal;
+  return dailyChanges.slice(startDay - 1).map((amount, index) => {
+    const day = startDay + index;
 
-  return dailyChanges.map((amount, index) => {
     runningBalance += amount;
 
     return {
-      day: index + 1,
+      day,
       balance: runningBalance,
     } satisfies CashflowPoint;
   });
 }
 
 function cashflowInsight(points: CashflowPoint[], buffer: number) {
+  if (!points.length) {
+    return {
+      status: "healthy" as const,
+      text: "Geen stress deze maand. Geen toekomstige cashflowpunten.",
+    };
+  }
+
   const lowestPoint = points.reduce(
     (lowest, point) => (point.balance < lowest.balance ? point : lowest),
-    points[0] ?? { day: 1, balance: 0 },
+    points[0],
   );
   const firstNegative = points.find((point) => point.balance < 0);
 
