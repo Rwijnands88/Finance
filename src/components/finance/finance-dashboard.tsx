@@ -599,19 +599,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const cashflowTimeline = useMemo(
     () =>
       buildCashflowTimeline({
-        startBalance: calculatedBalance ?? latestBalanceSnapshot?.balance ?? 0,
+        startBalance: calculatedBalance ?? 0,
         month: currentMonth,
         fixedItems: fixedAgendaItems,
         contributionPlans: contributionPlanRows,
-        transactions: selectedTransactions,
       }),
     [
       calculatedBalance,
       contributionPlanRows,
       currentMonth,
       fixedAgendaItems,
-      latestBalanceSnapshot?.balance,
-      selectedTransactions,
     ],
   );
 
@@ -1145,21 +1142,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setIncomeMessage("Inkomen toegevoegd.");
   }
 
-  async function addVariableCategory() {
-    const name = customCategoryName.trim().replace(/\s+/g, " ");
+  async function createVariableCategory(nameInput: string): Promise<{
+    category?: DashboardData["categories"][number];
+    error?: string;
+  }> {
+    const name = nameInput.trim().replace(/\s+/g, " ");
 
     if (name.length < 2) {
-      setCategoryMessage("Vul een categorienaam in.");
-      return;
+      return { error: "Vul een categorienaam in." };
     }
 
     if (!initialData.householdId) {
-      setCategoryMessage("Huishouden ontbreekt.");
-      return;
+      return { error: "Huishouden ontbreekt." };
     }
-
-    setIsSavingCategory(true);
-    setCategoryMessage("");
 
     const response = await fetch("/api/categories", {
       method: "POST",
@@ -1173,21 +1168,37 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     });
     const result = await response.json();
 
-    setIsSavingCategory(false);
-
     if (!response.ok) {
-      setCategoryMessage(
-        typeof result.error === "string"
-          ? result.error
-          : "Categorie opslaan lukte niet.",
-      );
-      return;
+      return {
+        error:
+          typeof result.error === "string"
+            ? result.error
+            : "Categorie opslaan lukte niet.",
+      };
     }
 
     const category = result.category as DashboardData["categories"][number];
     setCategories((items) =>
       [...items.filter((item) => item.id !== category.id), category],
     );
+
+    return { category };
+  }
+
+  async function addVariableCategory() {
+    setIsSavingCategory(true);
+    setCategoryMessage("");
+
+    const result = await createVariableCategory(customCategoryName);
+
+    setIsSavingCategory(false);
+
+    if (result.error || !result.category) {
+      setCategoryMessage(result.error ?? "Categorie opslaan lukte niet.");
+      return;
+    }
+
+    const { category } = result;
     setQuickCategory(category.id);
     setCustomCategoryName("");
     setCategoryMessage(`${category.name} is toegevoegd.`);
@@ -2674,6 +2685,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           onNoteChange={setEditNote}
           onCategoryChange={setEditCategory}
           onPaidByChange={setEditPaidById}
+          onCreateCategory={createVariableCategory}
           onClose={closeTransactionEditor}
           onSave={saveEditedTransaction}
         />
@@ -3465,6 +3477,7 @@ function TransactionEditDialog({
   onNoteChange,
   onCategoryChange,
   onPaidByChange,
+  onCreateCategory,
   onClose,
   onSave,
 }: {
@@ -3485,9 +3498,17 @@ function TransactionEditDialog({
   onNoteChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onPaidByChange: (value: string) => void;
+  onCreateCategory: (name: string) => Promise<{
+    category?: DashboardData["categories"][number];
+    error?: string;
+  }>;
   onClose: () => void;
   onSave: () => void;
 }) {
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryMessage, setNewCategoryMessage] = useState("");
+  const [isSavingNewCategory, setIsSavingNewCategory] = useState(false);
   const categoryOptions = transactionCategoryOptions(
     transaction,
     categories,
@@ -3501,6 +3522,33 @@ function TransactionEditDialog({
       onCategoryChange(selectedCategory);
     }
   }, [category, onCategoryChange, selectedCategory]);
+
+  async function saveNewCategory() {
+    const cleanName = newCategoryName.trim().replace(/\s+/g, " ");
+
+    if (!cleanName) {
+      setNewCategoryMessage("Vul een categorienaam in.");
+      return;
+    }
+
+    setIsSavingNewCategory(true);
+    setNewCategoryMessage("");
+
+    const result = await onCreateCategory(cleanName);
+
+    setIsSavingNewCategory(false);
+
+    if (result.error || !result.category) {
+      setNewCategoryMessage(result.error ?? "Categorie opslaan lukte niet.");
+      return;
+    }
+
+    onCategoryChange(result.category.id);
+    setNewCategoryName("");
+    setNewCategoryMessage("");
+    setIsAddingCategory(false);
+  }
+
   const title =
     transaction.type === "fixed"
       ? labels.get(transaction.categoryId)?.name ?? "Vaste last"
@@ -3554,6 +3602,66 @@ function TransactionEditDialog({
                 </option>
               ))}
             </Select>
+            <div className="mt-2 rounded-[12px] border border-[var(--border)] bg-black/10 p-2">
+              {isAddingCategory ? (
+                <div className="grid gap-2">
+                  <Input
+                    value={newCategoryName}
+                    placeholder="Bijv. Uit eten"
+                    className="h-10"
+                    maxLength={40}
+                    disabled={isSavingNewCategory}
+                    onChange={(event) => setNewCategoryName(event.target.value)}
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={isSavingNewCategory}
+                      onClick={() => {
+                        setIsAddingCategory(false);
+                        setNewCategoryName("");
+                        setNewCategoryMessage("");
+                      }}
+                    >
+                      Annuleer
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={isSavingNewCategory}
+                      onClick={saveNewCategory}
+                    >
+                      {isSavingNewCategory ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+                      Opslaan
+                    </Button>
+                  </div>
+                  {newCategoryMessage && (
+                    <p className="text-xs text-[var(--negative)]">
+                      {newCategoryMessage}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-2 rounded-[10px] px-3 py-2 text-sm font-medium text-[var(--accent)] transition hover:bg-[var(--accent-light)]"
+                  onClick={() => {
+                    setIsAddingCategory(true);
+                    setNewCategoryMessage("");
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Nieuwe categorie
+                </button>
+              )}
+            </div>
           </FieldLabel>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -6339,17 +6447,16 @@ function buildCashflowTimeline({
   month,
   fixedItems,
   contributionPlans,
-  transactions,
 }: {
   startBalance: number;
   month: string;
   fixedItems: FixedAgendaItem[];
   contributionPlans: ContributionPlan[];
-  transactions: Transaction[];
 }) {
   const [, monthNumber] = month.split("-").map(Number);
   const daysInMonth = new Date(Number(month.slice(0, 4)), monthNumber, 0).getDate();
   const dailyChanges = Array.from({ length: daysInMonth }, () => 0);
+  const today = new Date().toISOString().slice(0, 10);
   const addDailyChange = (day: number, amount: number) => {
     const safeDay = Math.min(Math.max(day, 1), daysInMonth);
     dailyChanges[safeDay - 1] += amount;
@@ -6357,25 +6464,24 @@ function buildCashflowTimeline({
 
   fixedItems
     .filter((item) => item.state !== "skipped")
+    .filter((item) => item.date >= today)
     .forEach((item) => addDailyChange(item.day, -item.amount));
 
-  contributionPlans.forEach((plan) =>
-    addDailyChange(plan.depositDay, plan.monthlyAmount),
-  );
-
-  transactions
-    .filter((transaction) => transaction.date.startsWith(month))
+  contributionPlans
     .filter(
-      (transaction) =>
-        transaction.type === "variable" ||
-        (transaction.type === "contribution" &&
-          (transaction.contributionKind ?? "extra") === "extra"),
+      (plan) =>
+        dateForBillingDay(month, plan.depositDay) >= today,
     )
-    .forEach((transaction) =>
-      addDailyChange(Number(transaction.date.slice(8, 10)), signedTransactionAmount(transaction)),
+    .forEach((plan) =>
+      addDailyChange(plan.depositDay, plan.monthlyAmount),
     );
 
-  let runningBalance = startBalance;
+  // autoProcessed items hebben geen echte Supabase-transactie en zijn niet in calculatedBalance verwerkt
+  const autoProcessedTotal = fixedItems
+    .filter((item) => item.state === "autoProcessed")
+    .reduce((total, item) => total + item.amount, 0);
+
+  let runningBalance = startBalance - autoProcessedTotal;
 
   return dailyChanges.map((amount, index) => {
     runningBalance += amount;
@@ -6417,9 +6523,9 @@ function cashflowInsight(points: CashflowPoint[], buffer: number) {
 
   return {
     status: "below-buffer" as const,
-    text: `Jullie komen ${belowBufferPoints.length} dagen onder de buffer — trekt bij rond dag ${
-      recoveryPoint?.day ?? points.at(-1)?.day ?? lowestPoint.day
-    }.`,
+    text: recoveryPoint
+      ? `Jullie komen ${belowBufferPoints.length} dagen onder de buffer — trekt bij rond dag ${recoveryPoint.day}.`
+      : `Jullie komen ${belowBufferPoints.length} dagen onder de buffer en herstellen niet voor einde maand.`,
   };
 }
 
