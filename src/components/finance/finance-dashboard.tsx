@@ -27,8 +27,6 @@ import {
   Bar,
   BarChart,
   Cell,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -3020,7 +3018,6 @@ function CashflowTimelineCard({
   compact?: boolean;
 }) {
   const insight = cashflowInsight(points, buffer);
-  const lineSegments = cashflowLineSegments(points, buffer);
 
   return (
     <Card className="finance-card">
@@ -3048,31 +3045,73 @@ function CashflowTimelineCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="h-32">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={points} margin={{ top: 8, right: 4, bottom: 2, left: 4 }}>
-              <XAxis dataKey="day" hide />
-              <YAxis hide domain={["dataMin", "dataMax"]} />
-              {lineSegments.map((segment) => (
-                <Line
-                  key={segment.id}
-                  data={segment.points}
-                  type="linear"
-                  dataKey="balance"
-                  stroke={segment.color}
-                  strokeWidth={3}
-                  dot={false}
-                  activeDot={false}
-                  isAnimationActive={false}
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
+          <CashflowSvgChart points={points} buffer={buffer} />
         </div>
         <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-5 text-[var(--text-secondary)]">
           {insight.text}
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+function CashflowSvgChart({
+  points,
+  buffer,
+}: {
+  points: CashflowPoint[];
+  buffer: number;
+}) {
+  const segments = cashflowLineSegments(points, buffer);
+  const firstPoint = points[0];
+
+  if (!points.length) {
+    return (
+      <div className="flex h-full items-center justify-center rounded-[12px] border border-dashed border-[var(--border)] bg-black/10 text-xs text-[var(--text-muted)]">
+        Nog geen cashflowpunten.
+      </div>
+    );
+  }
+
+  return (
+    <svg
+      viewBox="0 0 320 112"
+      role="img"
+      aria-label="Cashflowlijn deze maand"
+      className="h-full w-full overflow-visible"
+      preserveAspectRatio="none"
+    >
+      <line
+        x1="8"
+        y1="104"
+        x2="312"
+        y2="104"
+        stroke="rgba(255,255,255,0.07)"
+        strokeWidth="1"
+        vectorEffect="non-scaling-stroke"
+      />
+      {segments.map((segment) => (
+        <line
+          key={segment.id}
+          x1={segment.x1}
+          y1={segment.y1}
+          x2={segment.x2}
+          y2={segment.y2}
+          stroke={segment.color}
+          strokeWidth="3"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+      {segments.length === 0 && firstPoint && (
+        <circle
+          cx="160"
+          cy="56"
+          r="4"
+          fill={cashflowLineColor(firstPoint.balance, buffer)}
+        />
+      )}
+    </svg>
   );
 }
 
@@ -6899,13 +6938,33 @@ function cashflowLineColor(balance: number, buffer: number) {
 }
 
 function cashflowLineSegments(points: CashflowPoint[], buffer: number) {
+  const chartWidth = 320;
+  const chartHeight = 112;
+  const padding = 8;
+  const minDay = points[0]?.day ?? 1;
+  const maxDay = points.at(-1)?.day ?? minDay;
+  const balances = points.map((point) => point.balance);
+  const minBalance = Math.min(...balances, buffer, 0);
+  const maxBalance = Math.max(...balances, buffer, 0);
+  const balanceRange = Math.max(maxBalance - minBalance, 1);
+  const dayRange = Math.max(maxDay - minDay, 1);
+  const xForDay = (day: number) =>
+    padding + ((day - minDay) / dayRange) * (chartWidth - padding * 2);
+  const yForBalance = (balance: number) =>
+    chartHeight -
+    padding -
+    ((balance - minBalance) / balanceRange) * (chartHeight - padding * 2);
+
   return points.slice(1).map((point, index) => {
     const previousPoint = points[index];
 
     return {
       id: `${previousPoint.day}-${point.day}`,
       color: cashflowLineColor(point.balance, buffer),
-      points: [previousPoint, point],
+      x1: xForDay(previousPoint.day),
+      y1: yForBalance(previousPoint.balance),
+      x2: xForDay(point.day),
+      y2: yForBalance(point.balance),
     };
   });
 }

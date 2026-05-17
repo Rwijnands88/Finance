@@ -83,6 +83,7 @@ function startNextServer() {
   nextProcess.on("exit", () => {
     nextProcess = null;
   });
+  nextProcess.unref();
 }
 
 function stopNextServer() {
