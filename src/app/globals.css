@@ -202,12 +202,17 @@ button:active {
 
   body.receipt-printing-ready .receipt-print-image {
     position: fixed !important;
-    inset: 12mm !important;
+    top: 12mm !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: translateX(-50%) !important;
     display: block !important;
-    width: calc(100vw - 24mm) !important;
-    height: calc(100vh - 24mm) !important;
-    max-width: calc(100vw - 24mm) !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: min(80mm, calc(100vw - 24mm)) !important;
     max-height: calc(100vh - 24mm) !important;
+    margin: 0 auto !important;
     object-fit: contain !important;
     border: 0 !important;
     border-radius: 0 !important;

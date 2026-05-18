@@ -8027,7 +8027,7 @@ function QuickEntryCard({
             Rekening
           </p>
         </div>
-        <div className="scrollbar-hidden flex max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-[14px] bg-[var(--bg-surface)] p-1 sm:hidden">
+        <div className="scrollbar-hidden flex h-9 max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-full bg-[#27272A] p-0.5 sm:hidden">
           {accounts.map((item) => {
             const isActive = account === item.id;
 
@@ -8037,9 +8037,9 @@ function QuickEntryCard({
                 type="button"
                 onClick={() => onAccountChange(item.id)}
                 className={cn(
-                  "min-h-11 min-w-fit flex-1 shrink-0 rounded-[10px] px-3 text-xs font-medium text-[var(--text-secondary)]",
+                  "h-8 min-h-0 min-w-fit flex-1 shrink-0 rounded-full px-3 text-xs font-medium text-[var(--text-secondary)]",
                   isActive &&
-                    "bg-[var(--accent-light)] text-[var(--accent)]",
+                    "bg-[#6366F1] text-white",
                 )}
               >
                 {item.name}
@@ -8054,7 +8054,7 @@ function QuickEntryCard({
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
               Betaald door
             </p>
-            <div className="grid grid-cols-2 gap-1 rounded-[14px] bg-[var(--bg-surface)] p-1">
+            <div className="grid h-9 grid-cols-2 gap-1 rounded-full bg-[#27272A] p-0.5">
               {householdMembers.map((member) => {
                 const isActive = paidById === member.userId;
 
@@ -8064,9 +8064,9 @@ function QuickEntryCard({
                     type="button"
                     onClick={() => onPaidByChange(member.userId)}
                     className={cn(
-                      "min-h-11 rounded-[10px] px-3 text-sm font-medium text-[var(--text-secondary)]",
+                      "h-8 min-h-0 rounded-full px-3 text-sm font-medium text-[var(--text-secondary)]",
                       isActive &&
-                        "bg-[var(--accent-light)] text-[var(--accent)]",
+                        "bg-[#6366F1] text-white",
                     )}
                   >
                     {member.displayName}
@@ -8087,9 +8087,9 @@ function QuickEntryCard({
                 type="button"
                 key={item.id}
                 className={cn(
-                  "min-h-11 shrink-0 rounded-[var(--radius-chip)] bg-[var(--bg-surface)] px-3 text-sm font-medium text-[var(--text-secondary)] transition",
+                  "min-h-11 shrink-0 rounded-[var(--radius-chip)] bg-[#27272A] px-3 text-sm font-medium text-[var(--text-secondary)] transition",
                   category === item.id &&
-                    "bg-[var(--accent-light)] text-[var(--accent)] ring-1 ring-[var(--accent)]",
+                    "bg-[#6366F1] text-white",
                 )}
                 onClick={() => onCategoryChange(item.id)}
               >
@@ -8455,7 +8455,7 @@ function QuickEntryCard({
             placeholder="0,00"
             value={amount}
             enterKeyHint="done"
-            className="h-14 border-transparent bg-black/10 text-center text-[38px] font-bold tracking-normal placeholder:text-zinc-700 sm:h-11 sm:rounded-[12px] sm:border-zinc-800 sm:bg-zinc-950/70 sm:text-left sm:text-base sm:font-semibold"
+            className="h-14 border-[#27272A] bg-black/10 text-center text-[38px] font-bold tracking-normal placeholder:text-zinc-700 sm:h-11 sm:rounded-[12px] sm:border-zinc-800 sm:bg-zinc-950/70 sm:text-left sm:text-base sm:font-semibold"
             onFocus={(event) =>
               event.currentTarget.scrollIntoView({
                 block: "center",
