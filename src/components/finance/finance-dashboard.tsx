@@ -364,6 +364,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     null,
   );
   const autoConfirmingFixedInstanceIds = useRef(new Set<string>());
+  const lastForegroundRefreshAt = useRef(0);
   const [bookingContributionPlanId, setBookingContributionPlanId] = useState<
     string | null
   >(null);
@@ -1215,8 +1216,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     [categories],
   );
 
-  async function loadMonthData(month: string) {
-    if (loadedMonths.has(month)) {
+  async function loadMonthData(
+    month: string,
+    options: { force?: boolean } = {},
+  ) {
+    if (!options.force && loadedMonths.has(month)) {
       return;
     }
 
@@ -1240,21 +1244,41 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         );
       }
 
-      setTransactions((items) =>
-        mergeById(items, transactionsResult.transactions ?? []).sort((a, b) =>
-          b.date.localeCompare(a.date),
-        ),
-      );
-      setRecurringExpenses((items) =>
-        mergeById(items, recurringResult.recurringExpenses ?? []).sort((a, b) =>
-          a.name.localeCompare(b.name, "nl"),
-        ),
-      );
-      setFixedInstances((items) =>
-        mergeById(items, recurringResult.fixedInstances ?? []).sort((a, b) =>
-          a.name.localeCompare(b.name, "nl"),
-        ),
-      );
+      const nextTransactions = transactionsResult.transactions ?? [];
+      const nextRecurringExpenses = recurringResult.recurringExpenses ?? [];
+      const nextFixedInstances = recurringResult.fixedInstances ?? [];
+
+      setTransactions((items) => {
+        const mergedItems = options.force
+          ? [
+              ...items.filter(
+                (item) =>
+                  item.date < monthStart(addIsoMonths(month, -5)) ||
+                  item.date >= monthStart(addIsoMonths(month, 1)),
+              ),
+              ...nextTransactions,
+            ]
+          : mergeById(items, nextTransactions);
+
+        return mergedItems.sort((a, b) => b.date.localeCompare(a.date));
+      });
+      setRecurringExpenses((items) => {
+        const mergedItems = options.force
+          ? nextRecurringExpenses
+          : mergeById(items, nextRecurringExpenses);
+
+        return mergedItems.sort((a, b) => a.name.localeCompare(b.name, "nl"));
+      });
+      setFixedInstances((items) => {
+        const mergedItems = options.force
+          ? [
+              ...items.filter((item) => item.month !== monthStart(month)),
+              ...nextFixedInstances,
+            ]
+          : mergeById(items, nextFixedInstances);
+
+        return mergedItems.sort((a, b) => a.name.localeCompare(b.name, "nl"));
+      });
       setLoadedMonthKeys((keys) =>
         keys.includes(month) ? keys : [...keys, month],
       );
@@ -1272,6 +1296,33 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setMonthMessage("");
     void loadMonthData(month);
   }
+
+  useEffect(() => {
+    const refreshCurrentMonth = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      const now = Date.now();
+
+      if (now - lastForegroundRefreshAt.current < 2000) {
+        return;
+      }
+
+      lastForegroundRefreshAt.current = now;
+      void loadMonthData(currentMonth, { force: true });
+    };
+
+    window.addEventListener("focus", refreshCurrentMonth);
+    document.addEventListener("visibilitychange", refreshCurrentMonth);
+    window.addEventListener("pageshow", refreshCurrentMonth);
+
+    return () => {
+      window.removeEventListener("focus", refreshCurrentMonth);
+      document.removeEventListener("visibilitychange", refreshCurrentMonth);
+      window.removeEventListener("pageshow", refreshCurrentMonth);
+    };
+  }, [currentMonth]);
 
   async function addVariableExpense() {
     const amount = parseCurrencyInput(quickAmount);
