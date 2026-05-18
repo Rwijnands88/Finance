@@ -135,28 +135,6 @@ button:active {
   display: none;
 }
 
-.portrait-orientation-overlay {
-  display: none;
-}
-
-@media (max-width: 767px) and (orientation: landscape) {
-  .portrait-orientation-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    background: #09090b;
-    color: #fafafa;
-    text-align: center;
-    font-size: 18px;
-    font-weight: 600;
-    line-height: 1.4;
-  }
-}
-
 @media (min-width: 1024px) {
   .desktop-row-hover:hover {
     background: var(--bg-card-hover);

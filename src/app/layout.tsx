@@ -47,9 +47,6 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
-        <div className="portrait-orientation-overlay" aria-hidden="true">
-          Draai je telefoon terug naar staand
-        </div>
       </body>
     </html>
   );

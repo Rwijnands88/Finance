@@ -8087,7 +8087,7 @@ function QuickEntryCard({
                 type="button"
                 key={item.id}
                 className={cn(
-                  "min-h-11 shrink-0 rounded-[var(--radius-chip)] bg-[#27272A] px-3 text-sm font-medium text-[var(--text-secondary)] transition",
+                  "shrink-0 rounded-[var(--radius-chip)] border-0 bg-[#27272A] px-2.5 py-1 text-[13px] font-medium text-[var(--text-secondary)] outline-none ring-0 transition focus-visible:outline-none focus-visible:ring-0",
                   category === item.id &&
                     "bg-[#6366F1] text-white",
                 )}
@@ -8098,7 +8098,7 @@ function QuickEntryCard({
             ))}
             <button
               type="button"
-              className="min-h-11 shrink-0 rounded-[var(--radius-chip)] px-2.5 text-sm font-medium text-[var(--accent)]"
+              className="shrink-0 rounded-[var(--radius-chip)] px-2.5 py-1 text-[13px] font-medium text-[var(--accent)]"
               onClick={() => setIsCategoryPanelOpen((open) => !open)}
             >
               Categorie toevoegen
