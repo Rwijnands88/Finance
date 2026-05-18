@@ -27,8 +27,13 @@ import {
   Bar,
   BarChart,
   Cell,
+  CartesianGrid,
+  Line,
+  LineChart,
   Pie,
   PieChart,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -85,9 +90,13 @@ type DashboardMetric = {
   value: string;
   detail?: string;
   tone: "indigo" | "emerald" | "red" | "zinc";
+  valueTone?: "default" | "emerald" | "red";
+  progress?: number;
+  progressTone?: "emerald" | "orange" | "red";
 };
 
 type ActiveSection = "dashboard" | "fixed" | "input" | "month";
+type TransactionDisplayLimit = 10 | 15 | 20 | "all";
 type ContributionPlanDraft = {
   label: string;
   amount: string;
@@ -126,12 +135,6 @@ type ContributionCoverageResult = {
   text: string;
 };
 
-type ExpectedMonthEndForecast = {
-  amount: number | null;
-  basis: "historical" | "current";
-  basisLabel: string;
-  expectedRemainingVariable: number;
-};
 type ContributionPersonBreakdown = {
   person: string;
   planned: Array<{
@@ -700,9 +703,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     (total, plan) => total + plan.remaining,
     0,
   );
-  const ownRemainingContributionTotal = contributionPlanRows
-    .filter((plan) => plan.userId === initialData.currentUserId)
-    .reduce((total, plan) => total + plan.remaining, 0);
   const today = new Date().toISOString().slice(0, 10);
   const calculatedBalance = latestBalanceSnapshot
     ? latestBalanceSnapshot.balance +
@@ -712,36 +712,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
         .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0)
     : null;
-  const remainingPersonalIncomeTotal = selectedTransactions
-    .filter((transaction) => transaction.type === "income")
-    .filter((transaction) => transaction.date.startsWith(currentMonth))
-    .filter((transaction) => transaction.date > today)
-    .reduce((total, transaction) => total + transaction.amount, 0);
-  const expectedMonthEndForecast = useMemo(
-    () =>
-      buildExpectedMonthEndForecast({
-        transactions: selectedTransactions,
-        month: currentMonth,
-        calculatedBalance,
-        remainingIncomeTotal: isSharedView
-          ? remainingContributionTotal
-          : remainingPersonalIncomeTotal,
-        remainingFixedTotal:
-          openFixedTotalForCurrentMonth +
-          (isSharedView ? 0 : ownRemainingContributionTotal),
-      }),
-    [
-      calculatedBalance,
-      currentMonth,
-      isSharedView,
-      openFixedTotalForCurrentMonth,
-      ownRemainingContributionTotal,
-      remainingPersonalIncomeTotal,
-      remainingContributionTotal,
-      selectedTransactions,
-    ],
-  );
-  const expectedMonthEndBalance = expectedMonthEndForecast.amount;
   const fixedAgendaItems = useMemo(
     () =>
       buildFixedAgendaItems(
@@ -770,6 +740,29 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const fixedTotalForCurrentMonth = fixedAgendaItems.reduce(
     (total, item) => (item.state === "skipped" ? total : total + item.amount),
     0,
+  );
+  const heroBudget = useMemo(
+    () =>
+      buildHeroBudgetSnapshot({
+        incomingTotal: isSharedView
+          ? monthTotals.contributionTotal + remainingContributionTotal
+          : monthTotals.incomeTotal,
+        postedIncomingTotal: isSharedView
+          ? monthTotals.contributionTotal
+          : monthTotals.incomeTotal,
+        plannedIncomingTotal: isSharedView ? plannedContributionTotal : 0,
+        expectedFixedTotal: fixedTotalForCurrentMonth,
+        variableExpenseTotal: monthTotals.variableTotal,
+      }),
+    [
+      fixedTotalForCurrentMonth,
+      isSharedView,
+      monthTotals.contributionTotal,
+      monthTotals.incomeTotal,
+      monthTotals.variableTotal,
+      plannedContributionTotal,
+      remainingContributionTotal,
+    ],
   );
   const displayedExpenseTotal = monthTotals.expenseTotal;
   const displayedNetTotal =
@@ -1060,62 +1053,72 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const dashboardPrimarySubtext =
     calculatedBalance === null
       ? "Deze maand tot nu toe"
-      : expectedMonthEndBalance === null
-        ? "Huidig saldo"
-        : `${currency(expectedMonthEndBalance)} verwacht einde maand`;
+      : "Huidig saldo";
   const dashboardMetrics: DashboardMetric[] = isSharedView
     ? [
         {
           icon: <ReceiptText className="h-5 w-5" />,
           label: "Uitgaven",
-          value: currency(displayedExpenseTotal),
+          value: currency(heroBudget.variableExpenseTotal),
+          detail: `van ${currency(heroBudget.freeBudget)} vrij budget`,
           tone: "zinc" as const,
+          progress: heroBudget.expenseProgress,
+          progressTone: heroBudget.expenseProgressTone,
         },
         {
           icon: <WalletCards className="h-5 w-5" />,
-          label: "Verwacht eindsaldo",
-          value:
-            expectedMonthEndBalance === null
-              ? currency(displayedNetTotal)
-              : currency(expectedMonthEndBalance),
-          detail: expectedMonthEndForecast.basisLabel,
-          tone:
-            expectedMonthEndBalance !== null && expectedMonthEndBalance < 0
-              ? "red"
-              : "emerald",
+          label: "Vrije ruimte",
+          value: currency(heroBudget.remainingFreeBudget),
+          detail: `van ${currency(heroBudget.freeBudget)} deze maand`,
+          tone: heroBudget.remainingFreeBudget < 0 ? "red" : "emerald",
+          valueTone: heroBudget.remainingFreeBudget < 0 ? "red" : "default",
+          progress: heroBudget.expenseProgress,
+          progressTone: heroBudget.expenseProgressTone,
         },
         {
           icon: <ArrowDownToLine className="h-5 w-5" />,
           label: "Stortingen",
-          value: currency(monthTotals.contributionTotal),
+          value: currency(heroBudget.postedIncomingTotal),
+          detail:
+            heroBudget.plannedIncomingTotal > 0
+              ? `verwacht ${currency(heroBudget.plannedIncomingTotal)}`
+              : undefined,
           tone: "emerald" as const,
+          progress: heroBudget.depositProgress,
+          progressTone: heroBudget.depositProgressTone,
         },
       ]
     : [
         {
           icon: <ReceiptText className="h-5 w-5" />,
           label: "Uitgaven",
-          value: currency(displayedExpenseTotal),
+          value: currency(heroBudget.variableExpenseTotal),
+          detail: `van ${currency(heroBudget.freeBudget)} vrij budget`,
           tone: "zinc" as const,
+          progress: heroBudget.expenseProgress,
+          progressTone: heroBudget.expenseProgressTone,
         },
         {
           icon: <WalletCards className="h-5 w-5" />,
-          label: "Verwacht eindsaldo",
-          value:
-            expectedMonthEndBalance === null
-              ? currency(displayedNetTotal)
-              : currency(expectedMonthEndBalance),
-          detail: expectedMonthEndForecast.basisLabel,
-          tone:
-            expectedMonthEndBalance !== null && expectedMonthEndBalance < 0
-              ? "red"
-              : "indigo",
+          label: "Vrije ruimte",
+          value: currency(heroBudget.remainingFreeBudget),
+          detail: `van ${currency(heroBudget.freeBudget)} deze maand`,
+          tone: heroBudget.remainingFreeBudget < 0 ? "red" : "indigo",
+          valueTone: heroBudget.remainingFreeBudget < 0 ? "red" : "default",
+          progress: heroBudget.expenseProgress,
+          progressTone: heroBudget.expenseProgressTone,
         },
         {
           icon: <ArrowDownToLine className="h-5 w-5" />,
-          label: "Inkomen",
-          value: currency(monthTotals.incomeTotal),
+          label: "Stortingen",
+          value: currency(heroBudget.postedIncomingTotal),
+          detail:
+            heroBudget.plannedIncomingTotal > 0
+              ? `verwacht ${currency(heroBudget.plannedIncomingTotal)}`
+              : undefined,
           tone: "emerald" as const,
+          progress: heroBudget.depositProgress,
+          progressTone: heroBudget.depositProgressTone,
         },
       ];
   const fixedCategories = useMemo(
@@ -3115,6 +3118,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           />
           <CashflowTimelineCard
             points={cashflowTimeline}
+            month={currentMonth}
             buffer={cashflowBuffer}
             onBufferChange={(value) =>
               updateCashflowBuffer(selectedAccountId, value)
@@ -3284,6 +3288,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             deletingTransactionId={deletingTransactionId}
             bookingContributionPlanId={bookingContributionPlanId}
             onDeleteTransaction={deleteTransaction}
+            onEditTransaction={startEditingTransaction}
+            onOpenReceipt={setReceiptViewer}
             onBookExpectedContribution={bookExpectedContributionPlan}
           />
           <MonthSummaryCard
@@ -3341,6 +3347,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
               <CashflowTimelineCard
                 points={cashflowTimeline}
+                month={currentMonth}
                 buffer={cashflowBuffer}
                 onBufferChange={(value) =>
                   updateCashflowBuffer(selectedAccountId, value)
@@ -3364,6 +3371,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 onExportExcel={exportExcel}
                 onExportPdf={(month) => void exportPdf(month)}
                 onDeleteTransaction={deleteTransaction}
+                onEditTransaction={startEditingTransaction}
+                onOpenReceipt={setReceiptViewer}
                 onBookExpectedContribution={bookExpectedContributionPlan}
               />
 
@@ -3738,7 +3747,13 @@ function DashboardHero({
               <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent-light)] text-[var(--accent)]">
                 {metric.icon}
               </div>
-              <p className="truncate text-lg font-semibold text-[var(--text-primary)]">
+              <p
+                className={cn(
+                  "truncate text-lg font-semibold text-[var(--text-primary)]",
+                  metric.valueTone === "emerald" && "text-[var(--positive)]",
+                  metric.valueTone === "red" && "text-[var(--negative)]",
+                )}
+              >
                 {metric.value}
               </p>
               <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
@@ -3748,6 +3763,19 @@ function DashboardHero({
                 <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
                   {metric.detail}
                 </p>
+              )}
+              {typeof metric.progress === "number" && metric.progressTone && (
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      metric.progressTone === "emerald" && "bg-[var(--positive)]",
+                      metric.progressTone === "orange" && "bg-[#F59E0B]",
+                      metric.progressTone === "red" && "bg-[var(--negative)]",
+                    )}
+                    style={{ width: `${metric.progress}%` }}
+                  />
+                </div>
               )}
             </div>
           ))}
@@ -3759,11 +3787,13 @@ function DashboardHero({
 
 function CashflowTimelineCard({
   points,
+  month,
   buffer,
   onBufferChange,
   compact = false,
 }: {
   points: CashflowPoint[];
+  month: string;
   buffer: number;
   onBufferChange: (value: number) => void;
   compact?: boolean;
@@ -3795,8 +3825,8 @@ function CashflowTimelineCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="h-32">
-          <CashflowSvgChart points={points} buffer={buffer} />
+        <div className="h-40">
+          <CashflowRechartsChart points={points} month={month} buffer={buffer} />
         </div>
         <CashflowLegend />
         <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-5 text-[var(--text-secondary)]">
@@ -3830,16 +3860,15 @@ function CashflowLegendItem({ color, label }: { color: string; label: string }) 
   );
 }
 
-function CashflowSvgChart({
+function CashflowRechartsChart({
   points,
+  month,
   buffer,
 }: {
   points: CashflowPoint[];
+  month: string;
   buffer: number;
 }) {
-  const segments = cashflowLineSegments(points, buffer);
-  const firstPoint = points[0];
-
   if (!points.length) {
     return (
       <div className="flex h-full items-center justify-center rounded-[12px] border border-dashed border-[var(--border)] bg-black/10 text-xs text-[var(--text-muted)]">
@@ -3848,45 +3877,102 @@ function CashflowSvgChart({
     );
   }
 
+  const chart = buildCashflowChartModel(points, buffer);
+
   return (
-    <svg
-      viewBox="0 0 320 112"
-      role="img"
-      aria-label="Cashflowlijn deze maand"
-      className="h-full w-full overflow-visible"
-      preserveAspectRatio="none"
-    >
-      <line
-        x1="8"
-        y1="104"
-        x2="312"
-        y2="104"
-        stroke="rgba(255,255,255,0.07)"
-        strokeWidth="1"
-        vectorEffect="non-scaling-stroke"
-      />
-      {segments.map((segment) => (
-        <line
-          key={segment.id}
-          x1={segment.x1}
-          y1={segment.y1}
-          x2={segment.x2}
-          y2={segment.y2}
-          stroke={segment.color}
-          strokeWidth="3"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
+    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+      <LineChart
+        data={chart.data}
+        margin={{ top: 12, right: 8, bottom: 0, left: 0 }}
+      >
+        <CartesianGrid
+          vertical={false}
+          stroke="rgba(161,161,170,0.18)"
+          strokeDasharray="3 3"
         />
-      ))}
-      {segments.length === 0 && firstPoint && (
-        <circle
-          cx="160"
-          cy="56"
-          r="4"
-          fill={cashflowLineColor(firstPoint.balance, buffer)}
+        <XAxis
+          dataKey="day"
+          type="number"
+          domain={chart.xDomain}
+          ticks={chart.xTicks}
+          axisLine={false}
+          tickLine={false}
+          tick={{ fill: "#A1A1AA", fontSize: 11 }}
+          tickFormatter={(value) =>
+            formatCashflowDateTick(month, Number(value))
+          }
         />
-      )}
-    </svg>
+        <YAxis
+          type="number"
+          domain={chart.yDomain}
+          ticks={chart.yTicks}
+          width={54}
+          axisLine={false}
+          tickLine={false}
+          tick={{ fill: "#A1A1AA", fontSize: 11 }}
+          tickFormatter={(value) => formatCashflowAxisValue(Number(value))}
+        />
+        {chart.showOrangeZone && (
+          <ReferenceArea
+            y1={chart.orangeZone[0]}
+            y2={chart.orangeZone[1]}
+            fill="#F59E0B"
+            fillOpacity={0.1}
+            ifOverflow="extendDomain"
+          />
+        )}
+        {chart.showRedZone && (
+          <ReferenceArea
+            y1={chart.redZone[0]}
+            y2={chart.redZone[1]}
+            fill="#EF4444"
+            fillOpacity={0.1}
+            ifOverflow="extendDomain"
+          />
+        )}
+        <ReferenceLine
+          y={buffer}
+          stroke="#6366F1"
+          strokeDasharray="4 4"
+          strokeWidth={1.5}
+          ifOverflow="extendDomain"
+          label={{
+            value: "Buffer",
+            position: "right",
+            fill: "#6366F1",
+            fontSize: 11,
+          }}
+        />
+        {chart.segments.length > 0 ? (
+          chart.segments.map((segment) => (
+            <Line
+              key={segment.id}
+              data={segment.data}
+              type="linear"
+              dataKey="balance"
+              stroke={segment.color}
+              strokeWidth={3}
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+              strokeLinecap="round"
+              connectNulls
+            />
+          ))
+        ) : (
+          <Line
+            data={chart.data}
+            type="linear"
+            dataKey="balance"
+            stroke={cashflowLineColor(points[0].balance, buffer)}
+            strokeWidth={3}
+            dot={{ r: 4 }}
+            activeDot={false}
+            isAnimationActive={false}
+          />
+        )}
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -4496,6 +4582,8 @@ function AllTransactionsCard({
   deletingTransactionId,
   bookingContributionPlanId,
   onDeleteTransaction,
+  onEditTransaction,
+  onOpenReceipt,
   onBookExpectedContribution,
 }: {
   currentMonth: string;
@@ -4503,8 +4591,13 @@ function AllTransactionsCard({
   deletingTransactionId: string | null;
   bookingContributionPlanId: string | null;
   onDeleteTransaction: (transaction: Transaction) => void;
+  onEditTransaction: (transaction: Transaction) => void;
+  onOpenReceipt: (receipt: ReceiptViewerState) => void;
   onBookExpectedContribution: (plan: ContributionPlanRow) => void;
 }) {
+  const [displayLimit, setDisplayLimit] = useState<TransactionDisplayLimit>(10);
+  const visibleRows =
+    displayLimit === "all" ? rows : rows.slice(0, displayLimit);
   const total = rows.reduce((sum, row) => sum + row.signedAmount, 0);
 
   return (
@@ -4523,7 +4616,7 @@ function AllTransactionsCard({
       <CardContent className="p-0">
         {rows.length > 0 ? (
           <div className="divide-y divide-[var(--border)]">
-            {rows.map((row) => {
+            {visibleRows.map((row) => {
               const isUpcoming =
                 row.state === "today" || row.state === "upcoming";
               const isDeleting =
@@ -4532,29 +4625,29 @@ function AllTransactionsCard({
                 !!row.expectedContributionPlan &&
                 bookingContributionPlanId === row.expectedContributionPlan.id;
 
-              return (
-                <div
-                  key={row.id}
-                  className={cn(
-                    "group/transaction grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 sm:px-5",
-                    row.isExpected &&
-                      "border-l-2 border-dashed border-l-[var(--positive)] bg-[var(--positive-light)]/40 text-[var(--text-secondary)]",
-                  )}
-                >
-                  <div className="text-center">
-                    <p className="text-[11px] font-medium uppercase text-[var(--text-muted)]">
-                      {new Intl.DateTimeFormat("nl-NL", {
-                        month: "short",
-                      }).format(new Date(`${row.date}T00:00:00`))}
-                    </p>
-                    <p className="text-base font-semibold text-[var(--text-primary)]">
-                      {Number(row.date.slice(8, 10))}
-                    </p>
-                  </div>
-                  <div className="flex min-w-0 items-center gap-3">
-                    {row.signedAmount >= 0 ? (
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]">
-                        <ArrowDownToLine className="h-4 w-4" />
+	              return (
+	                <div
+	                  key={row.id}
+	                  className={cn(
+	                    "group/transaction flex items-center justify-between gap-3 px-4 py-3 sm:px-5",
+	                    row.isExpected &&
+	                      "border-l-2 border-dashed border-l-[var(--positive)] bg-[var(--positive-light)]/40 text-[var(--text-secondary)]",
+	                  )}
+	                >
+	                  <div className="flex min-w-0 flex-1 items-center gap-3">
+	                    <div className="w-10 shrink-0 text-center">
+	                      <p className="text-[10px] font-medium uppercase text-[var(--text-muted)]">
+	                        {new Intl.DateTimeFormat("nl-NL", {
+	                          month: "short",
+	                        }).format(new Date(`${row.date}T00:00:00`))}
+	                      </p>
+	                      <p className="text-sm font-semibold text-[var(--text-primary)]">
+	                        {Number(row.date.slice(8, 10))}
+	                      </p>
+	                    </div>
+	                    {row.signedAmount >= 0 ? (
+	                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]">
+	                        <ArrowDownToLine className="h-4 w-4" />
                       </span>
                     ) : (
                       <span
@@ -4574,33 +4667,52 @@ function AllTransactionsCard({
                       <p className="truncate text-sm font-medium text-[var(--text-primary)]">
                         {row.title}
                       </p>
-                      <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
-                        {row.subtitle}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex min-w-fit items-center justify-end gap-2 text-right">
-                    <div>
-                      <p
-                        className={cn(
-                          "text-sm font-semibold",
-                          row.signedAmount >= 0
-                            ? "text-[var(--positive)]"
-                            : "text-[var(--negative)]",
-                        )}
-                      >
-                        {row.signedAmount >= 0 ? "+" : "-"}
-                        {preciseCurrency(Math.abs(row.signedAmount))}
-                      </p>
-                      {row.isExpected && (
-                        <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                          Verwacht
-                        </p>
-                      )}
-                    </div>
-                    {row.expectedContributionPlan && (
-                      <Button
-                        type="button"
+	                      <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
+	                        {row.subtitle}
+	                      </p>
+	                    </div>
+	                  </div>
+	                  <div className="flex shrink-0 items-center justify-end gap-2 text-right">
+	                    <div className="min-w-[5.5rem]">
+	                      <p
+	                        className={cn(
+	                          "text-sm font-semibold",
+	                          row.signedAmount >= 0
+	                            ? "text-[var(--positive)]"
+	                            : "text-[var(--negative)]",
+	                        )}
+	                      >
+	                        {row.signedAmount >= 0 ? "+" : "-"}
+	                        {preciseCurrency(Math.abs(row.signedAmount))}
+	                      </p>
+	                      {row.isExpected && (
+	                        <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+	                          Verwacht
+	                        </p>
+	                      )}
+	                    </div>
+	                    {row.transaction && (
+	                      <Button
+	                        type="button"
+	                        size="icon"
+	                        variant="ghost"
+	                        title="Bewerk transactie"
+	                        className="h-8 w-8 shrink-0 text-[var(--text-muted)] opacity-100 hover:text-[var(--accent)] sm:opacity-0 sm:transition sm:group-hover/transaction:opacity-100 sm:group-focus-within/transaction:opacity-100"
+	                        onClick={() => onEditTransaction(row.transaction!)}
+	                      >
+	                        <Pencil className="h-4 w-4" />
+	                      </Button>
+	                    )}
+	                    {row.receiptUrl && (
+	                      <ReceiptAttachment
+	                        receiptUrl={row.receiptUrl}
+                        title={`${row.title} · ${row.date}`}
+	                        onOpen={onOpenReceipt}
+	                      />
+	                    )}
+	                    {row.expectedContributionPlan && (
+	                      <Button
+	                        type="button"
                         size="sm"
                         variant="secondary"
                         className="h-8 px-3 text-xs"
@@ -4614,11 +4726,11 @@ function AllTransactionsCard({
                         ) : (
                           <Check className="mr-1.5 h-3.5 w-3.5" />
                         )}
-                        Boeken
-                      </Button>
-                    )}
-                    {row.transaction && (
-                      <Button
+	                        Boeken
+	                      </Button>
+	                    )}
+	                    {row.transaction && (
+	                      <Button
                         type="button"
                         size="icon"
                         variant="ghost"
@@ -4638,6 +4750,12 @@ function AllTransactionsCard({
                 </div>
               );
             })}
+            {rows.length > 10 && (
+              <TransactionDisplayLimitPicker
+                value={displayLimit}
+                onChange={setDisplayLimit}
+              />
+            )}
           </div>
         ) : (
           <div className="m-4 rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--bg-surface)] p-4 text-sm text-[var(--text-secondary)] sm:m-5">
@@ -4646,6 +4764,48 @@ function AllTransactionsCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function TransactionDisplayLimitPicker({
+  value,
+  onChange,
+}: {
+  value: TransactionDisplayLimit;
+  onChange: (value: TransactionDisplayLimit) => void;
+}) {
+  const options = [
+    { label: "10", value: 10 },
+    { label: "15", value: 15 },
+    { label: "20", value: 20 },
+    { label: "Alles", value: "all" },
+  ] satisfies Array<{ label: string; value: TransactionDisplayLimit }>;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-xs text-[var(--text-secondary)] sm:px-5">
+      <span>Weergeven:</span>
+      <div className="flex flex-wrap items-center gap-1">
+        {options.map((option) => {
+          const isActive = value === option.value;
+
+          return (
+            <button
+              key={option.label}
+              type="button"
+              className={cn(
+                "rounded-[999px] px-2.5 py-1 font-medium transition",
+                isActive
+                  ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                  : "text-[var(--text-muted)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]",
+              )}
+              onClick={() => onChange(option.value)}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -5071,6 +5231,8 @@ function MonthInsightsSection({
   onExportExcel,
   onExportPdf,
   onDeleteTransaction,
+  onEditTransaction,
+  onOpenReceipt,
   onBookExpectedContribution,
 }: {
   currentMonth: string;
@@ -5089,6 +5251,8 @@ function MonthInsightsSection({
   onExportExcel: (month: string) => void;
   onExportPdf: (month: string) => void;
   onDeleteTransaction: (transaction: Transaction) => void;
+  onEditTransaction: (transaction: Transaction) => void;
+  onOpenReceipt: (receipt: ReceiptViewerState) => void;
   onBookExpectedContribution: (plan: ContributionPlanRow) => void;
 }) {
   return (
@@ -5116,6 +5280,8 @@ function MonthInsightsSection({
         deletingTransactionId={deletingTransactionId}
         bookingContributionPlanId={bookingContributionPlanId}
         onDeleteTransaction={onDeleteTransaction}
+        onEditTransaction={onEditTransaction}
+        onOpenReceipt={onOpenReceipt}
         onBookExpectedContribution={onBookExpectedContribution}
       />
 
@@ -6976,7 +7142,12 @@ function ContributionCard({
             type="button"
             variant="secondary"
             className="h-10 justify-center border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10"
-            onClick={() => setIsBookingOpen(true)}
+            onClick={() => {
+              if (kind === "planned") {
+                onKindChange("extra");
+              }
+              setIsBookingOpen(true);
+            }}
           >
             <ArrowDownToLine className="h-4 w-4" />
             Storting boeken
@@ -7274,8 +7445,8 @@ function ContributionBookingDialog({
 
           <div className="grid gap-2">
             <p className="text-xs font-medium text-zinc-500">Type</p>
-            <div className="grid grid-cols-3 gap-1 rounded-[16px] bg-[var(--bg-surface)] p-1">
-              {(["extra", "planned", "belastingteruggave"] as const).map((item) => (
+            <div className="grid grid-cols-2 gap-1 rounded-[16px] bg-[var(--bg-surface)] p-1">
+              {(["extra", "belastingteruggave"] as const).map((item) => (
                 <button
                   key={item}
                   type="button"
@@ -8193,86 +8364,68 @@ function signedTransactionAmount(transaction: Transaction) {
   return -transaction.amount;
 }
 
-function buildExpectedMonthEndForecast({
-  transactions,
-  month,
-  calculatedBalance,
-  remainingIncomeTotal,
-  remainingFixedTotal,
+function buildHeroBudgetSnapshot({
+  incomingTotal,
+  postedIncomingTotal,
+  plannedIncomingTotal,
+  expectedFixedTotal,
+  variableExpenseTotal,
 }: {
-  transactions: Transaction[];
-  month: string;
-  calculatedBalance: number | null;
-  remainingIncomeTotal: number;
-  remainingFixedTotal: number;
-}): ExpectedMonthEndForecast {
-  if (calculatedBalance === null) {
-    return {
-      amount: null,
-      basis: "current",
-      basisLabel: "Op basis van deze maand",
-      expectedRemainingVariable: 0,
-    };
-  }
-
-  const daysInMonth = daysInIsoMonth(month);
-  const elapsedDays = dataDaysForMonth(month);
-  const remainingDays = Math.max(daysInMonth - elapsedDays, 0);
-  const currentVariableTotal =
-    elapsedDays > 0
-      ? variableTotalForMonth(transactions, month, elapsedDays)
-      : 0;
-  const actualDailyAverage =
-    currentVariableTotal / Math.max(elapsedDays, 1);
-  const throughDate =
-    elapsedDays > 0 ? dateForBillingDay(month, elapsedDays) : null;
-  const currentVariableDays = throughDate
-    ? new Set(
-        transactions
-          .filter((transaction) => transaction.type === "variable")
-          .filter((transaction) => transaction.date.startsWith(month))
-          .filter((transaction) => transaction.date <= throughDate)
-          .map((transaction) => transaction.date),
-      ).size
-    : 0;
-  const historicalRows = [1, 2, 3]
-    .map((offset) => {
-      const historicalMonth = addIsoMonths(month, -offset);
-
-      return {
-        total: variableTotalForMonth(transactions, historicalMonth),
-        days: daysInIsoMonth(historicalMonth),
-      };
-    })
-    .filter((row) => row.total > 0);
-  const historicalDailyAverage =
-    historicalRows.reduce((total, row) => total + row.total, 0) /
-    Math.max(
-      historicalRows.reduce((total, row) => total + row.days, 0),
-      1,
-    );
-  const monthProgress = elapsedDays / Math.max(daysInMonth, 1);
-  const hasLittleCurrentData = elapsedDays < 10 || currentVariableDays < 3;
-  const useHistoricalAverage =
-    monthProgress < 0.5 &&
-    hasLittleCurrentData &&
-    historicalRows.length >= 2;
-  const expectedRemainingVariable =
-    remainingDays *
-    (useHistoricalAverage ? historicalDailyAverage : actualDailyAverage);
+  incomingTotal: number;
+  postedIncomingTotal: number;
+  plannedIncomingTotal: number;
+  expectedFixedTotal: number;
+  variableExpenseTotal: number;
+}) {
+  const freeBudget = incomingTotal - expectedFixedTotal;
+  const remainingFreeBudget = freeBudget - variableExpenseTotal;
+  const expenseProgress =
+    freeBudget > 0
+      ? clampPercentage((variableExpenseTotal / freeBudget) * 100)
+      : variableExpenseTotal > 0
+        ? 100
+        : 0;
+  const depositProgress =
+    plannedIncomingTotal > 0
+      ? clampPercentage((postedIncomingTotal / plannedIncomingTotal) * 100)
+      : undefined;
 
   return {
-    amount:
-      calculatedBalance +
-      remainingIncomeTotal -
-      remainingFixedTotal -
-      expectedRemainingVariable,
-    basis: useHistoricalAverage ? "historical" : "current",
-    basisLabel: useHistoricalAverage
-      ? "Op basis van historisch gemiddelde"
-      : "Op basis van deze maand",
-    expectedRemainingVariable,
+    incomingTotal,
+    postedIncomingTotal,
+    plannedIncomingTotal,
+    expectedFixedTotal,
+    variableExpenseTotal,
+    freeBudget,
+    remainingFreeBudget,
+    expenseProgress,
+    expenseProgressTone: expenseProgressTone(expenseProgress),
+    depositProgress,
+    depositProgressTone:
+      typeof depositProgress === "number"
+        ? depositProgressTone(depositProgress)
+        : undefined,
   };
+}
+
+function clampPercentage(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.min(Math.max(value, 0), 100);
+}
+
+function expenseProgressTone(progress: number): "emerald" | "orange" | "red" {
+  if (progress < 60) return "emerald";
+  if (progress <= 90) return "orange";
+  return "red";
+}
+
+function depositProgressTone(progress: number): "emerald" | "orange" | "red" {
+  if (progress >= 90) return "emerald";
+  if (progress >= 60) return "orange";
+  return "red";
 }
 
 function buildContributionCoverage({
@@ -8856,36 +9009,105 @@ function cashflowLineColor(balance: number, buffer: number) {
   return "#10B981";
 }
 
-function cashflowLineSegments(points: CashflowPoint[], buffer: number) {
-  const chartWidth = 320;
-  const chartHeight = 112;
-  const padding = 8;
+function buildCashflowChartModel(points: CashflowPoint[], buffer: number) {
   const minDay = points[0]?.day ?? 1;
   const maxDay = points.at(-1)?.day ?? minDay;
   const balances = points.map((point) => point.balance);
-  const minBalance = Math.min(...balances, buffer, 0);
-  const maxBalance = Math.max(...balances, buffer, 0);
-  const balanceRange = Math.max(maxBalance - minBalance, 1);
-  const dayRange = Math.max(maxDay - minDay, 1);
-  const xForDay = (day: number) =>
-    padding + ((day - minDay) / dayRange) * (chartWidth - padding * 2);
-  const yForBalance = (balance: number) =>
-    chartHeight -
-    padding -
-    ((balance - minBalance) / balanceRange) * (chartHeight - padding * 2);
+  const yScale = cashflowAxisScale(
+    Math.min(...balances, buffer, 0),
+    Math.max(...balances, buffer, 0),
+  );
+  const orangeZone = [
+    Math.max(0, yScale.domain[0]),
+    Math.min(buffer, yScale.domain[1]),
+  ] as const;
+  const redZone = [yScale.domain[0], Math.min(0, yScale.domain[1])] as const;
 
-  return points.slice(1).map((point, index) => {
-    const previousPoint = points[index];
+  return {
+    data: points,
+    xDomain: [minDay, maxDay] as [number, number],
+    xTicks: cashflowDateTicks(minDay, maxDay),
+    yDomain: yScale.domain,
+    yTicks: yScale.ticks,
+    orangeZone,
+    redZone,
+    showOrangeZone:
+      orangeZone[1] > orangeZone[0] &&
+      points.some((point) => point.balance < buffer && point.balance >= 0),
+    showRedZone:
+      redZone[1] > redZone[0] &&
+      points.some((point) => point.balance < 0),
+    segments: points.slice(1).map((point, index) => {
+      const previousPoint = points[index];
 
-    return {
-      id: `${previousPoint.day}-${point.day}`,
-      color: cashflowLineColor(point.balance, buffer),
-      x1: xForDay(previousPoint.day),
-      y1: yForBalance(previousPoint.balance),
-      x2: xForDay(point.day),
-      y2: yForBalance(point.balance),
-    };
-  });
+      return {
+        id: `${previousPoint.day}-${point.day}`,
+        data: [previousPoint, point],
+        color: cashflowLineColor(point.balance, buffer),
+      };
+    }),
+  };
+}
+
+function cashflowAxisScale(minValue: number, maxValue: number) {
+  const rawRange = Math.max(maxValue - minValue, 1);
+  const step = niceCashflowStep(rawRange / 4);
+  const min = Math.floor(minValue / step) * step;
+  const max = Math.ceil(maxValue / step) * step;
+  const ticks: number[] = [];
+
+  for (let tick = min; tick <= max + step * 0.5; tick += step) {
+    ticks.push(Math.round(tick));
+  }
+
+  return {
+    domain: [min, max] as [number, number],
+    ticks: ticks.length >= 2 ? ticks : [min, max],
+  };
+}
+
+function niceCashflowStep(value: number) {
+  const exponent = Math.floor(Math.log10(Math.max(value, 1)));
+  const base = 10 ** exponent;
+  const fraction = value / base;
+
+  if (fraction <= 1) return base;
+  if (fraction <= 2) return base * 2;
+  if (fraction <= 5) return base * 5;
+  return base * 10;
+}
+
+function cashflowDateTicks(minDay: number, maxDay: number) {
+  if (minDay === maxDay) {
+    return [minDay];
+  }
+
+  const middleDay = Math.round((minDay + maxDay) / 2);
+
+  return Array.from(new Set([minDay, middleDay, maxDay]));
+}
+
+function formatCashflowDateTick(month: string, day: number) {
+  return new Intl.DateTimeFormat("nl-NL", {
+    day: "2-digit",
+    month: "short",
+  }).format(new Date(`${dateForBillingDay(month, day)}T00:00:00`));
+}
+
+function formatCashflowAxisValue(value: number) {
+  const absoluteValue = Math.abs(value);
+  const prefix = value < 0 ? "-€" : "€";
+
+  if (absoluteValue >= 1000) {
+    const roundedValue = absoluteValue / 1000;
+    const decimals = absoluteValue >= 10000 ? 0 : 1;
+
+    return `${prefix}${roundedValue
+      .toFixed(decimals)
+      .replace(".", ",")}k`;
+  }
+
+  return `${prefix}${Math.round(absoluteValue).toLocaleString("nl-NL")}`;
 }
 
 function cashflowInsight(points: CashflowPoint[], buffer: number) {
