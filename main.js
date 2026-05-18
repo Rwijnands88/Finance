@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, dialog, shell } = require("electron");
 const { spawn } = require("child_process");
+const { createServer } = require("http");
 const path = require("path");
 const waitOn = require("wait-on");
 
@@ -11,6 +12,7 @@ const useExternalServer = process.env.ELECTRON_USE_EXTERNAL_SERVER === "true";
 
 let mainWindow = null;
 let nextProcess = null;
+let nextServer = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -46,36 +48,32 @@ function createWindow() {
   mainWindow.loadURL(appUrl);
 }
 
-function startNextServer() {
+async function startNextServer() {
   if (useExternalServer) {
     return;
   }
 
   const cwd = app.getAppPath();
   const isPackaged = app.isPackaged;
-  const command = isPackaged ? process.execPath : "npm";
-  const args = isPackaged
-    ? [
-        path.join(cwd, "node_modules", "next", "dist", "bin", "next"),
-        "start",
-        "-p",
-        port,
-        "-H",
-        "127.0.0.1",
-      ]
-    : ["run", "dev", "--", "--port", port, "--hostname", "127.0.0.1"];
+
+  if (isPackaged) {
+    await startEmbeddedNextServer(cwd);
+    return;
+  }
+
+  const command = process.platform === "win32" ? "npm.cmd" : "npm";
+  const args = ["run", "dev", "--", "--port", port, "--hostname", "127.0.0.1"];
 
   nextProcess = spawn(command, args, {
     cwd,
-    detached: true,
-    shell: true,
+    detached: false,
+    shell: false,
     windowsHide: true,
     env: {
       ...process.env,
       PORT: port,
       HOSTNAME: "127.0.0.1",
-      NODE_ENV: isPackaged ? "production" : "development",
-      ...(isPackaged ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
+      NODE_ENV: "development",
     },
     stdio: "ignore",
   });
@@ -86,28 +84,60 @@ function startNextServer() {
   nextProcess.unref();
 }
 
+async function startEmbeddedNextServer(cwd) {
+  process.env.PORT = port;
+  process.env.HOSTNAME = "127.0.0.1";
+  process.env.NODE_ENV = "production";
+
+  const next = require("next");
+  const nextApp = next({
+    dev: false,
+    dir: cwd,
+    hostname: "127.0.0.1",
+    port: Number(port),
+    quiet: true,
+  });
+  const handle = nextApp.getRequestHandler();
+
+  await nextApp.prepare();
+
+  await new Promise((resolve, reject) => {
+    nextServer = createServer((request, response) => {
+      handle(request, response);
+    });
+
+    nextServer.once("error", reject);
+    nextServer.listen(Number(port), "127.0.0.1", resolve);
+  });
+}
+
 function stopNextServer() {
+  if (nextServer) {
+    try {
+      nextServer.close();
+    } catch {
+      // The embedded server may already have stopped while the app was closing.
+    } finally {
+      nextServer = null;
+    }
+  }
+
   if (!nextProcess?.pid) {
     return;
   }
 
   try {
-    process.kill(-nextProcess.pid);
+    nextProcess.kill();
   } catch {
-    try {
-      nextProcess.kill();
-    } catch {
-      // The server may already have stopped while the window was closing.
-    }
+    // The server may already have stopped while the window was closing.
   } finally {
     nextProcess = null;
   }
 }
 
 async function boot() {
-  startNextServer();
-
   try {
+    await startNextServer();
     await waitOn({
       resources: [appUrl],
       timeout: 60_000,

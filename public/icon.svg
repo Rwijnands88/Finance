@@ -1,13 +1,68 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1024" height="1024" rx="224" fill="#09090B"/>
-  <rect x="144" y="144" width="736" height="736" rx="176" fill="#101014"/>
-  <rect x="207" y="546" width="610" height="296" rx="76" fill="#18181B" stroke="#27272A" stroke-width="18"/>
-  <path d="M266 750C322 698 364 721 412 669C462 616 510 646 558 594C608 540 659 545 724 484" stroke="#10B981" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M264 666H740" stroke="#27272A" stroke-width="18" stroke-linecap="round"/>
-  <path d="M264 742H612" stroke="#27272A" stroke-width="18" stroke-linecap="round"/>
-  <circle cx="338" cy="336" r="108" stroke="#27272A" stroke-width="36"/>
-  <path d="M338 228A108 108 0 0 1 446 336" stroke="#6366F1" stroke-width="36" stroke-linecap="round"/>
-  <path d="M446 336A108 108 0 0 1 319 442" stroke="#10B981" stroke-width="36" stroke-linecap="round"/>
-  <rect x="572" y="344" width="72" height="124" rx="28" fill="#475569"/>
-  <rect x="690" y="260" width="72" height="208" rx="28" fill="#6366F1"/>
+  <defs>
+    <linearGradient id="card" x1="164" y1="80" x2="860" y2="944" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#202438"/>
+      <stop offset="0.52" stop-color="#111522"/>
+      <stop offset="1" stop-color="#09090B"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="224" y1="740" x2="796" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3F61E8"/>
+      <stop offset="1" stop-color="#6F85FF"/>
+    </linearGradient>
+    <linearGradient id="white" x1="224" y1="275" x2="812" y2="690" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E8EAF2"/>
+    </linearGradient>
+    <linearGradient id="coin" x1="602" y1="516" x2="876" y2="860" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24293E"/>
+      <stop offset="1" stop-color="#111522"/>
+    </linearGradient>
+    <filter id="softShadow" x="112" y="132" width="800" height="780" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+    <filter id="tightShadow" x="120" y="140" width="784" height="772" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#09090B"/>
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#card)"/>
+  <rect x="32" y="32" width="960" height="960" rx="220" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="18"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="150" y="648" width="108" height="160" rx="24" fill="url(#bar)"/>
+    <rect x="300" y="568" width="108" height="240" rx="24" fill="url(#bar)"/>
+    <rect x="450" y="440" width="108" height="368" rx="28" fill="url(#bar)"/>
+    <path d="M680 744V504C680 484.118 696.118 468 716 468H752C771.882 468 788 484.118 788 504V744H680Z" fill="url(#bar)"/>
+    <path d="M150 648H258V808H150V648Z" fill="rgba(255,255,255,0.06)"/>
+    <path d="M300 568H408V808H300V568Z" fill="rgba(255,255,255,0.05)"/>
+    <path d="M450 440H558V808H450V440Z" fill="rgba(255,255,255,0.04)"/>
+  </g>
+
+  <g filter="url(#tightShadow)">
+    <path
+      d="M201 542L312 438L374 499L510 365L636 489L810 317"
+      stroke="url(#white)"
+      stroke-width="58"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M740 292L833 266C850.24 261.169 866.443 276.807 862.233 294.21L838.158 393.772C833.985 411.027 812.776 417.407 799.706 405.339L730.78 341.711C717.747 329.678 722.936 296.775 740 292Z"
+      fill="url(#white)"
+    />
+  </g>
+
+  <g filter="url(#softShadow)">
+    <circle cx="704" cy="672" r="164" fill="url(#coin)"/>
+    <circle cx="704" cy="672" r="164" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="12"/>
+    <path
+      d="M772 572C747.992 552.571 717.62 543.343 686.88 546.141C656.139 548.94 627.275 563.56 606 587C584.725 610.44 573 641.011 573 672C573 702.989 584.725 733.56 606 757C627.275 780.44 656.139 795.06 686.88 797.859C717.62 800.657 747.992 791.429 772 772"
+      stroke="url(#white)"
+      stroke-width="48"
+      stroke-linecap="round"
+    />
+    <path d="M560 648H724" stroke="url(#white)" stroke-width="42" stroke-linecap="round"/>
+    <path d="M560 704H712" stroke="url(#white)" stroke-width="42" stroke-linecap="round"/>
+  </g>
 </svg>
