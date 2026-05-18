@@ -38,6 +38,11 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+html {
+  overflow-x: hidden;
 }
 
 button,
@@ -97,9 +102,9 @@ button:active {
 
 .finance-bottom-nav {
   box-sizing: border-box;
-  height: calc(76px + env(safe-area-inset-bottom));
+  height: calc(64px + env(safe-area-inset-bottom));
   padding: 6px max(10px, env(safe-area-inset-left))
-    calc(8px + env(safe-area-inset-bottom))
+    calc(6px + env(safe-area-inset-bottom))
     max(10px, env(safe-area-inset-right));
   background: rgba(7, 7, 9, 0.94);
   backdrop-filter: blur(24px);
@@ -107,7 +112,8 @@ button:active {
 
 .finance-bottom-nav button {
   display: flex;
-  height: 58px;
+  min-height: 44px;
+  height: 52px;
   min-width: 0;
   flex-direction: column;
   align-items: center;

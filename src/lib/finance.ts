@@ -111,7 +111,10 @@ export function categoryTotalsByPerson(
   const grouped = new Map<string, Map<string, number>>();
 
   transactions
-    .filter((transaction) => transaction.date.startsWith(month))
+    .filter(
+      (transaction) =>
+        transaction.date.startsWith(month) && transaction.type === "variable",
+    )
     .forEach((transaction) => {
       const person = personForTransaction(transaction);
       const personTotals =

@@ -163,13 +163,14 @@ const cashflowBufferStorageKeyPrefix = "finance-cashflow-buffer";
 
 function sectionNavItems() {
   return [
-    { id: "dashboard", label: "Dashboard", icon: WalletCards },
-    { id: "fixed", label: "Vaste lasten", icon: ListChecks },
-    { id: "input", label: "Invoeren", icon: Plus },
-    { id: "month", label: "Maand", icon: CalendarDays },
+    { id: "dashboard", label: "Dashboard", mobileLabel: "Home", icon: WalletCards },
+    { id: "fixed", label: "Vaste lasten", mobileLabel: "Lasten", icon: ListChecks },
+    { id: "input", label: "Invoeren", mobileLabel: "+", icon: Plus },
+    { id: "month", label: "Maand", mobileLabel: "Maand", icon: CalendarDays },
   ] satisfies Array<{
     id: ActiveSection;
     label: string;
+    mobileLabel: string;
     icon: React.ComponentType<{ className?: string }>;
   }>;
 }
@@ -304,6 +305,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     defaultAccount?.id ?? personalAccount?.id ?? "all",
   );
   const [activeSection, setActiveSection] = useState<ActiveSection>("dashboard");
+  const [isMobileFixedManagerOpen, setIsMobileFixedManagerOpen] = useState(false);
   const [quickAmount, setQuickAmount] = useState("");
   const [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10));
   const [quickNote, setQuickNote] = useState("");
@@ -410,11 +412,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
   );
   const [chartsReady, setChartsReady] = useState(false);
-  const [isDesktopViewport, setIsDesktopViewport] = useState(false);
+  const [isDesktopViewport, setIsDesktopViewport] = useState<boolean | null>(
+    null,
+  );
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => setChartsReady(true));
-    return () => window.cancelAnimationFrame(frame);
+    const timeout = window.setTimeout(() => setChartsReady(true), 150);
+    return () => window.clearTimeout(timeout);
   }, []);
 
   useEffect(() => {
@@ -474,7 +478,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
   }
 
-  const mobileChartsReady = chartsReady && !isDesktopViewport;
+  const mobileChartsReady = chartsReady && isDesktopViewport === false;
   const monthOptions = useMemo(
     () =>
       buildMonthOptions(
@@ -542,12 +546,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     [currentMonth, selectedTransactions],
   );
   const categoryPersonRows = useMemo(
-    () =>
-      categoryTotalsByPerson(
-        selectedTransactions.filter((transaction) => transaction.type === "variable"),
-        categories,
-        currentMonth,
-      ),
+    () => categoryTotalsByPerson(selectedTransactions, categories, currentMonth),
     [categories, currentMonth, selectedTransactions],
   );
   const categoryUsageCounts = useMemo(
@@ -730,16 +729,38 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       buildOutgoingTransactionRows(
         monthTransactions,
         fixedAgendaItems,
-        contributionPlanRows,
+        isSharedView ? contributionPlanRows : [],
         labels,
         currentMonth,
         today,
       ),
-    [contributionPlanRows, currentMonth, fixedAgendaItems, labels, monthTransactions, today],
+    [
+      contributionPlanRows,
+      currentMonth,
+      fixedAgendaItems,
+      isSharedView,
+      labels,
+      monthTransactions,
+      today,
+    ],
   );
-  const fixedTotalForCurrentMonth = fixedAgendaItems.reduce(
-    (total, item) => (item.state === "skipped" ? total : total + item.amount),
-    0,
+  const fixedTotalForCurrentMonth = useMemo(
+    () =>
+      expectedFixedTotalForMonth(
+        selectedRecurringExpenses,
+        selectedFixedInstances,
+        currentMonth,
+      ),
+    [currentMonth, selectedFixedInstances, selectedRecurringExpenses],
+  );
+  const variableExpenseTotalToDate = useMemo(
+    () =>
+      selectedTransactions
+        .filter((transaction) => transaction.type === "variable")
+        .filter((transaction) => transaction.date.startsWith(currentMonth))
+        .filter((transaction) => transaction.date <= today)
+        .reduce((total, transaction) => total + transaction.amount, 0),
+    [currentMonth, selectedTransactions, today],
   );
   const heroBudget = useMemo(
     () =>
@@ -752,16 +773,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           : monthTotals.incomeTotal,
         plannedIncomingTotal: isSharedView ? plannedContributionTotal : 0,
         expectedFixedTotal: fixedTotalForCurrentMonth,
-        variableExpenseTotal: monthTotals.variableTotal,
+        variableExpenseTotal: variableExpenseTotalToDate,
       }),
     [
       fixedTotalForCurrentMonth,
       isSharedView,
       monthTotals.contributionTotal,
       monthTotals.incomeTotal,
-      monthTotals.variableTotal,
       plannedContributionTotal,
       remainingContributionTotal,
+      variableExpenseTotalToDate,
     ],
   );
   const displayedExpenseTotal = monthTotals.expenseTotal;
@@ -3069,9 +3090,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
   }
 
+  const isMobileFixedManagerVisible =
+    isMobileFixedManagerOpen || Boolean(editingRecurringId);
+
   return (
-    <main className="min-h-dvh bg-[var(--bg-base)] pb-[calc(96px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
-      <div className="mx-auto w-full max-w-[1800px] px-4 py-4 sm:px-6 lg:px-8 2xl:px-10">
+    <main className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] pb-[calc(72px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
+      <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-6 sm:py-4 lg:px-8 2xl:px-10">
         <MobileBottomNav
           activeSection={activeSection}
           onSectionChange={(section) => {
@@ -3082,20 +3106,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
         <section
           className={cn(
-            "finance-view gap-4 lg:hidden",
+            "finance-view gap-2.5 lg:hidden",
             activeSection === "dashboard" ? "grid" : "hidden",
           )}
         >
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-semibold text-[var(--text-primary)]">
+              <h1 className="text-xl font-semibold text-[var(--text-primary)] sm:text-2xl">
                 Finance
               </h1>
-              <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              <p className="mt-0.5 text-xs text-[var(--text-secondary)] sm:text-sm">
                 Familie Wijnands
               </p>
             </div>
-            <Badge className="border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)]">
+            <Badge className="h-8 border-[var(--border)] bg-[var(--bg-surface)] px-2 text-xs text-[var(--text-secondary)]">
               {initialData.currentPerson}
             </Badge>
           </div>
@@ -3120,6 +3144,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             points={cashflowTimeline}
             month={currentMonth}
             buffer={cashflowBuffer}
+            chartReady={mobileChartsReady}
             onBufferChange={(value) =>
               updateCashflowBuffer(selectedAccountId, value)
             }
@@ -3133,7 +3158,36 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             activeSection === "fixed" ? "grid" : "hidden",
           )}
         >
-          <MobileSectionHeader title="Vaste lasten" subtitle={monthLabel(currentMonth)} />
+          <MobileSectionHeader
+            title="Vaste lasten"
+            subtitle={monthLabel(currentMonth)}
+            action={
+              <Button
+                type="button"
+                variant={isMobileFixedManagerVisible ? "secondary" : "ghost"}
+                className="h-11 px-3 text-sm"
+                onClick={() => {
+                  if (isMobileFixedManagerVisible) {
+                    if (editingRecurringId) {
+                      resetRecurringForm();
+                    }
+                    setIsMobileFixedManagerOpen(false);
+                    return;
+                  }
+
+                  setIsMobileFixedManagerOpen(true);
+                }}
+              >
+                <Plus
+                  className={cn(
+                    "h-4 w-4 transition",
+                    isMobileFixedManagerVisible && "rotate-45",
+                  )}
+                />
+                {isMobileFixedManagerVisible ? "Sluiten" : "Beheren"}
+              </Button>
+            }
+          />
           <FixedExpenseAgenda
             items={fixedAgendaItems}
             currentMonth={currentMonth}
@@ -3142,39 +3196,42 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             skippingId={skippingFixedInstanceId}
             onSkip={skipFixedExpense}
           />
-          <FixedExpenseManager
-            expenses={selectedRecurringExpenses}
-            categories={fixedCategories}
-            labels={labels}
-            accountName={selectedAccount?.name ?? viewCopy.label}
-            name={recurringName}
-            amount={recurringAmount}
-            billingDay={recurringBillingDay}
-            startsOn={recurringStartsOn}
-            category={recurringCategory}
-            editingId={editingRecurringId}
-            highlightedId={highlightedRecurringId}
-            message={manageMessage}
-            isSaving={isSavingRecurring}
-            onNameChange={setRecurringName}
-            onAmountChange={setRecurringAmount}
-            onBillingDayChange={setRecurringBillingDay}
-            onStartsOnChange={setRecurringStartsOn}
-            onCategoryChange={setRecurringCategory}
-            onSave={saveRecurringExpense}
-            onEdit={startEditingRecurring}
-            onDelete={deleteRecurringExpense}
-            onCancel={resetRecurringForm}
-          />
+          {isMobileFixedManagerVisible && (
+            <FixedExpenseManager
+              expenses={selectedRecurringExpenses}
+              categories={fixedCategories}
+              labels={labels}
+              accountName={selectedAccount?.name ?? viewCopy.label}
+              name={recurringName}
+              amount={recurringAmount}
+              billingDay={recurringBillingDay}
+              startsOn={recurringStartsOn}
+              category={recurringCategory}
+              editingId={editingRecurringId}
+              highlightedId={highlightedRecurringId}
+              message={manageMessage}
+              isSaving={isSavingRecurring}
+              defaultOpen
+              hideHeader
+              onNameChange={setRecurringName}
+              onAmountChange={setRecurringAmount}
+              onBillingDayChange={setRecurringBillingDay}
+              onStartsOnChange={setRecurringStartsOn}
+              onCategoryChange={setRecurringCategory}
+              onSave={saveRecurringExpense}
+              onEdit={startEditingRecurring}
+              onDelete={deleteRecurringExpense}
+              onCancel={resetRecurringForm}
+            />
+          )}
         </section>
 
         <section
           className={cn(
-            "finance-view gap-4 lg:hidden",
+            "finance-view gap-3 lg:hidden",
             activeSection === "input" ? "grid" : "hidden",
           )}
         >
-          <MobileSectionHeader title="Invoeren" subtitle={viewCopy.label} />
           <QuickEntryCard
             title={viewCopy.quickTitle}
             amount={quickAmount}
@@ -3285,6 +3342,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           <AllTransactionsCard
             currentMonth={currentMonth}
             rows={outgoingTransactionRows}
+            freeSpaceTotal={heroBudget.remainingFreeBudget}
+            fixedTotal={fixedTotalForCurrentMonth}
             deletingTransactionId={deletingTransactionId}
             bookingContributionPlanId={bookingContributionPlanId}
             onDeleteTransaction={deleteTransaction}
@@ -3297,6 +3356,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             description={viewCopy.monthDescription}
             currentMonth={currentMonth}
             totals={monthTotals}
+            showIncome={!isSharedView}
             monthMessage={monthMessage}
             onExportExcel={exportExcel}
             onExportPdf={(month) => void exportPdf(month)}
@@ -3349,6 +3409,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 points={cashflowTimeline}
                 month={currentMonth}
                 buffer={cashflowBuffer}
+                chartReady={chartsReady && isDesktopViewport === true}
                 onBufferChange={(value) =>
                   updateCashflowBuffer(selectedAccountId, value)
                 }
@@ -3360,10 +3421,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 monthDescription={viewCopy.monthDescription}
                 outgoingRows={outgoingTransactionRows}
                 totals={monthTotals}
+                showIncome={!isSharedView}
+                freeSpaceTotal={heroBudget.remainingFreeBudget}
+                fixedTotal={fixedTotalForCurrentMonth}
                 monthMessage={monthMessage}
                 categoryRows={categoryRows}
                 selectedSixMonthTrend={selectedSixMonthTrend}
-                chartsReady={chartsReady}
+                chartsReady={chartsReady && isDesktopViewport === true}
                 monthOptions={monthOptions}
                 deletingTransactionId={deletingTransactionId}
                 bookingContributionPlanId={bookingContributionPlanId}
@@ -3626,7 +3690,7 @@ function MobileBottomNav({
   const items = sectionNavItems();
 
   return (
-    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 items-start border-t border-[var(--border)] lg:hidden">
+    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 items-start border-t border-[var(--border)] lg:hidden">
       {items.map((item) => {
         const isActive = activeSection === item.id;
         const Icon = item.icon;
@@ -3644,8 +3708,8 @@ function MobileBottomNav({
             )}
             aria-label={item.label}
           >
-            <Icon className="h-6 w-6 shrink-0" />
-            {isActive && <span className="max-w-full truncate">{item.label}</span>}
+            <Icon className="h-[22px] w-[22px] shrink-0" />
+            <span className="max-w-full whitespace-nowrap">{item.mobileLabel}</span>
           </button>
         );
       })}
@@ -3656,18 +3720,21 @@ function MobileBottomNav({
 function MobileSectionHeader({
   title,
   subtitle,
+  action,
 }: {
   title: string;
   subtitle: string;
+  action?: React.ReactNode;
 }) {
   return (
     <div className="flex items-end justify-between gap-4">
-      <div>
+      <div className="min-w-0">
         <h1 className="text-2xl font-semibold text-[var(--text-primary)]">
           {title}
         </h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">{subtitle}</p>
       </div>
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }
@@ -3682,7 +3749,7 @@ function AccountPills({
   onSelect: (accountId: string) => void;
 }) {
   return (
-    <div className="flex w-full gap-1 rounded-[var(--radius-chip)] bg-[var(--bg-surface)] p-1">
+    <div className="flex w-full max-w-full gap-1 overflow-hidden rounded-[var(--radius-chip)] bg-[var(--bg-surface)] p-1">
       {tabs.map((tab) => {
         const isActive = selectedAccountId === tab.id;
 
@@ -3692,13 +3759,13 @@ function AccountPills({
             type="button"
             onClick={() => onSelect(tab.id)}
             className={cn(
-              "min-w-0 flex-1 rounded-[var(--radius-chip)] px-[18px] py-1.5 text-center text-sm font-medium",
+              "min-h-11 min-w-0 flex-1 rounded-[var(--radius-chip)] px-2 py-1.5 text-center text-xs font-medium sm:px-[18px] sm:text-sm",
               isActive
                 ? "bg-[var(--accent-light)] text-[var(--accent)]"
                 : "text-[var(--text-secondary)] hover:bg-white/[0.04]",
             )}
           >
-            <span className="block truncate">{tab.label}</span>
+            <span className="block whitespace-nowrap">{tab.label}</span>
           </button>
         );
       })}
@@ -3720,52 +3787,52 @@ function DashboardHero({
   mobile?: boolean;
 }) {
   return (
-    <section className="finance-card rounded-[var(--radius-card)] border border-[var(--border)] bg-[linear-gradient(135deg,#191924,#13131C)] p-5 shadow-[0_0_80px_rgba(99,102,241,0.07)_inset]">
-      <div className={cn("grid gap-5", mobile ? "text-center" : "lg:grid-cols-[1fr_auto] lg:items-end")}>
+    <section className="finance-card rounded-[var(--radius-card)] border border-[var(--border)] bg-[linear-gradient(135deg,#191924,#13131C)] p-3 shadow-[0_0_80px_rgba(99,102,241,0.07)_inset] sm:p-5">
+      <div className={cn("grid gap-3 sm:gap-5", mobile ? "text-center" : "lg:grid-cols-[1fr_auto] lg:items-end")}>
         <div>
-          <p className="text-sm font-medium text-[var(--text-secondary)] lg:text-xs">
+          <p className="text-xs font-medium text-[var(--text-secondary)] sm:text-sm lg:text-xs">
             {label}
           </p>
           <p
             className={cn(
               "mt-2 font-bold tracking-normal text-[var(--text-primary)]",
-              mobile ? "text-[44px]" : "text-[32px]",
+              mobile ? "text-[36px] leading-none sm:text-[44px]" : "text-[32px]",
             )}
           >
             {value}
           </p>
-          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
+          <p className="mt-1 text-xs text-[var(--text-secondary)] sm:text-[13px]">
             {subtext}
           </p>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           {metrics.map((metric) => (
             <div
               key={metric.label}
-              className="rounded-[14px] border border-[var(--border)] bg-black/10 p-3 text-left"
+              className="rounded-[12px] border border-[var(--border)] bg-black/10 p-2 text-left sm:rounded-[14px] sm:p-3"
             >
-              <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent-light)] text-[var(--accent)]">
+              <div className="mb-1 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent-light)] text-[var(--accent)] sm:mb-2 sm:h-8 sm:w-8">
                 {metric.icon}
               </div>
               <p
                 className={cn(
-                  "truncate text-lg font-semibold text-[var(--text-primary)]",
+                  "text-[15px] font-semibold leading-5 text-[var(--text-primary)] sm:text-lg",
                   metric.valueTone === "emerald" && "text-[var(--positive)]",
                   metric.valueTone === "red" && "text-[var(--negative)]",
                 )}
               >
                 {metric.value}
               </p>
-              <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
+              <p className="mt-0.5 whitespace-nowrap text-[10px] leading-3 text-[var(--text-secondary)] sm:text-xs">
                 {metric.label}
               </p>
               {metric.detail && (
-                <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
+                <p className="mt-0.5 line-clamp-2 text-[10px] leading-3 text-[var(--text-muted)] sm:mt-1 sm:text-[11px] sm:leading-4">
                   {metric.detail}
                 </p>
               )}
               {typeof metric.progress === "number" && metric.progressTone && (
-                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10 sm:mt-3">
                   <div
                     className={cn(
                       "h-full rounded-full",
@@ -3789,12 +3856,14 @@ function CashflowTimelineCard({
   points,
   month,
   buffer,
+  chartReady = true,
   onBufferChange,
   compact = false,
 }: {
   points: CashflowPoint[];
   month: string;
   buffer: number;
+  chartReady?: boolean;
   onBufferChange: (value: number) => void;
   compact?: boolean;
 }) {
@@ -3802,19 +3871,26 @@ function CashflowTimelineCard({
 
   return (
     <Card className="finance-card">
-      <CardHeader className={cn("pb-3", compact && "text-left")}>
+      <CardHeader
+        className={cn(
+          "pb-3",
+          compact && "px-3 pb-2 pt-3 text-left sm:px-5 sm:pt-5",
+        )}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle>Cashflow</CardTitle>
-            <CardDescription>Lopend saldo deze maand</CardDescription>
+            <CardDescription className={cn(compact && "leading-4")}>
+              Lopend saldo deze maand
+            </CardDescription>
           </div>
-          <div className="w-24">
+          <div className={cn("w-24", compact && "w-20 sm:w-24")}>
             <label className="grid gap-1 text-[11px] font-medium uppercase text-[var(--text-muted)]">
               Buffer
               <Input
                 inputMode="decimal"
                 value={String(buffer)}
-                className="h-8 rounded-[10px] px-2 text-right text-xs"
+                className="h-10 rounded-[10px] px-2 text-right text-xs"
                 onChange={(event) => {
                   const value = Number(event.target.value.replace(",", "."));
                   onBufferChange(Number.isFinite(value) && value >= 0 ? value : 0);
@@ -3824,12 +3900,21 @@ function CashflowTimelineCard({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="h-40">
-          <CashflowRechartsChart points={points} month={month} buffer={buffer} />
+      <CardContent className={cn("space-y-3", compact && "space-y-2 px-3 pb-3 pt-0 sm:p-5 sm:pt-0")}>
+        <div className={cn("h-40", compact && "h-28 min-[390px]:h-32 sm:h-40")}>
+          {chartReady ? (
+            <CashflowRechartsChart points={points} month={month} buffer={buffer} />
+          ) : (
+            <div className="h-full rounded-[12px] border border-dashed border-[var(--border)] bg-black/10" />
+          )}
         </div>
         <CashflowLegend />
-        <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-5 text-[var(--text-secondary)]">
+        <p
+          className={cn(
+            "rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-5 text-[var(--text-secondary)]",
+            compact && "line-clamp-2 p-2 text-xs leading-4 sm:p-3 sm:text-sm sm:leading-5",
+          )}
+        >
           {insight.text}
         </p>
       </CardContent>
@@ -4474,6 +4559,7 @@ function MonthSummaryCard({
   description,
   currentMonth,
   totals,
+  showIncome,
   monthMessage,
   onExportExcel,
   onExportPdf,
@@ -4482,6 +4568,7 @@ function MonthSummaryCard({
   description: string;
   currentMonth: string;
   totals: ReturnType<typeof totalsForMonth>;
+  showIncome: boolean;
   monthMessage: string;
   onExportExcel: (month: string) => void;
   onExportPdf: (month: string) => void;
@@ -4499,12 +4586,16 @@ function MonthSummaryCard({
       tone: "emerald" as const,
       detail: "Op de gezamenlijke rekening",
     },
-    {
-      label: "Inkomen",
-      value: totals.incomeTotal,
-      tone: "emerald" as const,
-      detail: "Salaris en extra inkomsten",
-    },
+    ...(showIncome
+      ? [
+          {
+            label: "Inkomen",
+            value: totals.incomeTotal,
+            tone: "emerald" as const,
+            detail: "Salaris en extra inkomsten",
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -4525,7 +4616,12 @@ function MonthSummaryCard({
           </p>
         )}
 
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div
+          className={cn(
+            "grid gap-2",
+            showIncome ? "sm:grid-cols-3" : "sm:grid-cols-2",
+          )}
+        >
           {summaryRows.map((row) => (
             <div
               key={row.label}
@@ -4579,6 +4675,8 @@ function MonthSummaryCard({
 function AllTransactionsCard({
   currentMonth,
   rows,
+  freeSpaceTotal,
+  fixedTotal,
   deletingTransactionId,
   bookingContributionPlanId,
   onDeleteTransaction,
@@ -4588,6 +4686,8 @@ function AllTransactionsCard({
 }: {
   currentMonth: string;
   rows: OutgoingTransactionRow[];
+  freeSpaceTotal: number;
+  fixedTotal: number;
   deletingTransactionId: string | null;
   bookingContributionPlanId: string | null;
   onDeleteTransaction: (transaction: Transaction) => void;
@@ -4598,7 +4698,6 @@ function AllTransactionsCard({
   const [displayLimit, setDisplayLimit] = useState<TransactionDisplayLimit>(10);
   const visibleRows =
     displayLimit === "all" ? rows : rows.slice(0, displayLimit);
-  const total = rows.reduce((sum, row) => sum + row.signedAmount, 0);
 
   return (
     <Card className="finance-card overflow-hidden">
@@ -4609,9 +4708,31 @@ function AllTransactionsCard({
             Alle transacties en verwachte afschrijvingen deze maand.
           </CardDescription>
         </div>
-        <Badge className="w-fit border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)]">
-          Netto {currency(total)}
-        </Badge>
+        <div className="grid grid-cols-2 gap-2 sm:min-w-[260px]">
+          <div className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+              Vrije ruimte
+            </p>
+            <p
+              className={cn(
+                "mt-1 text-sm font-semibold",
+                freeSpaceTotal < 0
+                  ? "text-[var(--negative)]"
+                  : "text-[var(--positive)]",
+              )}
+            >
+              {currency(freeSpaceTotal)}
+            </p>
+          </div>
+          <div className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+              Afschrijvingen
+            </p>
+            <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+              {currency(fixedTotal)}
+            </p>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {rows.length > 0 ? (
@@ -4624,6 +4745,10 @@ function AllTransactionsCard({
               const isBooking =
                 !!row.expectedContributionPlan &&
                 bookingContributionPlanId === row.expectedContributionPlan.id;
+              const hasActions =
+                Boolean(row.transaction) ||
+                Boolean(row.receiptUrl) ||
+                Boolean(row.expectedContributionPlan);
 
 	              return (
 	                <div
@@ -4672,8 +4797,8 @@ function AllTransactionsCard({
 	                      </p>
 	                    </div>
 	                  </div>
-	                  <div className="flex shrink-0 items-center justify-end gap-2 text-right">
-	                    <div className="min-w-[5.5rem]">
+	                  <div className="grid shrink-0 grid-cols-[5.75rem_7rem] items-center gap-2 text-right">
+	                    <div className="min-w-0">
 	                      <p
 	                        className={cn(
 	                          "text-sm font-semibold",
@@ -4691,6 +4816,7 @@ function AllTransactionsCard({
 	                        </p>
 	                      )}
 	                    </div>
+	                    <div className="flex w-28 items-center justify-end gap-1">
 	                    {row.transaction && (
 	                      <Button
 	                        type="button"
@@ -4708,6 +4834,7 @@ function AllTransactionsCard({
 	                        receiptUrl={row.receiptUrl}
                         title={`${row.title} · ${row.date}`}
 	                        onOpen={onOpenReceipt}
+	                        compact
 	                      />
 	                    )}
 	                    {row.expectedContributionPlan && (
@@ -4715,7 +4842,7 @@ function AllTransactionsCard({
 	                        type="button"
                         size="sm"
                         variant="secondary"
-                        className="h-8 px-3 text-xs"
+                        className="h-8 w-full px-0 text-xs"
                         disabled={isBooking}
                         onClick={() =>
                           onBookExpectedContribution(row.expectedContributionPlan!)
@@ -4746,6 +4873,10 @@ function AllTransactionsCard({
                         )}
                       </Button>
                     )}
+                    {!hasActions && (
+                      <span aria-hidden="true" className="h-8 w-full opacity-0" />
+                    )}
+	                    </div>
                   </div>
                 </div>
               );
@@ -5116,10 +5247,12 @@ function ReceiptAttachment({
   receiptUrl,
   title,
   onOpen,
+  compact = false,
 }: {
   receiptUrl: string;
   title: string;
   onOpen: (receipt: ReceiptViewerState) => void;
+  compact?: boolean;
 }) {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
 
@@ -5150,12 +5283,15 @@ function ReceiptAttachment({
           onOpen({ url: signedUrl, title });
         }
       }}
-      className="group flex shrink-0 items-center gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)] disabled:cursor-wait disabled:opacity-50"
+      className={cn(
+        "group flex shrink-0 items-center rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] text-[11px] font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)] disabled:cursor-wait disabled:opacity-50",
+        compact ? "h-8 w-8 justify-center p-0" : "gap-2 px-2 py-1",
+      )}
       title={signedUrl ? "Bekijk bon" : "Bon laden"}
     >
       <ReceiptText className="h-3.5 w-3.5 text-[var(--accent)]" />
-      <span>Bon</span>
-      {signedUrl && (
+      {!compact && <span>Bon</span>}
+      {signedUrl && !compact && (
         <img
           src={signedUrl}
           alt=""
@@ -5221,6 +5357,9 @@ function MonthInsightsSection({
   monthDescription,
   outgoingRows,
   totals,
+  showIncome,
+  freeSpaceTotal,
+  fixedTotal,
   monthMessage,
   categoryRows,
   selectedSixMonthTrend,
@@ -5241,6 +5380,9 @@ function MonthInsightsSection({
   monthDescription: string;
   outgoingRows: OutgoingTransactionRow[];
   totals: ReturnType<typeof totalsForMonth>;
+  showIncome: boolean;
+  freeSpaceTotal: number;
+  fixedTotal: number;
   monthMessage: string;
   categoryRows: ReturnType<typeof categoryTotals>;
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
@@ -5277,6 +5419,8 @@ function MonthInsightsSection({
       <AllTransactionsCard
         currentMonth={currentMonth}
         rows={outgoingRows}
+        freeSpaceTotal={freeSpaceTotal}
+        fixedTotal={fixedTotal}
         deletingTransactionId={deletingTransactionId}
         bookingContributionPlanId={bookingContributionPlanId}
         onDeleteTransaction={onDeleteTransaction}
@@ -5291,6 +5435,7 @@ function MonthInsightsSection({
           description={monthDescription}
           currentMonth={currentMonth}
           totals={totals}
+          showIncome={showIncome}
           monthMessage={monthMessage}
           onExportExcel={onExportExcel}
           onExportPdf={onExportPdf}
@@ -5953,6 +6098,8 @@ function FixedExpenseManager({
   highlightedId,
   message,
   isSaving,
+  defaultOpen = false,
+  hideHeader = false,
   onNameChange,
   onAmountChange,
   onBillingDayChange,
@@ -5976,6 +6123,8 @@ function FixedExpenseManager({
   highlightedId: string | null;
   message: string;
   isSaving: boolean;
+  defaultOpen?: boolean;
+  hideHeader?: boolean;
   onNameChange: (value: string) => void;
   onAmountChange: (value: string) => void;
   onBillingDayChange: (value: string) => void;
@@ -5986,7 +6135,7 @@ function FixedExpenseManager({
   onDelete: (expense: RecurringExpense) => void;
   onCancel: () => void;
 }) {
-  const [isManagerOpen, setIsManagerOpen] = useState(false);
+  const [isManagerOpen, setIsManagerOpen] = useState(defaultOpen);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const activeExpenses = expenses
     .filter((expense) => expense.isActive)
@@ -5999,7 +6148,7 @@ function FixedExpenseManager({
       );
     });
   const formTitle = editingId ? "Vaste last wijzigen" : "Nieuwe vaste last";
-  const showManager = Boolean(editingId) || isManagerOpen;
+  const showManager = hideHeader || Boolean(editingId) || isManagerOpen;
   const showForm = Boolean(editingId) || isFormOpen;
   const monthlyTotal = activeExpenses.reduce(
     (total, expense) => total + expense.currentAmount,
@@ -6008,37 +6157,39 @@ function FixedExpenseManager({
 
   return (
     <Card className="h-full">
-      <CardHeader className="grid gap-2 lg:grid-cols-[1fr_auto] lg:items-start">
-        <div>
-          <CardTitle>Vaste lasten</CardTitle>
-          <CardDescription>
-            Terugkerende vaste lasten op {accountName}.
-          </CardDescription>
-        </div>
-        <div className="flex items-center gap-2">
-          {editingId && (
-            <Button size="sm" variant="secondary" onClick={onCancel}>
-              <X className="h-4 w-4" />
-              Annuleer
+      {!hideHeader && (
+        <CardHeader className="grid gap-2 lg:grid-cols-[1fr_auto] lg:items-start">
+          <div>
+            <CardTitle>Vaste lasten</CardTitle>
+            <CardDescription>
+              Terugkerende vaste lasten op {accountName}.
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            {editingId && (
+              <Button size="sm" variant="secondary" onClick={onCancel}>
+                <X className="h-4 w-4" />
+                Annuleer
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setIsManagerOpen((open) => !open)}
+            >
+              <Plus
+                className={cn(
+                  "h-4 w-4 transition",
+                  showManager && "rotate-45",
+                )}
+              />
+              {showManager ? "Sluiten" : "Beheren"}
             </Button>
-          )}
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setIsManagerOpen((open) => !open)}
-          >
-            <Plus
-              className={cn(
-                "h-4 w-4 transition",
-                showManager && "rotate-45",
-              )}
-            />
-            {showManager ? "Sluiten" : "Beheren"}
-          </Button>
-        </div>
-      </CardHeader>
+          </div>
+        </CardHeader>
+      )}
       {showManager && (
-      <CardContent className="space-y-5">
+      <CardContent className={cn("space-y-5", hideHeader && "pt-4")}>
         {message && (
           <div
             className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300"
@@ -7090,7 +7241,7 @@ function ContributionCard({
                             "border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]",
                         )}
                       >
-                        {isComplete ? "op schema" : currency(plan.remaining)}
+                        {isComplete ? currency(plan.received) : currency(plan.remaining)}
                       </Badge>
                     </div>
                   );
@@ -7574,6 +7725,7 @@ function ContributionBreakdownList({
               label="Extra stortingen"
               rows={person.extra}
               emptyText="Geen extra storting"
+              hideWhenEmpty
             />
             <ContributionBreakdownRows
               label={`Belastingteruggave — ${person.person}`}
@@ -7785,43 +7937,75 @@ function QuickEntryCard({
 }) {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [isCategoryPanelOpen, setIsCategoryPanelOpen] = useState(false);
   const customVariableCategories = variableCategories.filter(
     (item) => (item.sortOrder ?? 0) >= 200,
   );
 
   return (
     <Card className="finance-card max-w-full overflow-hidden lg:max-w-[480px]">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>
-          Bedrag erin, categorie kiezen, klaar.
-        </CardDescription>
+      <CardHeader className="space-y-3 pb-3">
+        <div className="hidden sm:block">
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>
+            Bedrag erin, categorie kiezen, klaar.
+          </CardDescription>
+        </div>
+        <div className="flex items-start justify-between gap-3 sm:hidden">
+          <div className="min-w-0">
+            <CardTitle className="text-xl">Uitgave invoeren</CardTitle>
+            <CardDescription className="text-xs">
+              Bedrag, categorie en klaar.
+            </CardDescription>
+          </div>
+          <label className="inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-[12px] text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-50">
+            {isScanningReceipt ? (
+              <LoaderCircle className="h-5 w-5 animate-spin" />
+            ) : (
+              <Camera className="h-5 w-5" />
+            )}
+            <span className="sr-only">
+              {isScanningReceipt ? "Bon wordt gelezen" : "Bon scannen"}
+            </span>
+            <input
+              className="sr-only"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              disabled={isScanningReceipt}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+
+                if (file) {
+                  onScanReceipt(file);
+                }
+              }}
+            />
+          </label>
+        </div>
+        <div className="no-scrollbar flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-0.5 sm:hidden">
+          {accounts.map((item) => {
+            const isActive = account === item.id;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onAccountChange(item.id)}
+                className={cn(
+                  "min-h-11 shrink-0 rounded-[var(--radius-chip)] border border-[var(--border)] px-3 text-xs font-medium text-[var(--text-secondary)]",
+                  isActive &&
+                    "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
+                )}
+              >
+                {item.name}
+              </button>
+            );
+          })}
+        </div>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <label className="flex min-h-20 cursor-pointer items-center justify-center gap-3 rounded-[16px] border border-indigo-400/30 bg-indigo-500/15 px-4 text-base font-semibold text-indigo-100 transition hover:bg-indigo-500/20 sm:hidden">
-          {isScanningReceipt ? (
-            <LoaderCircle className="h-7 w-7 animate-spin" />
-          ) : (
-            <Camera className="h-7 w-7" />
-          )}
-          {isScanningReceipt ? "Bon wordt gelezen..." : "Bon scannen"}
-          <input
-            className="sr-only"
-            type="file"
-            accept="image/*"
-            capture="environment"
-            disabled={isScanningReceipt}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-
-              if (file) {
-                onScanReceipt(file);
-              }
-            }}
-          />
-        </label>
-
+      <CardContent className="space-y-2.5 pt-0 sm:space-y-3 sm:pt-0">
         {scanMessage && (
           <p
             className={cn(
@@ -7882,67 +8066,202 @@ function QuickEntryCard({
           </div>
         )}
 
-        <div className="flex gap-2 overflow-x-auto sm:hidden">
-          {accounts.map((item) => {
-            const isActive = account === item.id;
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onAccountChange(item.id)}
-                className={cn(
-                  "shrink-0 rounded-[var(--radius-chip)] border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)]",
-                  isActive &&
-                    "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
-                )}
-              >
-                {item.name}
-              </button>
-            );
-          })}
-        </div>
-
         {householdMembers.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto sm:hidden">
-            {householdMembers.map((member) => {
-              const isActive = paidById === member.userId;
+          <div className="grid gap-1.5 sm:hidden">
+            <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+              Betaald door
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {householdMembers.map((member) => {
+                const isActive = paidById === member.userId;
 
-              return (
-                <button
-                  key={member.userId}
-                  type="button"
-                  onClick={() => onPaidByChange(member.userId)}
-                  className={cn(
-                    "shrink-0 rounded-[var(--radius-chip)] border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)]",
-                    isActive &&
-                      "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
-                  )}
-                >
-                  Betaald door {member.displayName}
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={member.userId}
+                    type="button"
+                    onClick={() => onPaidByChange(member.userId)}
+                    className={cn(
+                      "min-h-11 rounded-[var(--radius-chip)] border border-[var(--border)] px-3 text-sm font-medium text-[var(--text-secondary)]",
+                      isActive &&
+                        "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
+                    )}
+                  >
+                    {member.displayName}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-2 sm:hidden">
-          {variableCategories.map((item) => (
+        <div className="grid gap-1.5 sm:hidden">
+          <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+            Categorie
+          </p>
+          <div className="no-scrollbar flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-0.5">
+            {variableCategories.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={cn(
+                  "min-h-11 shrink-0 rounded-[var(--radius-chip)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-sm font-medium text-[var(--text-secondary)] transition",
+                  category === item.id &&
+                    "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
+                )}
+                onClick={() => onCategoryChange(item.id)}
+              >
+                {item.name}
+              </button>
+            ))}
             <button
               type="button"
-              key={item.id}
-              className={cn(
-                "flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-[13px] border border-[var(--border)] bg-[var(--bg-surface)] p-2 text-xs font-medium text-[var(--text-secondary)] transition",
-                category === item.id &&
-                  "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--text-primary)]",
-              )}
-              onClick={() => onCategoryChange(item.id)}
+              className="min-h-11 shrink-0 rounded-[var(--radius-chip)] px-3 text-sm font-medium text-[var(--accent)]"
+              onClick={() => setIsCategoryPanelOpen((open) => !open)}
             >
-              <ReceiptText className="h-5 w-5" />
-              {item.name}
+              + Categorie
             </button>
-          ))}
+          </div>
         </div>
+
+        {isCategoryPanelOpen && (
+          <div className="grid gap-2 rounded-[14px] border border-[var(--border)] bg-black/10 p-3 sm:hidden">
+            <Input
+              placeholder="Bijv. Uit eten"
+              value={customCategoryName}
+              className="h-11"
+              maxLength={40}
+              onChange={(event) => onCustomCategoryNameChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onAddCategory();
+                }
+              }}
+            />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-[var(--text-muted)]">
+                Nieuwe categorie verschijnt direct in de rij.
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-10"
+                onClick={onAddCategory}
+                disabled={isSavingCategory}
+              >
+                {isSavingCategory ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Opslaan
+              </Button>
+            </div>
+            {categoryMessage && (
+              <p className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-surface)] p-2 text-xs text-[var(--text-secondary)]">
+                {categoryMessage}
+              </p>
+            )}
+            {customVariableCategories.length > 0 && (
+              <div className="grid gap-2 border-t border-[var(--border)] pt-2">
+                {customVariableCategories.map((item) => {
+                  const isEditing = editingCategoryId === item.id;
+                  const isSavingThisCategory = categoryOperationId === item.id;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="grid gap-2 rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-2"
+                    >
+                      {isEditing ? (
+                        <Input
+                          value={editingCategoryName}
+                          className="h-10"
+                          maxLength={40}
+                          onChange={(event) =>
+                            setEditingCategoryName(event.target.value)
+                          }
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <p className="min-w-0 flex-1 text-sm font-medium text-[var(--text-primary)]">
+                            {item.name}
+                          </p>
+                          <Badge className="border-[var(--border)] bg-black/10 text-[var(--text-muted)]">
+                            {categoryUsageCounts.get(item.id) ?? 0}x
+                          </Badge>
+                        </div>
+                      )}
+                      <div className="flex justify-end gap-2">
+                        {isEditing ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditingCategoryId(null)}
+                            >
+                              Annuleer
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={isSavingThisCategory}
+                              onClick={() => {
+                                onRenameCategory(item.id, editingCategoryName);
+                                setEditingCategoryId(null);
+                              }}
+                            >
+                              {isSavingThisCategory ? (
+                                <LoaderCircle className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Save className="h-4 w-4" />
+                              )}
+                              Bewaar
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="secondary"
+                              title="Categorie hernoemen"
+                              disabled={Boolean(categoryOperationId)}
+                              onClick={() => {
+                                setEditingCategoryId(item.id);
+                                setEditingCategoryName(item.name);
+                              }}
+                              className="h-10 w-10"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              title="Categorie verwijderen"
+                              disabled={Boolean(categoryOperationId)}
+                              onClick={() => onDeleteCategory(item)}
+                              className="h-10 w-10 text-[var(--text-muted)] hover:text-[var(--negative)]"
+                            >
+                              {isSavingThisCategory ? (
+                                <LoaderCircle className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="hidden gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-1">
           <FieldLabel label="Rekening">
@@ -7990,7 +8309,7 @@ function QuickEntryCard({
           </FieldLabel>
         </div>
 
-        <details className="group rounded-[14px] border border-[var(--border)] bg-black/10">
+        <details className="group hidden rounded-[14px] border border-[var(--border)] bg-black/10 sm:block">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-[var(--text-primary)]">
             Categorie toevoegen
             <Plus className="h-4 w-4 text-[var(--text-muted)] transition group-open:rotate-45" />
@@ -8148,25 +8467,46 @@ function QuickEntryCard({
           inputMode="decimal"
           placeholder="Bedrag"
           value={amount}
-          className="h-16 text-center text-[40px] font-bold tracking-normal sm:h-11 sm:text-left sm:text-base sm:font-semibold"
+          enterKeyHint="done"
+          className="h-16 rounded-[18px] bg-black/15 text-center text-[40px] font-bold tracking-normal sm:h-11 sm:rounded-[12px] sm:bg-zinc-950/70 sm:text-left sm:text-base sm:font-semibold"
+          onFocus={(event) =>
+            event.currentTarget.scrollIntoView({
+              block: "center",
+              behavior: "smooth",
+            })
+          }
           onChange={(event) => onAmountChange(event.target.value)}
         />
 
-        <div className="grid gap-3">
+        <div className="grid grid-cols-[0.95fr_1.05fr] gap-2 sm:hidden">
+          <Input
+            type="date"
+            value={date}
+            className="h-11 text-xs"
+            onChange={(event) => onDateChange(event.target.value)}
+          />
+          <Input
+            placeholder="Notitie"
+            value={note}
+            className="h-11"
+            onChange={(event) => onNoteChange(event.target.value)}
+          />
+        </div>
+
+        <div className="hidden gap-3 sm:grid">
           <Input
             type="date"
             value={date}
             className="h-10"
             onChange={(event) => onDateChange(event.target.value)}
           />
+          <Textarea
+            placeholder="Notitie optioneel"
+            value={note}
+            className="min-h-16"
+            onChange={(event) => onNoteChange(event.target.value)}
+          />
         </div>
-
-        <Textarea
-          placeholder="Notitie optioneel"
-          value={note}
-          className="min-h-16"
-          onChange={(event) => onNoteChange(event.target.value)}
-        />
 
         <div className="sticky bottom-3 z-10 flex justify-end pt-2 sm:static">
           <Button className="accent-glow-hover h-14 w-full text-base font-semibold sm:h-11 sm:w-auto sm:text-sm" onClick={onSubmit}>
@@ -8684,7 +9024,31 @@ function buildOutgoingTransactionRows(
     (first, second) =>
       first.date.localeCompare(second.date) ||
       first.title.localeCompare(second.title, "nl"),
+    );
+}
+
+function expectedFixedTotalForMonth(
+  recurringExpenses: RecurringExpense[],
+  fixedInstances: FixedExpenseInstance[],
+  currentMonth: string,
+) {
+  const currentMonthInstances = new Map(
+    fixedInstances
+      .filter((instance) => instance.month === currentMonth)
+      .map((instance) => [instance.recurringExpenseId, instance]),
   );
+
+  return recurringExpenses
+    .filter((expense) => expense.isActive)
+    .reduce((total, expense) => {
+      const instance = currentMonthInstances.get(expense.id);
+
+      if (instance?.status === "skipped") {
+        return total;
+      }
+
+      return total + (instance?.amount ?? expense.currentAmount);
+    }, 0);
 }
 
 function contributionKindLabel(kind: ContributionKind) {
