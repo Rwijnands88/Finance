@@ -74,8 +74,22 @@ export async function POST(request: Request) {
   const receiptPath = `${receiptAccountId}/${transaction.id}.jpg`;
   const receiptBuffer = Buffer.from(await image.arrayBuffer());
   const adminSupabase = getSupabaseAdminClient();
-  const writeSupabase = adminSupabase ?? userSupabase;
   const bucketName = "receipts";
+
+  if (!adminSupabase) {
+    console.error("[finance:receipt-upload-server:missing-service-role]", {
+      hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      hasServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    });
+
+    return NextResponse.json(
+      {
+        error:
+          "Bon opslaan kan niet: SUPABASE_SERVICE_ROLE_KEY ontbreekt op de server.",
+      },
+      { status: 500 },
+    );
+  }
 
   console.log("[finance:receipt-upload-server]", {
     bucketName,
@@ -88,10 +102,10 @@ export async function POST(request: Request) {
       size: image.size,
       bufferSize: receiptBuffer.byteLength,
     },
-    usesServiceRole: Boolean(adminSupabase),
+    usesServiceRole: true,
   });
 
-  const { error: uploadError } = await writeSupabase.storage
+  const { error: uploadError } = await adminSupabase.storage
     .from(bucketName)
     .upload(receiptPath, receiptBuffer, {
       contentType: "image/jpeg",
@@ -111,7 +125,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { error: updateError } = await writeSupabase
+  const { error: updateError } = await adminSupabase
     .from("transactions")
     .update({ receipt_url: receiptPath })
     .eq("id", transaction.id)
@@ -124,7 +138,7 @@ export async function POST(request: Request) {
       error: updateError,
     });
 
-    await writeSupabase.storage.from(bucketName).remove([receiptPath]);
+    await adminSupabase.storage.from(bucketName).remove([receiptPath]);
 
     return NextResponse.json(
       { error: updateError.message, details: updateError },

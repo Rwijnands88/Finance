@@ -706,7 +706,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const calculatedBalance = latestBalanceSnapshot
     ? latestBalanceSnapshot.balance +
       selectedTransactions
-        .filter((transaction) => transaction.date > latestBalanceSnapshot.snapshotDate)
+        .filter((transaction) => transaction.date >= latestBalanceSnapshot.snapshotDate)
         .filter((transaction) => transaction.date <= today)
         .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
         .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0)
@@ -734,7 +734,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
 
     const includedTransactions = selectedTransactions
-      .filter((transaction) => transaction.date > latestBalanceSnapshot.snapshotDate)
+      .filter((transaction) => transaction.date >= latestBalanceSnapshot.snapshotDate)
       .filter((transaction) => transaction.date <= today)
       .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
       .map((transaction) => ({
@@ -761,7 +761,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         date: latestBalanceSnapshot.snapshotDate,
       },
       formula:
-        "huidig saldo = snapshot + som(income/contribution positief, fixed/variable negatief) voor transacties na snapshot t/m vandaag en voor einde geselecteerde maand",
+        "huidig saldo = snapshot + som(income/contribution positief, fixed/variable negatief) voor transacties vanaf snapshotdatum t/m vandaag en voor einde geselecteerde maand",
       includedTransactions,
       fixedTransactionsIncluded: includedTransactions.filter(
         (transaction) => transaction.type === "fixed",
