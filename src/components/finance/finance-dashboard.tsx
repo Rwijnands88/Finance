@@ -8009,47 +8009,25 @@ function QuickEntryCard({
 
   return (
     <Card className="finance-card max-w-full overflow-hidden lg:max-w-[480px]">
-      <CardHeader className="space-y-3 pb-3">
+      <CardHeader className="space-y-3 pb-2 sm:pb-3">
         <div className="hidden sm:block">
           <CardTitle>{title}</CardTitle>
           <CardDescription>
             Bedrag erin, categorie kiezen, klaar.
           </CardDescription>
         </div>
-        <div className="flex items-start justify-between gap-3 sm:hidden">
+        <div className="grid gap-2 sm:hidden">
           <div className="min-w-0">
-            <CardTitle className="text-xl">Uitgave invoeren</CardTitle>
-            <CardDescription className="text-xs">
+            <CardTitle className="text-lg">Uitgave invoeren</CardTitle>
+            <CardDescription className="text-xs leading-4">
               Bedrag, categorie en klaar.
             </CardDescription>
           </div>
-          <label className="inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-[12px] text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-50">
-            {isScanningReceipt ? (
-              <LoaderCircle className="h-5 w-5 animate-spin" />
-            ) : (
-              <Camera className="h-5 w-5" />
-            )}
-            <span className="sr-only">
-              {isScanningReceipt ? "Bon wordt gelezen" : "Bon scannen"}
-            </span>
-            <input
-              className="sr-only"
-              type="file"
-              accept="image/*"
-              capture="environment"
-              disabled={isScanningReceipt}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-
-                if (file) {
-                  onScanReceipt(file);
-                }
-              }}
-            />
-          </label>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
+            Rekening
+          </p>
         </div>
-        <div className="no-scrollbar flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-0.5 sm:hidden">
+        <div className="scrollbar-hidden flex max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-[14px] bg-[var(--bg-surface)] p-1 sm:hidden">
           {accounts.map((item) => {
             const isActive = account === item.id;
 
@@ -8059,9 +8037,9 @@ function QuickEntryCard({
                 type="button"
                 onClick={() => onAccountChange(item.id)}
                 className={cn(
-                  "min-h-11 shrink-0 rounded-[var(--radius-chip)] border border-[var(--border)] px-3 text-xs font-medium text-[var(--text-secondary)]",
+                  "min-h-11 min-w-fit flex-1 shrink-0 rounded-[10px] px-3 text-xs font-medium text-[var(--text-secondary)]",
                   isActive &&
-                    "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
+                    "bg-[var(--accent-light)] text-[var(--accent)]",
                 )}
               >
                 {item.name}
@@ -8071,72 +8049,12 @@ function QuickEntryCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-2.5 pt-0 sm:space-y-3 sm:pt-0">
-        {scanMessage && (
-          <p
-            className={cn(
-              "rounded-[12px] border p-3 text-sm sm:hidden",
-              isScanningReceipt
-                ? "border-indigo-400/20 bg-indigo-500/10 text-indigo-100"
-                : "border-zinc-800 bg-zinc-950/70 text-zinc-300",
-            )}
-          >
-            {scanMessage}
-          </p>
-        )}
-
-        {receiptDraft && (
-          <div className="grid gap-3 rounded-[16px] border border-indigo-400/25 bg-indigo-500/10 p-3 sm:hidden">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-zinc-50">
-                  Bon overgenomen
-                </p>
-                <p className="mt-0.5 text-xs text-zinc-400">
-                  Controleer de velden, kies categorie en sla op.
-                </p>
-              </div>
-              <Badge className="border-indigo-400/25 bg-indigo-500/15 text-indigo-100">
-                scan
-              </Badge>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <ReceiptDraftValue
-                label="Bedrag"
-                value={
-                  typeof receiptDraft.amount === "number"
-                    ? preciseCurrency(receiptDraft.amount)
-                    : "onduidelijk"
-                }
-              />
-              <ReceiptDraftValue
-                label="Datum"
-                value={receiptDraft.date ?? "onduidelijk"}
-              />
-              <ReceiptDraftValue
-                label="Winkel"
-                value={receiptDraft.merchant ?? "onduidelijk"}
-              />
-            </div>
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={onDismissReceiptDraft}
-                className="h-10"
-              >
-                <X className="h-4 w-4" />
-                Verberg scan
-              </Button>
-            </div>
-          </div>
-        )}
-
         {householdMembers.length > 0 && (
           <div className="grid gap-1.5 sm:hidden">
-            <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
               Betaald door
             </p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1 rounded-[14px] bg-[var(--bg-surface)] p-1">
               {householdMembers.map((member) => {
                 const isActive = paidById === member.userId;
 
@@ -8146,9 +8064,9 @@ function QuickEntryCard({
                     type="button"
                     onClick={() => onPaidByChange(member.userId)}
                     className={cn(
-                      "min-h-11 rounded-[var(--radius-chip)] border border-[var(--border)] px-3 text-sm font-medium text-[var(--text-secondary)]",
+                      "min-h-11 rounded-[10px] px-3 text-sm font-medium text-[var(--text-secondary)]",
                       isActive &&
-                        "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
+                        "bg-[var(--accent-light)] text-[var(--accent)]",
                     )}
                   >
                     {member.displayName}
@@ -8160,18 +8078,18 @@ function QuickEntryCard({
         )}
 
         <div className="grid gap-1.5 sm:hidden">
-          <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
             Categorie
           </p>
-          <div className="no-scrollbar flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-0.5">
+          <div className="scrollbar-hidden flex max-w-full gap-1.5 overflow-x-auto overscroll-x-contain pb-0.5">
             {variableCategories.map((item) => (
               <button
                 type="button"
                 key={item.id}
                 className={cn(
-                  "min-h-11 shrink-0 rounded-[var(--radius-chip)] border border-[var(--border)] bg-[var(--bg-surface)] px-3 text-sm font-medium text-[var(--text-secondary)] transition",
+                  "min-h-11 shrink-0 rounded-[var(--radius-chip)] bg-[var(--bg-surface)] px-3 text-sm font-medium text-[var(--text-secondary)] transition",
                   category === item.id &&
-                    "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]",
+                    "bg-[var(--accent-light)] text-[var(--accent)] ring-1 ring-[var(--accent)]",
                 )}
                 onClick={() => onCategoryChange(item.id)}
               >
@@ -8180,10 +8098,10 @@ function QuickEntryCard({
             ))}
             <button
               type="button"
-              className="min-h-11 shrink-0 rounded-[var(--radius-chip)] px-3 text-sm font-medium text-[var(--accent)]"
+              className="min-h-11 shrink-0 rounded-[var(--radius-chip)] px-2.5 text-sm font-medium text-[var(--accent)]"
               onClick={() => setIsCategoryPanelOpen((open) => !open)}
             >
-              + Categorie
+              Categorie toevoegen
             </button>
           </div>
         </div>
@@ -8528,34 +8446,133 @@ function QuickEntryCard({
           </div>
         </details>
 
-        <Input
-          inputMode="decimal"
-          placeholder="Bedrag"
-          value={amount}
-          enterKeyHint="done"
-          className="h-16 rounded-[18px] bg-black/15 text-center text-[40px] font-bold tracking-normal sm:h-11 sm:rounded-[12px] sm:bg-zinc-950/70 sm:text-left sm:text-base sm:font-semibold"
-          onFocus={(event) =>
-            event.currentTarget.scrollIntoView({
-              block: "center",
-              behavior: "smooth",
-            })
-          }
-          onChange={(event) => onAmountChange(event.target.value)}
-        />
+        <div className="grid gap-1.5 sm:block">
+          <p className="text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)] sm:hidden">
+            Bedrag
+          </p>
+          <Input
+            inputMode="decimal"
+            placeholder="0,00"
+            value={amount}
+            enterKeyHint="done"
+            className="h-14 border-transparent bg-black/10 text-center text-[38px] font-bold tracking-normal placeholder:text-zinc-700 sm:h-11 sm:rounded-[12px] sm:border-zinc-800 sm:bg-zinc-950/70 sm:text-left sm:text-base sm:font-semibold"
+            onFocus={(event) =>
+              event.currentTarget.scrollIntoView({
+                block: "center",
+                behavior: "smooth",
+              })
+            }
+            onChange={(event) => onAmountChange(event.target.value)}
+          />
+        </div>
+
+        <label className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[var(--border)] bg-black/10 px-3 text-sm font-medium text-[var(--text-secondary)] transition active:scale-[0.99] sm:hidden">
+          {isScanningReceipt ? (
+            <LoaderCircle className="h-4 w-4 animate-spin text-[var(--accent)]" />
+          ) : (
+            <Camera className="h-4 w-4 text-[var(--accent)]" />
+          )}
+          {isScanningReceipt ? "Bon wordt gelezen" : "Scan bon"}
+          <input
+            className="sr-only"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            disabled={isScanningReceipt}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+
+              if (file) {
+                onScanReceipt(file);
+              }
+            }}
+          />
+        </label>
+
+        {scanMessage && (
+          <p
+            className={cn(
+              "rounded-[12px] border px-3 py-2 text-xs leading-4 sm:hidden",
+              isScanningReceipt
+                ? "border-indigo-400/20 bg-indigo-500/10 text-indigo-100"
+                : "border-zinc-800 bg-zinc-950/70 text-zinc-300",
+            )}
+          >
+            {scanMessage}
+          </p>
+        )}
+
+        {receiptDraft && (
+          <div className="grid gap-2 rounded-[14px] border border-indigo-400/25 bg-indigo-500/10 p-2.5 sm:hidden">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-zinc-50">
+                  Bon overgenomen
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  Controleer, kies categorie en sla op.
+                </p>
+              </div>
+              <Badge className="border-indigo-400/25 bg-indigo-500/15 text-indigo-100">
+                scan
+              </Badge>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              <ReceiptDraftValue
+                label="Bedrag"
+                value={
+                  typeof receiptDraft.amount === "number"
+                    ? preciseCurrency(receiptDraft.amount)
+                    : "onduidelijk"
+                }
+              />
+              <ReceiptDraftValue
+                label="Datum"
+                value={receiptDraft.date ?? "onduidelijk"}
+              />
+              <ReceiptDraftValue
+                label="Winkel"
+                value={receiptDraft.merchant ?? "onduidelijk"}
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onDismissReceiptDraft}
+                className="h-9"
+              >
+                <X className="h-4 w-4" />
+                Verberg
+              </Button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-[0.95fr_1.05fr] gap-2 sm:hidden">
-          <Input
-            type="date"
-            value={date}
-            className="h-11 text-xs"
-            onChange={(event) => onDateChange(event.target.value)}
-          />
-          <Input
-            placeholder="Notitie"
-            value={note}
-            className="h-11"
-            onChange={(event) => onNoteChange(event.target.value)}
-          />
+          <label className="grid gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
+              Datum
+            </span>
+            <Input
+              type="date"
+              value={date}
+              className="h-11 border-transparent bg-black/10 text-xs"
+              onChange={(event) => onDateChange(event.target.value)}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
+              Notitie
+            </span>
+            <Input
+              placeholder="Optioneel"
+              value={note}
+              className="h-11 border-transparent bg-black/10"
+              onChange={(event) => onNoteChange(event.target.value)}
+            />
+          </label>
         </div>
 
         <div className="hidden gap-3 sm:grid">
@@ -8573,8 +8590,8 @@ function QuickEntryCard({
           />
         </div>
 
-        <div className="sticky bottom-3 z-10 flex justify-end pt-2 sm:static">
-          <Button className="accent-glow-hover h-14 w-full text-base font-semibold sm:h-11 sm:w-auto sm:text-sm" onClick={onSubmit}>
+        <div className="sticky bottom-3 z-10 flex justify-end pt-1.5 sm:static sm:pt-2">
+          <Button className="accent-glow-hover h-12 w-full text-sm font-semibold sm:h-11 sm:w-auto sm:text-sm" onClick={onSubmit}>
             <Plus className="h-5 w-5" />
             Uitgave toevoegen
           </Button>

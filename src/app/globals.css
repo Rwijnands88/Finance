@@ -135,6 +135,28 @@ button:active {
   display: none;
 }
 
+.portrait-orientation-overlay {
+  display: none;
+}
+
+@media (max-width: 767px) and (orientation: landscape) {
+  .portrait-orientation-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: #09090b;
+    color: #fafafa;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+}
+
 @media (min-width: 1024px) {
   .desktop-row-hover:hover {
     background: var(--bg-card-hover);
@@ -147,36 +169,48 @@ button:active {
 }
 
 @media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html:has(body.receipt-printing-ready),
+  body.receipt-printing-ready {
+    width: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: #fff !important;
+  }
+
+  body.receipt-printing-ready * {
+    visibility: hidden !important;
+  }
+
   body.receipt-printing-ready > * {
-    visibility: hidden;
+    max-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.receipt-printing-ready .receipt-print-image,
+  body.receipt-printing-ready .receipt-print-image * {
+    visibility: visible !important;
   }
 
   body.receipt-printing-ready .receipt-print-surface,
-  body.receipt-printing-ready .receipt-print-surface * {
-    visibility: visible;
-  }
-
-  body.receipt-printing-ready .receipt-print-surface {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    max-width: none;
-    border: 0;
-    border-radius: 0;
-    background: #fff;
-    box-shadow: none;
-  }
-
   body.receipt-printing-ready .receipt-print-controls {
-    display: none;
+    all: unset;
   }
 
   body.receipt-printing-ready .receipt-print-image {
-    max-width: 100%;
-    max-height: 100%;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
+    position: fixed !important;
+    inset: 12mm !important;
+    display: block !important;
+    width: calc(100vw - 24mm) !important;
+    height: calc(100vh - 24mm) !important;
+    max-width: calc(100vw - 24mm) !important;
+    max-height: calc(100vh - 24mm) !important;
+    object-fit: contain !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
   }
 }
