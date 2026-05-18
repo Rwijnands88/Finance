@@ -73,18 +73,40 @@ export async function POST(request: Request) {
 
   const receiptPath = `${receiptAccountId}/${transaction.id}.jpg`;
   const receiptBuffer = Buffer.from(await image.arrayBuffer());
-  const writeSupabase = getSupabaseAdminClient() ?? userSupabase;
+  const adminSupabase = getSupabaseAdminClient();
+  const writeSupabase = adminSupabase ?? userSupabase;
+  const bucketName = "receipts";
+
+  console.log("[finance:receipt-upload-server]", {
+    bucketName,
+    receiptPath,
+    transactionId: transaction.id,
+    accountId: receiptAccountId,
+    householdId: transaction.household_id,
+    file: {
+      type: image.type,
+      size: image.size,
+      bufferSize: receiptBuffer.byteLength,
+    },
+    usesServiceRole: Boolean(adminSupabase),
+  });
 
   const { error: uploadError } = await writeSupabase.storage
-    .from("receipts")
+    .from(bucketName)
     .upload(receiptPath, receiptBuffer, {
       contentType: "image/jpeg",
       upsert: true,
     });
 
   if (uploadError) {
+    console.error("[finance:receipt-upload-server:upload-error]", {
+      bucketName,
+      receiptPath,
+      error: uploadError,
+    });
+
     return NextResponse.json(
-      { error: uploadError.message },
+      { error: uploadError.message, details: uploadError },
       { status: 400 },
     );
   }
@@ -96,10 +118,16 @@ export async function POST(request: Request) {
     .eq("household_id", transaction.household_id);
 
   if (updateError) {
-    await writeSupabase.storage.from("receipts").remove([receiptPath]);
+    console.error("[finance:receipt-upload-server:update-error]", {
+      bucketName,
+      receiptPath,
+      error: updateError,
+    });
+
+    await writeSupabase.storage.from(bucketName).remove([receiptPath]);
 
     return NextResponse.json(
-      { error: updateError.message },
+      { error: updateError.message, details: updateError },
       { status: 400 },
     );
   }

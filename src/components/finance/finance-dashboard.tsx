@@ -722,6 +722,71 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
   );
   useEffect(() => {
+    if (!latestBalanceSnapshot) {
+      console.log("[finance:balance-diagnose]", {
+        accountId: selectedAccountId,
+        accountName: selectedAccount?.name,
+        month: currentMonth,
+        today,
+        formula: "geen snapshot beschikbaar, dus huidig saldo is null",
+      });
+      return;
+    }
+
+    const includedTransactions = selectedTransactions
+      .filter((transaction) => transaction.date > latestBalanceSnapshot.snapshotDate)
+      .filter((transaction) => transaction.date <= today)
+      .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
+      .map((transaction) => ({
+        id: transaction.id,
+        date: transaction.date,
+        type: transaction.type,
+        amount: transaction.amount,
+        signedAmount: signedTransactionAmount(transaction),
+        note: transaction.note,
+      }));
+    const transactionDelta = includedTransactions.reduce(
+      (total, transaction) => total + transaction.signedAmount,
+      0,
+    );
+
+    console.log("[finance:balance-diagnose]", {
+      accountId: selectedAccountId,
+      accountName: selectedAccount?.name,
+      month: currentMonth,
+      today,
+      snapshot: {
+        id: latestBalanceSnapshot.id,
+        value: latestBalanceSnapshot.balance,
+        date: latestBalanceSnapshot.snapshotDate,
+      },
+      formula:
+        "huidig saldo = snapshot + som(income/contribution positief, fixed/variable negatief) voor transacties na snapshot t/m vandaag en voor einde geselecteerde maand",
+      includedTransactions,
+      fixedTransactionsIncluded: includedTransactions.filter(
+        (transaction) => transaction.type === "fixed",
+      ),
+      fixedAgendaStates: fixedAgendaItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+        date: item.date,
+        amount: item.amount,
+        state: item.state,
+      })),
+      transactionDelta,
+      calculatedBalance,
+    });
+  }, [
+    calculatedBalance,
+    currentMonth,
+    fixedAgendaItems,
+    latestBalanceSnapshot,
+    selectedAccount?.name,
+    selectedAccountId,
+    selectedTransactions,
+    today,
+  ]);
+  useEffect(() => {
     void autoConfirmDueFixedExpenses(currentMonth);
   }, [currentMonth, fixedInstances, recurringExpenses, today]);
   const outgoingTransactionRows = useMemo(
@@ -8621,6 +8686,21 @@ async function saveReceiptForTransaction({
   const receiptBlob = await compressReceiptImage(file);
   const formData = new FormData();
 
+  console.log("[finance:receipt-upload-client]", {
+    endpoint: "/api/receipts",
+    transactionId,
+    accountId,
+    originalFile: {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    },
+    compressedFile: {
+      type: receiptBlob.type,
+      size: receiptBlob.size,
+    },
+  });
+
   formData.append("transactionId", transactionId);
   formData.append("accountId", accountId);
   formData.append("image", receiptBlob, "receipt.jpg");
@@ -8632,6 +8712,12 @@ async function saveReceiptForTransaction({
   const result = await response.json();
 
   if (!response.ok || typeof result.receiptUrl !== "string") {
+    console.error("[finance:receipt-upload-client:error]", {
+      status: response.status,
+      statusText: response.statusText,
+      result,
+    });
+
     throw new Error(
       typeof result.error === "string"
         ? result.error
