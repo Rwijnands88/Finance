@@ -766,7 +766,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     () =>
       buildHeroBudgetSnapshot({
         incomingTotal: isSharedView
-          ? monthTotals.contributionTotal + remainingContributionTotal
+          ? plannedContributionTotal + extraContributionTotal
           : monthTotals.incomeTotal,
         postedIncomingTotal: isSharedView
           ? monthTotals.contributionTotal
@@ -777,11 +777,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       }),
     [
       fixedTotalForCurrentMonth,
+      extraContributionTotal,
       isSharedView,
       monthTotals.contributionTotal,
       monthTotals.incomeTotal,
       plannedContributionTotal,
-      remainingContributionTotal,
       variableExpenseTotalToDate,
     ],
   );
