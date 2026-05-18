@@ -165,7 +165,7 @@ function sectionNavItems() {
   return [
     { id: "dashboard", label: "Dashboard", mobileLabel: "Home", icon: WalletCards },
     { id: "fixed", label: "Vaste lasten", mobileLabel: "Lasten", icon: ListChecks },
-    { id: "input", label: "Invoeren", mobileLabel: "+", icon: Plus },
+    { id: "input", label: "Invoeren", mobileLabel: "Nieuw", icon: Plus },
     { id: "month", label: "Maand", mobileLabel: "Maand", icon: CalendarDays },
   ] satisfies Array<{
     id: ActiveSection;
@@ -3094,7 +3094,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     isMobileFixedManagerOpen || Boolean(editingRecurringId);
 
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] pb-[calc(72px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
+    <main className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] pb-[calc(84px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
       <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-6 sm:py-4 lg:px-8 2xl:px-10">
         <MobileBottomNav
           activeSection={activeSection}
@@ -3701,14 +3701,14 @@ function MobileBottomNav({
             type="button"
             onClick={() => onSectionChange(item.id)}
             className={cn(
-              "min-w-0 rounded-[12px] text-[11px] font-medium leading-none",
+              "min-w-0 rounded-[14px] text-[12px] font-semibold leading-none",
               isActive
                 ? "text-[var(--accent)]"
                 : "text-[var(--text-muted)]",
             )}
             aria-label={item.label}
           >
-            <Icon className="h-[22px] w-[22px] shrink-0" />
+            <Icon className="h-6 w-6 shrink-0" />
             <span className="max-w-full whitespace-nowrap">{item.mobileLabel}</span>
           </button>
         );
@@ -3809,25 +3809,25 @@ function DashboardHero({
           {metrics.map((metric) => (
             <div
               key={metric.label}
-              className="rounded-[12px] border border-[var(--border)] bg-black/10 p-2 text-left sm:rounded-[14px] sm:p-3"
+              className="rounded-[12px] border border-[var(--border)] bg-black/10 p-2.5 text-left sm:rounded-[14px] sm:p-3"
             >
-              <div className="mb-1 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--accent-light)] text-[var(--accent)] sm:mb-2 sm:h-8 sm:w-8">
+              <div className="mb-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent-light)] text-[var(--accent)] sm:mb-2 sm:h-8 sm:w-8">
                 {metric.icon}
               </div>
               <p
                 className={cn(
-                  "text-[15px] font-semibold leading-5 text-[var(--text-primary)] sm:text-lg",
+                  "text-[17px] font-semibold leading-5 text-[var(--text-primary)] sm:text-lg",
                   metric.valueTone === "emerald" && "text-[var(--positive)]",
                   metric.valueTone === "red" && "text-[var(--negative)]",
                 )}
               >
                 {metric.value}
               </p>
-              <p className="mt-0.5 whitespace-nowrap text-[10px] leading-3 text-[var(--text-secondary)] sm:text-xs">
+              <p className="mt-1 whitespace-nowrap text-[11px] font-medium leading-[14px] text-[var(--text-secondary)] sm:text-xs">
                 {metric.label}
               </p>
               {metric.detail && (
-                <p className="mt-0.5 line-clamp-2 text-[10px] leading-3 text-[var(--text-muted)] sm:mt-1 sm:text-[11px] sm:leading-4">
+                <p className="mt-1 line-clamp-2 text-[11px] leading-[14px] text-[var(--text-muted)] sm:text-xs sm:leading-4">
                   {metric.detail}
                 </p>
               )}
@@ -8618,32 +8618,28 @@ async function saveReceiptForTransaction({
   accountId: string;
   transactionId: string;
 }) {
-  const supabase = getSupabaseBrowserClient();
   const receiptBlob = await compressReceiptImage(file);
-  const receiptPath = `${accountId}/${transactionId}.jpg`;
+  const formData = new FormData();
 
-  const { error: uploadError } = await supabase.storage
-    .from("receipts")
-    .upload(receiptPath, receiptBlob, {
-      contentType: "image/jpeg",
-      upsert: true,
-    });
+  formData.append("transactionId", transactionId);
+  formData.append("accountId", accountId);
+  formData.append("image", receiptBlob, "receipt.jpg");
 
-  if (uploadError) {
-    throw uploadError;
+  const response = await fetch("/api/receipts", {
+    method: "POST",
+    body: formData,
+  });
+  const result = await response.json();
+
+  if (!response.ok || typeof result.receiptUrl !== "string") {
+    throw new Error(
+      typeof result.error === "string"
+        ? result.error
+        : "Bon opslaan lukte niet.",
+    );
   }
 
-  const { error: updateError } = await supabase
-    .from("transactions")
-    .update({ receipt_url: receiptPath })
-    .eq("id", transactionId);
-
-  if (updateError) {
-    await supabase.storage.from("receipts").remove([receiptPath]);
-    throw updateError;
-  }
-
-  return receiptPath;
+  return result.receiptUrl;
 }
 
 async function compressReceiptImage(file: File) {
