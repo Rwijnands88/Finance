@@ -722,6 +722,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
   );
+  const personInsightFixedItems = useMemo(
+    () => fixedAgendaItems.filter((item) => item.state !== "skipped" && item.date <= today),
+    [fixedAgendaItems, today],
+  );
   useEffect(() => {
     if (!latestBalanceSnapshot) {
       console.log("[finance:balance-diagnose]", {
@@ -3487,6 +3491,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               people={initialData.people}
               personTotals={personTotals}
               categoryRows={categoryPersonRows}
+              fixedItems={personInsightFixedItems}
               isSharedView={isSharedView}
             />
           )}
@@ -3561,6 +3566,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   people={initialData.people}
                   personTotals={personTotals}
                   categoryRows={categoryPersonRows}
+                  fixedItems={personInsightFixedItems}
                   isSharedView={isSharedView}
                 />
               )}
@@ -5584,6 +5590,10 @@ function ChartsPanel({
   const hasCategoryData = totalCategories > 0;
   const topCategory = categoryRows[0];
   const visibleCategoryRows = featured ? categoryRows.slice(0, 5) : categoryRows;
+  const categoryProgressMax = Math.max(0, ...categoryRows.map((row) => row.amount));
+  const [activeCategoryIndex, setActiveCategoryIndex] = useState<number | null>(null);
+  const activeCategory =
+    activeCategoryIndex === null ? null : (categoryRows[activeCategoryIndex] ?? null);
   const visibleTrendRows = selectedSixMonthTrend.filter(
     (row) => Number(row.fixed) + Number(row.variable) > 0,
   );
@@ -5635,23 +5645,28 @@ function ChartsPanel({
                     outerRadius={featured ? 78 : 70}
                     paddingAngle={3}
                     stroke="transparent"
+                    onMouseEnter={(_entry, index) => setActiveCategoryIndex(index)}
+                    onMouseLeave={() => setActiveCategoryIndex(null)}
                   >
-                    {categoryRows.map((entry) => (
-                      <Cell key={entry.categoryId} fill={entry.color} />
+                    {categoryRows.map((entry, index) => (
+                      <Cell
+                        key={entry.categoryId}
+                        fill={entry.color}
+                        onMouseEnter={() => setActiveCategoryIndex(index)}
+                        onMouseLeave={() => setActiveCategoryIndex(null)}
+                      />
                     ))}
                   </Pie>
-                  <Tooltip
-                    formatter={(value) => currency(Number(value))}
-                    contentStyle={tooltipStyle}
-                  />
                 </PieChart>
               </ResponsiveContainer>
             )}
             {hasCategoryData ? (
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-                <p className="text-[11px] text-[var(--text-muted)]">Totaal</p>
+                <p className="max-w-24 truncate text-[11px] text-[var(--text-muted)]">
+                  {activeCategory ? activeCategory.name : "Totaal"}
+                </p>
                 <p className="text-lg font-semibold text-[var(--text-primary)]">
-                  {currency(totalCategories)}
+                  {currency(activeCategory ? activeCategory.amount : totalCategories)}
                 </p>
               </div>
             ) : (
@@ -5709,7 +5724,7 @@ function ChartsPanel({
                   </span>
                   <CategoryProgressBar
                     value={row.amount}
-                    max={row.average || row.amount}
+                    max={categoryProgressMax}
                     color={overBudget ? "#EF4444" : row.color}
                     className="max-w-[200px]"
                   />
@@ -5954,6 +5969,7 @@ function FixedExpenseCalendar({
   const firstDay = new Date(year, monthNumber - 1, 1).getDay();
   const leadingBlanks = firstDay === 0 ? 6 : firstDay - 1;
   const itemsByDay = new Map<number, FixedAgendaItem[]>();
+  const [activeTooltipKey, setActiveTooltipKey] = useState<string | null>(null);
 
   items.forEach((item) => {
     const dayItems = itemsByDay.get(item.day) ?? [];
@@ -6000,6 +6016,7 @@ function FixedExpenseCalendar({
       <div className="mt-2 grid grid-cols-7 gap-1">
         {cells.map((cell) => {
           const hasItems = cell.items.length > 0;
+          const isTooltipOpen = hasItems && activeTooltipKey === cell.key;
           const isHighlighted = cell.items.some((item) => item.id === highlightedId);
           const hasProcessed = cell.items.some((item) =>
             isProcessedAgendaState(item.state),
@@ -6009,11 +6026,20 @@ function FixedExpenseCalendar({
             <div
               key={cell.key}
               className={cn(
-                "min-h-12 rounded-[10px] border border-transparent p-1.5 text-xs transition",
+                "relative min-h-12 rounded-[10px] border border-transparent p-1.5 text-xs transition",
                 cell.day && "hover:bg-[var(--bg-card-hover)]",
                 hasItems && "border-[var(--border)] bg-[var(--accent-light)]",
                 isHighlighted && "border-[var(--accent)]",
               )}
+              onMouseEnter={() => hasItems && setActiveTooltipKey(cell.key)}
+              onMouseLeave={() => setActiveTooltipKey(null)}
+              onFocus={() => hasItems && setActiveTooltipKey(cell.key)}
+              onBlur={() => setActiveTooltipKey(null)}
+              onClick={() =>
+                hasItems &&
+                setActiveTooltipKey((key) => (key === cell.key ? null : cell.key))
+              }
+              tabIndex={hasItems ? 0 : undefined}
             >
               {cell.day && (
                 <>
@@ -6030,12 +6056,24 @@ function FixedExpenseCalendar({
                       />
                     )}
                   </div>
-                  {hasItems && (
-                    <p className="mt-1 truncate text-[10px] font-medium text-[var(--text-primary)]">
-                      {currency(
-                        cell.items.reduce((total, item) => total + item.amount, 0),
-                      )}
-                    </p>
+                  {isTooltipOpen && (
+                    <div className="absolute left-1/2 top-full z-30 mt-2 w-44 -translate-x-1/2 rounded-[12px] border border-[var(--border-strong)] bg-[#1E1E28] p-2 text-left shadow-[0_18px_45px_rgba(0,0,0,0.38)]">
+                      <div className="grid gap-1.5">
+                        {cell.items.map((item) => (
+                          <div
+                            key={item.id}
+                            className="grid grid-cols-[1fr_auto] items-center gap-2"
+                          >
+                            <span className="truncate text-[11px] font-medium text-[var(--text-primary)]">
+                              {item.name}
+                            </span>
+                            <span className="text-[11px] text-[var(--text-secondary)]">
+                              {currency(item.amount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </>
               )}
@@ -6453,13 +6491,16 @@ function PersonCostInsight({
   people,
   personTotals,
   categoryRows,
+  fixedItems,
   isSharedView,
 }: {
   people: string[];
   personTotals: Record<string, number>;
   categoryRows: ReturnType<typeof categoryTotalsByPerson>;
+  fixedItems: FixedAgendaItem[];
   isSharedView: boolean;
 }) {
+  const [mode, setMode] = useState<"variable" | "fixed">("variable");
   const maxPersonTotal = Math.max(
     ...people.map((person) => personTotals[person] ?? 0),
     1,
@@ -6471,6 +6512,11 @@ function PersonCostInsight({
     ? "Wie voegde deze maand welke gezamenlijke uitgaven toe."
     : "Prive-uitgaven op deze rekening, uitgesplitst waar mogelijk.";
   const topRows = categoryRows.slice(0, 3);
+  const fixedTotal = fixedItems.reduce((total, item) => total + item.amount, 0);
+  const sortedFixedItems = [...fixedItems].sort(
+    (first, second) =>
+      first.date.localeCompare(second.date) || first.name.localeCompare(second.name, "nl"),
+  );
 
   return (
     <Card className="bg-[#141416]">
@@ -6479,101 +6525,170 @@ function PersonCostInsight({
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
         </div>
-        <Badge className="w-fit border-zinc-800 bg-zinc-950/60 text-zinc-400">
-          variabel
-        </Badge>
+        <div className="flex w-fit rounded-full border border-zinc-800 bg-zinc-950/60 p-1 text-xs text-zinc-400">
+          <button
+            type="button"
+            className={cn(
+              "min-h-8 rounded-full px-3 font-medium transition",
+              mode === "variable" && "bg-indigo-500/15 text-indigo-200",
+            )}
+            onClick={() => setMode("variable")}
+          >
+            Variabel
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "min-h-8 rounded-full px-3 font-medium transition",
+              mode === "fixed" && "bg-indigo-500/15 text-indigo-200",
+            )}
+            onClick={() => setMode("fixed")}
+          >
+            Vaste lasten
+          </button>
+        </div>
       </CardHeader>
-      <CardContent className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-          {people.map((person) => {
-            const value = personTotals[person] ?? 0;
-            const percentage = maxPersonTotal > 0 ? (value / maxPersonTotal) * 100 : 0;
+      {mode === "variable" ? (
+        <CardContent className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+            {people.map((person) => {
+              const value = personTotals[person] ?? 0;
+              const percentage = maxPersonTotal > 0 ? (value / maxPersonTotal) * 100 : 0;
 
-            return (
+              return (
+                <div
+                  key={person}
+                  className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          "h-2.5 w-2.5 rounded-full",
+                          person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
+                        )}
+                      />
+                      <span className="truncate text-sm text-zinc-300">
+                        {person}
+                      </span>
+                    </div>
+                    <span className="text-sm font-semibold text-zinc-50">
+                      {currency(value)}
+                    </span>
+                  </div>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-900">
+                    <div
+                      className={cn(
+                        "h-full rounded-full",
+                        person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
+                      )}
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="space-y-2">
+            {categoryRows.length === 0 && (
+              <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
+                Nog geen variabele uitgaven om te verdelen.
+              </p>
+            )}
+
+            {topRows.map((row) => (
               <div
-                key={person}
-                className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3"
+                key={row.categoryId}
+                className="grid gap-2 rounded-[13px] border border-zinc-800/60 bg-zinc-950/25 p-3"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2">
                     <span
-                      className={cn(
-                        "h-2.5 w-2.5 rounded-full",
-                        person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
-                      )}
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: row.color }}
                     />
-                    <span className="truncate text-sm text-zinc-300">
-                      {person}
-                    </span>
+                    <p className="truncate text-sm font-medium text-zinc-100">
+                      {row.name}
+                    </p>
                   </div>
-                  <span className="text-sm font-semibold text-zinc-50">
-                    {currency(value)}
-                  </span>
-                </div>
-                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-900">
-                  <div
-                    className={cn(
-                      "h-full rounded-full",
-                      person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
-                    )}
-                    style={{ width: `${percentage}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="space-y-2">
-          {categoryRows.length === 0 && (
-            <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-              Nog geen variabele uitgaven om te verdelen.
-            </p>
-          )}
-
-          {topRows.map((row) => (
-            <div
-              key={row.categoryId}
-              className="grid gap-2 rounded-[13px] border border-zinc-800/60 bg-zinc-950/25 p-3"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: row.color }}
-                  />
-                  <p className="truncate text-sm font-medium text-zinc-100">
-                    {row.name}
+                  <p className="text-sm font-semibold text-zinc-50">
+                    {currency(row.total)}
                   </p>
                 </div>
-                <p className="text-sm font-semibold text-zinc-50">
-                  {currency(row.total)}
+                <div className="grid gap-1.5">
+                  {row.people.map((personRow) => (
+                    <div
+                      key={personRow.person}
+                      className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-2 text-xs"
+                    >
+                      <span className="truncate text-zinc-500">
+                        {personRow.person}
+                      </span>
+                      <CategoryProgressBar
+                        value={personRow.amount}
+                        max={row.total}
+                        color={row.color}
+                      />
+                      <span className="text-zinc-300">
+                        {currency(personRow.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      ) : (
+        <CardContent className="grid gap-3">
+          <div className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                  Gezamenlijk
                 </p>
+                <p className="mt-1 text-sm text-zinc-300">Vaste lasten deze maand</p>
               </div>
-              <div className="grid gap-1.5">
-                {row.people.map((personRow) => (
-                  <div
-                    key={personRow.person}
-                    className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-2 text-xs"
-                  >
-                    <span className="truncate text-zinc-500">
-                      {personRow.person}
-                    </span>
-                    <CategoryProgressBar
-                      value={personRow.amount}
-                      max={row.total}
-                      color={row.color}
-                    />
-                    <span className="text-zinc-300">
-                      {currency(personRow.amount)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <p className="text-base font-semibold text-zinc-50">
+                {currency(fixedTotal)}
+              </p>
             </div>
-          ))}
-        </div>
-      </CardContent>
+          </div>
+          {sortedFixedItems.length === 0 ? (
+            <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
+              Nog geen verwerkte vaste lasten deze maand.
+            </p>
+          ) : (
+            <div className="grid gap-2">
+              {sortedFixedItems.map((item) => (
+                <div
+                  key={`${item.recurringExpenseId}-${item.date}`}
+                  className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[13px] border border-zinc-800/60 bg-zinc-950/25 p-3"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: item.categoryColor }}
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-zinc-100">
+                        {item.name}
+                      </p>
+                      <p className="truncate text-xs text-zinc-500">
+                        {item.categoryName}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-semibold text-zinc-50">
+                    {currency(item.amount)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      )}
     </Card>
   );
 }
