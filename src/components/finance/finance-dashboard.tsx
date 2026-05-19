@@ -4821,7 +4821,7 @@ function AllTransactionsCard({
         <div>
           <CardTitle>Alle transacties</CardTitle>
           <CardDescription>
-            Alle transacties en verwachte afschrijvingen deze maand.
+            Alle transacties deze maand.
           </CardDescription>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:min-w-[260px]">
@@ -9083,7 +9083,7 @@ function buildOutgoingTransactionRows(
   today: string,
 ) {
   const fixedRows: OutgoingTransactionRow[] = fixedItems
-    .filter((item) => item.state !== "skipped")
+    .filter((item) => item.state !== "skipped" && item.date <= today)
     .map((item) => ({
       id: `fixed-${item.recurringExpenseId}-${item.date}`,
       date: item.date,
@@ -9172,7 +9172,7 @@ function buildOutgoingTransactionRows(
 
   return [...fixedRows, ...variableRows, ...positiveRows, ...expectedContributionRows].sort(
     (first, second) =>
-      first.date.localeCompare(second.date) ||
+      second.date.localeCompare(first.date) ||
       first.title.localeCompare(second.title, "nl"),
     );
 }
