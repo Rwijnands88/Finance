@@ -4818,8 +4818,10 @@ function AllTransactionsCard({
   onBookExpectedContribution: (plan: ContributionPlanRow) => void;
 }) {
   const [displayLimit, setDisplayLimit] = useState<TransactionDisplayLimit>(10);
+  const today = new Date().toISOString().slice(0, 10);
+  const currentRows = rows.filter((row) => row.date <= today);
   const visibleRows =
-    displayLimit === "all" ? rows : rows.slice(0, displayLimit);
+    displayLimit === "all" ? currentRows : currentRows.slice(0, displayLimit);
 
   return (
     <Card className="finance-card overflow-hidden">
@@ -4857,7 +4859,7 @@ function AllTransactionsCard({
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        {rows.length > 0 ? (
+        {currentRows.length > 0 ? (
           <div className="divide-y divide-[var(--border)]">
             {visibleRows.map((row) => {
               const isUpcoming =
@@ -5003,7 +5005,7 @@ function AllTransactionsCard({
                 </div>
               );
             })}
-            {rows.length > 10 && (
+            {currentRows.length > 10 && (
               <TransactionDisplayLimitPicker
                 value={displayLimit}
                 onChange={setDisplayLimit}
@@ -9235,6 +9237,7 @@ function buildOutgoingTransactionRows(
       (transaction) =>
         transaction.type === "contribution" || transaction.type === "income",
     )
+    .filter((transaction) => transaction.date <= today)
     .map((transaction) => {
       const category = labels.get(transaction.categoryId);
       const title =
