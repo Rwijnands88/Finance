@@ -4165,7 +4165,7 @@ function CashflowRechartsChart({
     );
   }
 
-  const chart = buildCashflowChartModel(points, buffer);
+  const chart = buildCashflowChartModel(points, buffer, month);
 
   return (
     <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
@@ -4231,6 +4231,21 @@ function CashflowRechartsChart({
             fontSize: 11,
           }}
         />
+        {typeof chart.todayLineDay === "number" && (
+          <ReferenceLine
+            x={chart.todayLineDay}
+            stroke="rgba(255,255,255,0.22)"
+            strokeDasharray="3 3"
+            strokeWidth={1}
+            ifOverflow="visible"
+            label={{
+              value: "vandaag",
+              position: "top",
+              fill: "#A1A1AA",
+              fontSize: 10,
+            }}
+          />
+        )}
         {chart.segments.length > 0 ? (
           chart.segments.map((segment) => (
             <Line
@@ -9811,9 +9826,21 @@ function cashflowLineColor(balance: number, buffer: number) {
   return "#10B981";
 }
 
-function buildCashflowChartModel(points: CashflowPoint[], buffer: number) {
-  const minDay = points[0]?.day ?? 1;
-  const maxDay = points.at(-1)?.day ?? minDay;
+function buildCashflowChartModel(
+  points: CashflowPoint[],
+  buffer: number,
+  month: string,
+) {
+  const [, monthNumber] = month.split("-").map(Number);
+  const daysInMonth = new Date(
+    Number(month.slice(0, 4)),
+    monthNumber,
+    0,
+  ).getDate();
+  const today = new Date().toISOString().slice(0, 10);
+  const todayLineDay = today.startsWith(month)
+    ? Number(today.slice(8, 10))
+    : undefined;
   const balances = points.map((point) => point.balance);
   const yScale = cashflowAxisScale(
     Math.min(...balances, buffer, 0),
@@ -9827,10 +9854,11 @@ function buildCashflowChartModel(points: CashflowPoint[], buffer: number) {
 
   return {
     data: points,
-    xDomain: [minDay, maxDay] as [number, number],
-    xTicks: cashflowDateTicks(minDay, maxDay),
+    xDomain: [1, daysInMonth] as [number, number],
+    xTicks: cashflowDateTicks(1, daysInMonth),
     yDomain: yScale.domain,
     yTicks: yScale.ticks,
+    todayLineDay,
     orangeZone,
     redZone,
     showOrangeZone:
