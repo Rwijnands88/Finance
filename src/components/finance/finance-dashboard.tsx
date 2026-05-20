@@ -73,6 +73,9 @@ import {
 } from "@/components/finance/month-report-document";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
+const JOINT_CONTRIBUTION_FIXED_CATEGORY_ID = "__joint_contribution_fixed__";
+const JOINT_CONTRIBUTION_FIXED_CATEGORY_NAME = "Inleg gezamenlijk";
+
 type ReceiptDraft = {
   amount: number | null;
   date: string | null;
@@ -1222,11 +1225,38 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         },
       ];
   const fixedCategories = useMemo(
-    () =>
-      categories.filter(
-        (category) => category.kind === "fixed" || category.kind === "both",
-      ),
-    [categories],
+    () => {
+      const items = categories
+        .filter((category) => category.kind === "fixed" || category.kind === "both")
+        .filter(
+          (category) =>
+            !isSharedView ||
+            category.name.toLocaleLowerCase("nl-NL") !==
+              JOINT_CONTRIBUTION_FIXED_CATEGORY_NAME.toLocaleLowerCase("nl-NL"),
+        );
+      const hasJointContributionCategory = items.some(
+        (category) =>
+          category.name.toLocaleLowerCase("nl-NL") ===
+          JOINT_CONTRIBUTION_FIXED_CATEGORY_NAME.toLocaleLowerCase("nl-NL"),
+      );
+
+      if (isSharedView || hasJointContributionCategory) {
+        return items;
+      }
+
+      return [
+        ...items,
+        {
+          id: JOINT_CONTRIBUTION_FIXED_CATEGORY_ID,
+          name: JOINT_CONTRIBUTION_FIXED_CATEGORY_NAME,
+          kind: "fixed",
+          color: "#6366F1",
+          averageMonthly: 0,
+          sortOrder: 999,
+        } satisfies DashboardData["categories"][number],
+      ];
+    },
+    [categories, isSharedView],
   );
 
   async function loadMonthData(
@@ -2437,7 +2467,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
     const recurringExpense = result.recurringExpense as RecurringExpense;
     const fixedInstance = result.fixedInstance as FixedExpenseInstance | null;
+    const resolvedCategory = result.category as
+      | DashboardData["categories"][number]
+      | undefined;
     const wasEditing = Boolean(editingRecurringId);
+
+    if (resolvedCategory) {
+      setCategories((items) =>
+        [...items.filter((item) => item.id !== resolvedCategory.id), resolvedCategory].sort(
+          (first, second) =>
+            (first.sortOrder ?? 0) - (second.sortOrder ?? 0) ||
+            first.name.localeCompare(second.name, "nl"),
+        ),
+      );
+    }
 
     setRecurringExpenses((items) =>
       editingRecurringId

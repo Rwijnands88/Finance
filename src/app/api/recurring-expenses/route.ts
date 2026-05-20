@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import type { FixedExpenseInstance, RecurringExpense } from "@/lib/types";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
+type SupabaseClient = Awaited<ReturnType<typeof getSupabaseServerClient>>;
+
+const JOINT_CONTRIBUTION_FIXED_CATEGORY_ID = "__joint_contribution_fixed__";
+const JOINT_CONTRIBUTION_FIXED_CATEGORY_NAME = "Inleg gezamenlijk";
+const JOINT_CONTRIBUTION_FIXED_CATEGORY_COLOR = "#6366F1";
+
 type RecurringExpenseBody = {
   id?: string | null;
   householdId?: string;
@@ -104,9 +110,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
   }
 
-  const categoryError = await validateCategory(
+  const categoryResolution = await resolveRecurringCategory(
+    supabase,
     body.householdId!,
     body.categoryId!,
+  );
+
+  if (categoryResolution instanceof NextResponse) {
+    return categoryResolution;
+  }
+
+  const categoryError = await validateCategory(
+    body.householdId!,
+    categoryResolution.id,
   );
 
   if (categoryError) {
@@ -119,7 +135,7 @@ export async function POST(request: Request) {
       household_id: body.householdId!,
       account_id: body.accountId ?? null,
       name: body.name!.trim(),
-      category_id: body.categoryId!,
+      category_id: categoryResolution.id,
       current_amount: Number(body.currentAmount),
       billing_day: body.billingDay ?? dayFromIsoDate(body.startsOn!),
       starts_on: body.startsOn!,
@@ -141,6 +157,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     recurringExpense: mapRecurringExpense(recurringExpense),
     fixedInstance,
+    category: categoryResolution.category,
   });
 }
 
@@ -170,10 +187,18 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
   }
 
-  if (body.categoryId) {
+  const categoryResolution = body.categoryId
+    ? await resolveRecurringCategory(supabase, body.householdId, body.categoryId)
+    : null;
+
+  if (categoryResolution instanceof NextResponse) {
+    return categoryResolution;
+  }
+
+  if (categoryResolution) {
     const categoryError = await validateCategory(
       body.householdId,
-      body.categoryId,
+      categoryResolution.id,
     );
 
     if (categoryError) {
@@ -194,8 +219,8 @@ export async function PATCH(request: Request) {
     updates.name = body.name.trim();
   }
 
-  if (typeof body.categoryId === "string") {
-    updates.category_id = body.categoryId;
+  if (categoryResolution) {
+    updates.category_id = categoryResolution.id;
   }
 
   if (typeof body.currentAmount === "number") {
@@ -236,6 +261,7 @@ export async function PATCH(request: Request) {
   return NextResponse.json({
     recurringExpense: mapRecurringExpense(recurringExpense),
     fixedInstance,
+    category: categoryResolution?.category,
   });
 }
 
@@ -411,6 +437,118 @@ async function validateCategory(householdId: string, categoryId: string) {
   }
 
   return null;
+}
+
+type CategoryRow = {
+  id: string;
+  name: string;
+  kind: "fixed" | "variable" | "both";
+  color: string;
+  sort_order: number | null;
+};
+
+async function resolveRecurringCategory(
+  supabase: SupabaseClient,
+  householdId: string,
+  categoryId: string,
+) {
+  if (categoryId !== JOINT_CONTRIBUTION_FIXED_CATEGORY_ID) {
+    return { id: categoryId, category: undefined };
+  }
+
+  const { data: existingCategory, error: existingError } = await supabase
+    .from("categories")
+    .select("id, name, kind, color, sort_order")
+    .eq("household_id", householdId)
+    .ilike("name", JOINT_CONTRIBUTION_FIXED_CATEGORY_NAME)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 400 });
+  }
+
+  if (existingCategory) {
+    if (existingCategory.kind === "fixed" || existingCategory.kind === "both") {
+      return {
+        id: existingCategory.id,
+        category: mapCategory(existingCategory),
+      };
+    }
+
+    const { data: category, error } = await supabase
+      .from("categories")
+      .update({ kind: "both" })
+      .eq("id", existingCategory.id)
+      .eq("household_id", householdId)
+      .select("id, name, kind, color, sort_order")
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return {
+      id: category.id,
+      category: mapCategory(category),
+    };
+  }
+
+  const { data: lastCategory, error: lastCategoryError } = await supabase
+    .from("categories")
+    .select("sort_order")
+    .eq("household_id", householdId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastCategoryError) {
+    return NextResponse.json(
+      { error: lastCategoryError.message },
+      { status: 400 },
+    );
+  }
+
+  const sortOrder = Math.max(200, (lastCategory?.sort_order ?? 190) + 10);
+  const { data: category, error } = await supabase
+    .from("categories")
+    .insert({
+      household_id: householdId,
+      name: JOINT_CONTRIBUTION_FIXED_CATEGORY_NAME,
+      kind: "fixed",
+      color: JOINT_CONTRIBUTION_FIXED_CATEGORY_COLOR,
+      sort_order: sortOrder,
+    })
+    .select("id, name, kind, color, sort_order")
+    .single();
+
+  if (error) {
+    return NextResponse.json(
+      {
+        error:
+          error.code === "23505"
+            ? "Deze categorie bestaat al."
+            : error.message,
+      },
+      { status: error.code === "23505" ? 409 : 400 },
+    );
+  }
+
+  return {
+    id: category.id,
+    category: mapCategory(category),
+  };
+}
+
+function mapCategory(category: CategoryRow) {
+  return {
+    id: category.id,
+    name: category.name,
+    kind: category.kind,
+    color: category.color,
+    sortOrder: category.sort_order ?? undefined,
+    averageMonthly: 0,
+  };
 }
 
 async function createOrReadCurrentInstance(
