@@ -844,6 +844,21 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .reduce((total, transaction) => total + transaction.amount, 0),
     [currentMonth, selectedTransactions, today],
   );
+  const incomeTransactionsForCurrentMonth = useMemo(
+    () =>
+      selectedTransactions
+        .filter((transaction) => transaction.type === "income")
+        .filter((transaction) => transaction.date.startsWith(currentMonth))
+        .sort(
+          (first, second) =>
+            second.date.localeCompare(first.date) ||
+            transactionSortLabel(first, labels).localeCompare(
+              transactionSortLabel(second, labels),
+              "nl",
+            ),
+        ),
+    [currentMonth, labels, selectedTransactions],
+  );
   const heroBudget = useMemo(
     () =>
       buildHeroBudgetSnapshot({
@@ -2199,7 +2214,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         ? "Definitief verwijderen?\n\nDeze vaste-last uitgave verdwijnt uit dit maandoverzicht. De vaste last zelf blijft in de agenda staan."
         : transaction.type === "contribution"
           ? "Definitief verwijderen?\n\nDeze geboekte storting wordt permanent uit het overzicht verwijderd."
-        : "Definitief verwijderen?\n\nDeze ingevoerde uitgave wordt permanent uit het maandoverzicht verwijderd.",
+          : transaction.type === "income"
+            ? "Definitief verwijderen?\n\nDeze inkomensregel wordt permanent uit het overzicht verwijderd."
+            : "Definitief verwijderen?\n\nDeze ingevoerde uitgave wordt permanent uit het maandoverzicht verwijderd.",
     );
 
     if (!confirmed) return;
@@ -2245,6 +2262,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setMonthMessage(
       transaction.type === "contribution"
         ? "Storting verwijderd."
+        : transaction.type === "income"
+          ? "Inkomen verwijderd."
         : "Uitgave verwijderd.",
     );
   }
@@ -3440,22 +3459,27 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           <AccountBalanceCard
             accountName={selectedAccount?.name ?? viewCopy.label}
             snapshot={latestBalanceSnapshot}
+            labels={labels}
             balanceAmount={balanceAmount}
             balanceDate={balanceDate}
             balanceMessage={balanceMessage}
             isSavingBalance={isSavingBalance}
+            incomeTransactions={incomeTransactionsForCurrentMonth}
             incomeAmount={incomeAmount}
             incomeDate={incomeDate}
             incomeKind={incomeKind}
             incomeNote={incomeNote}
             incomeMessage={incomeMessage}
             isSavingIncome={isSavingIncome}
+            deletingTransactionId={deletingTransactionId}
             showIncomeForm={!isSharedView}
             coverage={!isSharedView ? personalContributionCoverage : undefined}
             onBalanceAmountChange={setBalanceAmount}
             onBalanceDateChange={setBalanceDate}
             onSaveBalance={saveBalanceSnapshot}
             onDeleteBalance={deleteBalanceSnapshot}
+            onEditIncome={startEditingTransaction}
+            onDeleteIncome={deleteTransaction}
             onIncomeAmountChange={setIncomeAmount}
             onIncomeDateChange={setIncomeDate}
             onIncomeKindChange={setIncomeKind}
@@ -3667,22 +3691,27 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             <AccountBalanceCard
               accountName={selectedAccount?.name ?? viewCopy.label}
               snapshot={latestBalanceSnapshot}
+              labels={labels}
               balanceAmount={balanceAmount}
               balanceDate={balanceDate}
               balanceMessage={balanceMessage}
               isSavingBalance={isSavingBalance}
+              incomeTransactions={incomeTransactionsForCurrentMonth}
               incomeAmount={incomeAmount}
               incomeDate={incomeDate}
               incomeKind={incomeKind}
               incomeNote={incomeNote}
               incomeMessage={incomeMessage}
               isSavingIncome={isSavingIncome}
+              deletingTransactionId={deletingTransactionId}
               showIncomeForm={!isSharedView}
               coverage={!isSharedView ? personalContributionCoverage : undefined}
               onBalanceAmountChange={setBalanceAmount}
               onBalanceDateChange={setBalanceDate}
               onSaveBalance={saveBalanceSnapshot}
               onDeleteBalance={deleteBalanceSnapshot}
+              onEditIncome={startEditingTransaction}
+              onDeleteIncome={deleteTransaction}
               onIncomeAmountChange={setIncomeAmount}
               onIncomeDateChange={setIncomeDate}
               onIncomeKindChange={setIncomeKind}
@@ -5218,6 +5247,14 @@ function TransactionEditDialog({
       : transaction.type === "contribution"
         ? contributionDisplayName(transaction, true)
         : labels.get(transaction.categoryId)?.name ?? "Uitgave";
+  const dialogTitle =
+    transaction.type === "income"
+      ? "Inkomen wijzigen"
+      : transaction.type === "contribution"
+        ? "Storting wijzigen"
+        : transaction.type === "fixed"
+          ? "Vaste last wijzigen"
+          : "Uitgave wijzigen";
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-end bg-black/75 p-0 backdrop-blur-xl sm:place-items-center sm:p-6">
@@ -5231,7 +5268,7 @@ function TransactionEditDialog({
         <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
           <div className="min-w-0">
             <p className="text-lg font-semibold text-[var(--text-primary)]">
-              Uitgave wijzigen
+              {dialogTitle}
             </p>
             <p className="mt-1 truncate text-sm text-[var(--text-secondary)]">
               {title} · {transaction.accountName ?? "Rekening"}
@@ -6049,7 +6086,7 @@ function FixedExpenseCalendar({
   ];
 
   return (
-    <div className="hidden rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-surface)] p-4 lg:block">
+    <div className="relative z-[70] hidden overflow-visible rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-surface)] p-4 lg:block">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-[var(--text-primary)]">Kalender</p>
@@ -6084,6 +6121,7 @@ function FixedExpenseCalendar({
                 cell.day && "hover:bg-[var(--bg-card-hover)]",
                 hasItems && "border-[var(--border)] bg-[var(--accent-light)]",
                 isHighlighted && "border-[var(--accent)]",
+                isTooltipOpen && "z-[80]",
               )}
               onMouseEnter={() => hasItems && setActiveTooltipKey(cell.key)}
               onMouseLeave={() => setActiveTooltipKey(null)}
@@ -6111,7 +6149,7 @@ function FixedExpenseCalendar({
                     )}
                   </div>
                   {isTooltipOpen && (
-                    <div className="absolute left-1/2 top-full z-30 mt-2 w-44 -translate-x-1/2 rounded-[12px] border border-[var(--border-strong)] bg-[#1E1E28] p-2 text-left shadow-[0_18px_45px_rgba(0,0,0,0.38)]">
+                    <div className="absolute left-1/2 top-full z-[120] mt-2 w-44 -translate-x-1/2 rounded-[12px] border border-[var(--border-strong)] bg-[#1E1E28] p-2 text-left shadow-[0_18px_45px_rgba(0,0,0,0.38)]">
                       <div className="grid gap-1.5">
                         {cell.items.map((item) => (
                           <div
@@ -6868,22 +6906,27 @@ function FieldLabel({
 function AccountBalanceCard({
   accountName,
   snapshot,
+  labels,
   balanceAmount,
   balanceDate,
   balanceMessage,
   isSavingBalance,
+  incomeTransactions,
   incomeAmount,
   incomeDate,
   incomeKind,
   incomeNote,
   incomeMessage,
   isSavingIncome,
+  deletingTransactionId,
   showIncomeForm,
   coverage,
   onBalanceAmountChange,
   onBalanceDateChange,
   onSaveBalance,
   onDeleteBalance,
+  onEditIncome,
+  onDeleteIncome,
   onIncomeAmountChange,
   onIncomeDateChange,
   onIncomeKindChange,
@@ -6892,22 +6935,27 @@ function AccountBalanceCard({
 }: {
   accountName: string;
   snapshot?: AccountBalanceSnapshot;
+  labels: Map<string, DashboardData["categories"][number]>;
   balanceAmount: string;
   balanceDate: string;
   balanceMessage: string;
   isSavingBalance: boolean;
+  incomeTransactions: Transaction[];
   incomeAmount: string;
   incomeDate: string;
   incomeKind: "salary" | "extra";
   incomeNote: string;
   incomeMessage: string;
   isSavingIncome: boolean;
+  deletingTransactionId: string | null;
   showIncomeForm: boolean;
   coverage?: ContributionCoverageResult;
   onBalanceAmountChange: (value: string) => void;
   onBalanceDateChange: (value: string) => void;
   onSaveBalance: () => void;
   onDeleteBalance: (snapshot: AccountBalanceSnapshot) => void;
+  onEditIncome: (transaction: Transaction) => void;
+  onDeleteIncome: (transaction: Transaction) => void;
   onIncomeAmountChange: (value: string) => void;
   onIncomeDateChange: (value: string) => void;
   onIncomeKindChange: (value: "salary" | "extra") => void;
@@ -7061,6 +7109,76 @@ function AccountBalanceCard({
               </div>
             </div>
           </details>
+        )}
+
+        {showIncomeForm && incomeTransactions.length > 0 && (
+          <div className="overflow-hidden rounded-[14px] border border-emerald-400/15 bg-emerald-500/5">
+            <div className="flex items-center justify-between gap-3 border-b border-emerald-400/10 px-3 py-2.5">
+              <p className="text-sm font-medium text-emerald-100">
+                Inkomen deze maand
+              </p>
+              <span className="text-xs text-zinc-500">
+                {incomeTransactions.length}
+              </span>
+            </div>
+            <div className="divide-y divide-emerald-400/10">
+              {incomeTransactions.map((transaction) => {
+                const isDeleting = deletingTransactionId === transaction.id;
+                const label = labels.get(transaction.categoryId)?.name ?? "Inkomen";
+                const meta = [transaction.date, transaction.note]
+                  .filter(Boolean)
+                  .join(" · ");
+
+                return (
+                  <div
+                    key={transaction.id}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-zinc-100">
+                        {label}
+                      </p>
+                      {meta && (
+                        <p className="mt-0.5 truncate text-xs text-zinc-500">
+                          {meta}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <p className="whitespace-nowrap text-sm font-semibold text-[var(--positive)]">
+                        +{preciseCurrency(transaction.amount)}
+                      </p>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        title="Wijzig inkomen"
+                        onClick={() => onEditIncome(transaction)}
+                        className="h-8 w-8 shrink-0 text-zinc-500 hover:text-[var(--accent)]"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        title="Verwijder inkomen"
+                        disabled={isDeleting}
+                        onClick={() => onDeleteIncome(transaction)}
+                        className="h-8 w-8 shrink-0 text-zinc-500 hover:text-red-300"
+                      >
+                        {isDeleting ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {incomeMessage && (
