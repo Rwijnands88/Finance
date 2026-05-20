@@ -832,15 +832,24 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .reduce((total, transaction) => total + transaction.amount, 0),
     [currentMonth, selectedTransactions, today],
   );
+  const incomeTotalToDate = useMemo(
+    () =>
+      selectedTransactions
+        .filter((transaction) => transaction.type === "income")
+        .filter((transaction) => transaction.date.startsWith(currentMonth))
+        .filter((transaction) => transaction.date <= today)
+        .reduce((total, transaction) => total + transaction.amount, 0),
+    [currentMonth, selectedTransactions, today],
+  );
   const heroBudget = useMemo(
     () =>
       buildHeroBudgetSnapshot({
         incomingTotal: isSharedView
           ? plannedContributionTotal + extraContributionTotal
-          : monthTotals.incomeTotal,
+          : incomeTotalToDate,
         postedIncomingTotal: isSharedView
           ? monthTotals.contributionTotal
-          : monthTotals.incomeTotal,
+          : incomeTotalToDate,
         plannedIncomingTotal: isSharedView ? plannedContributionTotal : 0,
         expectedFixedTotal: fixedTotalForCurrentMonth,
         variableExpenseTotal: variableExpenseTotalToDate,
@@ -848,9 +857,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     [
       fixedTotalForCurrentMonth,
       extraContributionTotal,
+      incomeTotalToDate,
       isSharedView,
       monthTotals.contributionTotal,
-      monthTotals.incomeTotal,
       plannedContributionTotal,
       variableExpenseTotalToDate,
     ],
@@ -883,14 +892,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       buildPersonalContributionCoverage({
         transactions: selectedTransactions,
         month: currentMonth,
-        incomeTotal: monthTotals.incomeTotal,
+        incomeTotal: incomeTotalToDate,
         ownMonthlyContributionTotal,
         buffer: cashflowBuffer,
       }),
     [
       cashflowBuffer,
       currentMonth,
-      monthTotals.incomeTotal,
+      incomeTotalToDate,
       ownMonthlyContributionTotal,
       selectedTransactions,
     ],
