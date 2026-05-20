@@ -844,6 +844,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .reduce((total, transaction) => total + transaction.amount, 0),
     [currentMonth, selectedTransactions, today],
   );
+  const expectedIncomeTotalForMonth = useMemo(
+    () =>
+      selectedTransactions
+        .filter((transaction) => transaction.type === "income")
+        .filter((transaction) => transaction.date.startsWith(currentMonth))
+        .reduce((total, transaction) => total + transaction.amount, 0),
+    [currentMonth, selectedTransactions],
+  );
   const incomeTransactionsForCurrentMonth = useMemo(
     () =>
       selectedTransactions
@@ -864,15 +872,18 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       buildHeroBudgetSnapshot({
         incomingTotal: isSharedView
           ? plannedContributionTotal + extraContributionTotal
-          : incomeTotalToDate,
+          : expectedIncomeTotalForMonth,
         postedIncomingTotal: isSharedView
           ? monthTotals.contributionTotal
           : incomeTotalToDate,
-        plannedIncomingTotal: isSharedView ? plannedContributionTotal : 0,
+        plannedIncomingTotal: isSharedView
+          ? plannedContributionTotal
+          : expectedIncomeTotalForMonth,
         expectedFixedTotal: fixedTotalForCurrentMonth,
         variableExpenseTotal: variableExpenseTotalToDate,
       }),
     [
+      expectedIncomeTotalForMonth,
       fixedTotalForCurrentMonth,
       extraContributionTotal,
       incomeTotalToDate,
@@ -1166,10 +1177,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   const dashboardPrimaryValue =
     calculatedBalance === null
-      ? currency(displayedNetTotal)
+      ? isSharedView
+        ? currency(displayedNetTotal)
+        : "Geen saldo"
       : currency(calculatedBalance);
   const dashboardPrimarySubtext =
-    calculatedBalance === null
+    calculatedBalance === null && isSharedView
       ? "Deze maand tot nu toe"
       : "Huidig saldo";
   const dashboardMetrics: DashboardMetric[] = isSharedView
@@ -1228,7 +1241,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         },
         {
           icon: <ArrowDownToLine className="h-5 w-5" />,
-          label: "Stortingen",
+          label: "Inkomen",
           value: currency(heroBudget.postedIncomingTotal),
           detail:
             heroBudget.plannedIncomingTotal > 0
