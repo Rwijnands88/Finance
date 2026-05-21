@@ -5216,6 +5216,7 @@ function MonthTransactionsCard({
 }
 
 function MonthSummaryCard({
+  className,
   description,
   currentMonth,
   totals,
@@ -5226,6 +5227,7 @@ function MonthSummaryCard({
   onExportExcel,
   onExportPdf,
 }: {
+  className?: string;
   description: string;
   currentMonth: string;
   totals: ReturnType<typeof totalsForMonth>;
@@ -5291,7 +5293,7 @@ function MonthSummaryCard({
   ];
 
   return (
-    <Card className="finance-card">
+    <Card className={cn("finance-card", className)}>
       <CardHeader className="grid gap-3 pb-3 sm:grid-cols-[1fr_auto] sm:items-start">
         <div className="min-w-0">
           <CardTitle>Maandoverzicht</CardTitle>
@@ -6419,8 +6421,9 @@ function MonthInsightsSection({
         onOpenReceipt={onOpenReceipt}
       />
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.05fr)]">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.05fr)]">
         <MonthSummaryCard
+          className="h-full"
           description={monthDescription}
           currentMonth={currentMonth}
           totals={totals}
@@ -6436,6 +6439,8 @@ function MonthInsightsSection({
           selectedSixMonthTrend={selectedSixMonthTrend}
           chartsReady={chartsReady}
           featured
+          className="h-full"
+          categoryCardClassName="h-full"
           showTrend={false}
         />
       </div>
@@ -6455,6 +6460,8 @@ function ChartsPanel({
   selectedSixMonthTrend,
   chartsReady,
   featured = false,
+  className,
+  categoryCardClassName,
   showCategories = true,
   showTrend = true,
 }: {
@@ -6462,6 +6469,8 @@ function ChartsPanel({
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
   chartsReady: boolean;
   featured?: boolean;
+  className?: string;
+  categoryCardClassName?: string;
   showCategories?: boolean;
   showTrend?: boolean;
 }) {
@@ -6492,10 +6501,11 @@ function ChartsPanel({
       className={cn(
         "grid gap-4",
         showTrend && !featured && "lg:grid-cols-1 2xl:grid-cols-2",
+        className,
       )}
     >
       {showCategories && (
-      <Card className="finance-card overflow-hidden">
+      <Card className={cn("finance-card overflow-hidden", categoryCardClassName)}>
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-4">
             <div>
