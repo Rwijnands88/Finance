@@ -6419,27 +6419,33 @@ function MonthInsightsSection({
         onOpenReceipt={onOpenReceipt}
       />
 
-      <div className="grid items-start gap-4 2xl:grid-cols-[minmax(460px,0.95fr)_minmax(0,1.05fr)]">
-        <div className="grid gap-4">
-          <MonthSummaryCard
-            description={monthDescription}
-            currentMonth={currentMonth}
-            totals={totals}
-            fixedTotal={fixedTotal}
-            pacing={variableSpendPacing}
-            showIncome={showIncome}
-            monthMessage={monthMessage}
-            onExportExcel={onExportExcel}
-            onExportPdf={onExportPdf}
-          />
-        </div>
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.05fr)]">
+        <MonthSummaryCard
+          description={monthDescription}
+          currentMonth={currentMonth}
+          totals={totals}
+          fixedTotal={fixedTotal}
+          pacing={variableSpendPacing}
+          showIncome={showIncome}
+          monthMessage={monthMessage}
+          onExportExcel={onExportExcel}
+          onExportPdf={onExportPdf}
+        />
         <ChartsPanel
           categoryRows={categoryRows}
           selectedSixMonthTrend={selectedSixMonthTrend}
           chartsReady={chartsReady}
           featured
+          showTrend={false}
         />
       </div>
+      <ChartsPanel
+        categoryRows={categoryRows}
+        selectedSixMonthTrend={selectedSixMonthTrend}
+        chartsReady={chartsReady}
+        featured
+        showCategories={false}
+      />
     </section>
   );
 }
@@ -6449,12 +6455,14 @@ function ChartsPanel({
   selectedSixMonthTrend,
   chartsReady,
   featured = false,
+  showCategories = true,
   showTrend = true,
 }: {
   categoryRows: ReturnType<typeof categoryTotals>;
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
   chartsReady: boolean;
   featured?: boolean;
+  showCategories?: boolean;
   showTrend?: boolean;
 }) {
   const totalCategories = categoryRows.reduce((total, row) => total + row.amount, 0);
@@ -6486,6 +6494,7 @@ function ChartsPanel({
         showTrend && !featured && "lg:grid-cols-1 2xl:grid-cols-2",
       )}
     >
+      {showCategories && (
       <Card className="finance-card overflow-hidden">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-4">
@@ -6631,6 +6640,7 @@ function ChartsPanel({
           </div>
         </CardContent>
       </Card>
+      )}
 
       {showTrend && (
       <Card className="finance-card overflow-hidden">
