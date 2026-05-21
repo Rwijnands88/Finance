@@ -76,6 +76,12 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const JOINT_CONTRIBUTION_FIXED_CATEGORY_ID = "__joint_contribution_fixed__";
 const JOINT_CONTRIBUTION_FIXED_CATEGORY_NAME = "Inleg gezamenlijk";
+const SAVINGS_SNAPSHOT_NOTE = "__finance_savings_snapshot__";
+const SAVINGS_CATEGORY_NAME = "Sparen";
+
+function isSavingsSnapshot(snapshot: Pick<AccountBalanceSnapshot, "note">) {
+  return snapshot.note === SAVINGS_SNAPSHOT_NOTE;
+}
 
 type ReceiptDraft = {
   amount: number | null;
@@ -356,6 +362,17 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   );
   const [balanceMessage, setBalanceMessage] = useState("");
   const [isSavingBalance, setIsSavingBalance] = useState(false);
+  const [savingsStartAmount, setSavingsStartAmount] = useState("");
+  const [savingsStartDate, setSavingsStartDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [savingsDepositAmount, setSavingsDepositAmount] = useState("");
+  const [savingsDepositDate, setSavingsDepositDate] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [savingsMessage, setSavingsMessage] = useState("");
+  const [isSavingSavingsSnapshot, setIsSavingSavingsSnapshot] = useState(false);
+  const [isSavingSavingsDeposit, setIsSavingSavingsDeposit] = useState(false);
   const [incomeAmount, setIncomeAmount] = useState("");
   const [incomeDate, setIncomeDate] = useState(
     new Date().toISOString().slice(0, 10),
@@ -500,15 +517,28 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   }
 
   const mobileChartsReady = chartsReady && isDesktopViewport === false;
+  const accountBalanceSnapshots = useMemo(
+    () => balanceSnapshots.filter((snapshot) => !isSavingsSnapshot(snapshot)),
+    [balanceSnapshots],
+  );
+  const savingsBalanceSnapshots = useMemo(
+    () => balanceSnapshots.filter(isSavingsSnapshot),
+    [balanceSnapshots],
+  );
   const monthOptions = useMemo(
     () =>
       buildMonthOptions(
         transactions,
         fixedInstances,
-        balanceSnapshots,
+        accountBalanceSnapshots,
         initialData.selectedMonth,
       ),
-    [balanceSnapshots, fixedInstances, initialData.selectedMonth, transactions],
+    [
+      accountBalanceSnapshots,
+      fixedInstances,
+      initialData.selectedMonth,
+      transactions,
+    ],
   );
   const loadedMonths = useMemo(
     () => new Set(loadedMonthKeys),
@@ -518,19 +548,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   const latestBalanceSnapshot = useMemo(
     () =>
-      balanceSnapshots
+      accountBalanceSnapshots
         .filter((snapshot) => snapshot.accountId === selectedAccountId)
         .filter((snapshot) => snapshot.snapshotDate < monthStart(addIsoMonths(currentMonth, 1)))
         .sort(
           (first, second) =>
             second.snapshotDate.localeCompare(first.snapshotDate),
         )[0],
-    [balanceSnapshots, currentMonth, selectedAccountId],
+    [accountBalanceSnapshots, currentMonth, selectedAccountId],
   );
   const cashflowStartSnapshot = latestBalanceSnapshot;
   const showOpeningBalanceReminder =
     today === `${currentMonth}-01` &&
-    !balanceSnapshots.some(
+    !accountBalanceSnapshots.some(
       (snapshot) =>
         snapshot.accountId === selectedAccountId &&
         snapshot.snapshotDate === today,
@@ -958,6 +988,34 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       variableExpenseTotalToDate,
     ],
   );
+  const latestSavingsSnapshot = useMemo(
+    () =>
+      savingsBalanceSnapshots
+        .filter((snapshot) => snapshot.accountId === selectedAccountId)
+        .filter((snapshot) => snapshot.snapshotDate <= today)
+        .sort(
+          (first, second) =>
+            second.snapshotDate.localeCompare(first.snapshotDate),
+        )[0],
+    [savingsBalanceSnapshots, selectedAccountId, today],
+  );
+  const savingsTransactionsToDate = useMemo(
+    () =>
+      selectedTransactions
+        .filter((transaction) => transaction.type === "sparen")
+        .filter((transaction) => transaction.date <= today)
+        .sort((first, second) => second.date.localeCompare(first.date)),
+    [selectedTransactions, today],
+  );
+  const savingsDepositTotalToDate = savingsTransactionsToDate.reduce(
+    (total, transaction) => total + transaction.amount,
+    0,
+  );
+  const currentSavingsBalance = latestSavingsSnapshot
+    ? latestSavingsSnapshot.balance + savingsDepositTotalToDate
+    : null;
+  const savingsSuggestionAmount =
+    heroBudget.remainingFreeBudget > 0 ? heroBudget.remainingFreeBudget : 0;
   const displayedExpenseTotal = monthTotals.expenseTotal;
   const displayedNetTotal =
     monthTotals.contributionTotal + monthTotals.incomeTotal - displayedExpenseTotal;
@@ -1006,10 +1064,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         day: item.day,
         amount: -item.amount,
       }));
+    const futureSavingsEvents = selectedTransactions
+      .filter((transaction) => transaction.type === "sparen")
+      .filter((transaction) => transaction.date.startsWith(currentMonth))
+      .filter((transaction) => transaction.date > today)
+      .map((transaction) => ({
+        date: transaction.date,
+        day: Number(transaction.date.slice(8, 10)),
+        amount: -transaction.amount,
+      }));
 
     if (isSharedView) {
       return [
         ...futureFixedEvents,
+        ...futureSavingsEvents,
         ...contributionPlanRows
           .filter((plan) => plan.remaining > 0)
           .map((plan) => {
@@ -1048,6 +1116,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
     return [
       ...futureFixedEvents,
+      ...futureSavingsEvents,
       ...ownContributionPlanEvents,
       ...incomeEvents,
     ] satisfies CashflowEvent[];
@@ -1839,6 +1908,130 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setBalanceMessage("Saldo verwijderd. Je kunt nu een nieuw saldo invoeren.");
   }
 
+  async function saveSavingsSnapshot() {
+    const amount = parseCurrencyInput(savingsStartAmount);
+
+    if (!selectedAccount || Number.isNaN(amount)) {
+      setSavingsMessage("Vul een geldig startsaldo in.");
+      return;
+    }
+
+    setIsSavingSavingsSnapshot(true);
+    setSavingsMessage("");
+
+    const response = await fetch("/api/account-balance-snapshots", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        accountId: selectedAccount.id,
+        balance: amount,
+        snapshotDate: savingsStartDate,
+        note: SAVINGS_SNAPSHOT_NOTE,
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingSavingsSnapshot(false);
+
+    if (!response.ok) {
+      setSavingsMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Spaarsaldo opslaan lukte niet.",
+      );
+      return;
+    }
+
+    setBalanceSnapshots((items) => [result.snapshot, ...items]);
+    setSavingsStartAmount("");
+    setSavingsMessage("Spaarsaldo bijgewerkt.");
+  }
+
+  async function addSavingsDeposit() {
+    const amount = parseCurrencyInput(savingsDepositAmount);
+
+    if (!selectedAccount || !amount || amount <= 0) {
+      setSavingsMessage("Vul een geldig spaarbedrag in.");
+      return;
+    }
+
+    setIsSavingSavingsDeposit(true);
+    setSavingsMessage("");
+
+    const response = await fetch("/api/transactions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        accountId: selectedAccount.id,
+        amount,
+        date: savingsDepositDate,
+        note: "Sparen",
+        type: "sparen",
+        paidById: initialData.currentUserId,
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingSavingsDeposit(false);
+
+    if (!response.ok) {
+      setSavingsMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Spaarstorting opslaan lukte niet.",
+      );
+      return;
+    }
+
+    const savingsCategory =
+      categories.find((category) => category.name === SAVINGS_CATEGORY_NAME) ??
+      ({
+        id: result.transaction.categoryId,
+        name: SAVINGS_CATEGORY_NAME,
+        kind: "variable",
+        color: "#10B981",
+        averageMonthly: 0,
+        sortOrder: 118,
+      } satisfies DashboardData["categories"][number]);
+
+    if (!categories.some((category) => category.id === savingsCategory.id)) {
+      setCategories((items) =>
+        [...items, savingsCategory].sort(
+          (first, second) =>
+            (first.sortOrder ?? 0) - (second.sortOrder ?? 0) ||
+            first.name.localeCompare(second.name, "nl"),
+        ),
+      );
+    }
+
+    setTransactions((items) => [
+      {
+        id: result.transaction.id,
+        type: "sparen",
+        accountId: selectedAccount.id,
+        accountName: selectedAccount.name,
+        accountKind: selectedAccount.kind,
+        categoryId: savingsCategory.id,
+        amount,
+        date: savingsDepositDate,
+        note: "Sparen",
+        enteredById: initialData.currentUserId,
+        enteredBy: initialData.currentPerson,
+        paidById: result.transaction.paidById ?? initialData.currentUserId,
+        paidBy: initialData.currentPerson,
+      },
+      ...items,
+    ]);
+    setSavingsDepositAmount("");
+    setSavingsMessage("Spaarstorting toegevoegd.");
+  }
+
   async function addIncome() {
     const amount = parseCurrencyInput(incomeAmount);
 
@@ -2342,8 +2535,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         ? "Definitief verwijderen?\n\nDeze vaste-last uitgave verdwijnt uit dit maandoverzicht. De vaste last zelf blijft in de agenda staan."
         : transaction.type === "contribution"
           ? "Definitief verwijderen?\n\nDeze geboekte storting wordt permanent uit het overzicht verwijderd."
-          : transaction.type === "income"
-            ? "Definitief verwijderen?\n\nDeze inkomensregel wordt permanent uit het overzicht verwijderd."
+        : transaction.type === "income"
+          ? "Definitief verwijderen?\n\nDeze inkomensregel wordt permanent uit het overzicht verwijderd."
+          : transaction.type === "sparen"
+            ? "Definitief verwijderen?\n\nDeze spaarstorting wordt permanent uit het overzicht verwijderd."
             : "Definitief verwijderen?\n\nDeze ingevoerde uitgave wordt permanent uit het maandoverzicht verwijderd.",
     );
 
@@ -2392,6 +2587,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         ? "Storting verwijderd."
         : transaction.type === "income"
           ? "Inkomen verwijderd."
+          : transaction.type === "sparen"
+            ? "Spaarstorting verwijderd."
         : "Uitgave verwijderd.",
     );
   }
@@ -2533,7 +2730,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
 
     setEditingTransaction(null);
-    setMonthMessage("Uitgave bijgewerkt.");
+    setMonthMessage(
+      editingTransaction.type === "sparen"
+        ? "Spaarstorting bijgewerkt."
+        : "Uitgave bijgewerkt.",
+    );
   }
 
   function resetRecurringForm() {
@@ -2762,7 +2963,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       exportTotals.contributionTotal +
       exportTotals.incomeTotal -
       exportFixedTotal -
-      exportTotals.variableTotal;
+      exportTotals.variableTotal -
+      exportTotals.savingsTotal;
     const summaryRows = [
       {
         Rekening: selectedAccount?.name ?? viewCopy.label,
@@ -2771,6 +2973,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         Inkomen: exportTotals.incomeTotal,
         "Vaste lasten": exportFixedTotal,
         Variabel: exportTotals.variableTotal,
+        Sparen: exportTotals.savingsTotal,
         "Over/tekort": exportNetTotal,
         Uitgaven: exportTransactions.length,
         "Bonnen aanwezig": exportTransactions.filter(
@@ -2788,12 +2991,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             ? "Inkomen"
           : transaction.type === "contribution"
             ? "Storting"
+          : transaction.type === "sparen"
+            ? "Sparen"
             : "Variabel",
       Categorie:
         transaction.type === "contribution"
           ? contributionDisplayName(transaction)
           : transaction.type === "income"
             ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
+          : transaction.type === "sparen"
+            ? SAVINGS_CATEGORY_NAME
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
       BetaaldDoor: transaction.paidBy ?? transaction.enteredBy,
@@ -2819,6 +3026,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         "Inkomen",
         "Vaste lasten",
         "Variabel",
+        "Sparen",
         "Over/tekort",
       ],
       widths: {
@@ -2828,6 +3036,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         Inkomen: 15,
         "Vaste lasten": 15,
         Variabel: 15,
+        Sparen: 15,
         "Over/tekort": 15,
       },
     });
@@ -2874,7 +3083,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         totals.contributionTotal +
         totals.incomeTotal -
         fixedTotal -
-        totals.variableTotal;
+        totals.variableTotal -
+        totals.savingsTotal;
 
       return {
         Rekening: selectedAccount?.name ?? viewCopy.label,
@@ -2883,6 +3093,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         Inkomen: totals.incomeTotal,
         "Vaste lasten": fixedTotal,
         Variabel: totals.variableTotal,
+        Sparen: totals.savingsTotal,
         "Over/tekort": netTotal,
         Uitgaven: monthTransactionsForExport.length,
         "Bonnen aanwezig": monthTransactionsForExport.filter(
@@ -2901,12 +3112,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             ? "Inkomen"
           : transaction.type === "contribution"
             ? "Storting"
+          : transaction.type === "sparen"
+            ? "Sparen"
             : "Variabel",
       Categorie:
         transaction.type === "contribution"
           ? contributionDisplayName(transaction)
           : transaction.type === "income"
             ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
+          : transaction.type === "sparen"
+            ? SAVINGS_CATEGORY_NAME
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
       BetaaldDoor: transaction.paidBy ?? transaction.enteredBy,
@@ -2935,6 +3150,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         "Inkomen",
         "Vaste lasten",
         "Variabel",
+        "Sparen",
         "Over/tekort",
       ],
       widths: {
@@ -2944,6 +3160,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         Inkomen: 15,
         "Vaste lasten": 15,
         Variabel: 15,
+        Sparen: 15,
         "Over/tekort": 15,
       },
     });
@@ -3695,6 +3912,30 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onExportExcel={exportExcel}
             onExportPdf={(month) => void exportPdf(month)}
           />
+          <SavingsCard
+            accountName={
+              isSharedView
+                ? "Gezamenlijke spaarrekening"
+                : `${initialData.currentPerson} spaarrekening`
+            }
+            snapshot={latestSavingsSnapshot}
+            currentBalance={currentSavingsBalance}
+            depositTotal={savingsDepositTotalToDate}
+            suggestionAmount={savingsSuggestionAmount}
+            startAmount={savingsStartAmount}
+            startDate={savingsStartDate}
+            depositAmount={savingsDepositAmount}
+            depositDate={savingsDepositDate}
+            message={savingsMessage}
+            isSavingSnapshot={isSavingSavingsSnapshot}
+            isSavingDeposit={isSavingSavingsDeposit}
+            onStartAmountChange={setSavingsStartAmount}
+            onStartDateChange={setSavingsStartDate}
+            onDepositAmountChange={setSavingsDepositAmount}
+            onDepositDateChange={setSavingsDepositDate}
+            onSaveStartBalance={saveSavingsSnapshot}
+            onAddDeposit={addSavingsDeposit}
+          />
           <ChartsPanel
             categoryRows={categoryRows}
             selectedSixMonthTrend={selectedSixMonthTrend}
@@ -3772,12 +4013,34 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 chartsReady={chartsReady && isDesktopViewport === true}
                 monthOptions={monthOptions}
                 deletingTransactionId={deletingTransactionId}
+                savingsAccountName={
+                  isSharedView
+                    ? "Gezamenlijke spaarrekening"
+                    : `${initialData.currentPerson} spaarrekening`
+                }
+                savingsSnapshot={latestSavingsSnapshot}
+                currentSavingsBalance={currentSavingsBalance}
+                savingsDepositTotal={savingsDepositTotalToDate}
+                savingsSuggestionAmount={savingsSuggestionAmount}
+                savingsStartAmount={savingsStartAmount}
+                savingsStartDate={savingsStartDate}
+                savingsDepositAmount={savingsDepositAmount}
+                savingsDepositDate={savingsDepositDate}
+                savingsMessage={savingsMessage}
+                isSavingSavingsSnapshot={isSavingSavingsSnapshot}
+                isSavingSavingsDeposit={isSavingSavingsDeposit}
                 onMonthChange={changeCurrentMonth}
                 onExportExcel={exportExcel}
                 onExportPdf={(month) => void exportPdf(month)}
                 onDeleteTransaction={deleteTransaction}
                 onEditTransaction={startEditingTransaction}
                 onOpenReceipt={setReceiptViewer}
+                onSavingsStartAmountChange={setSavingsStartAmount}
+                onSavingsStartDateChange={setSavingsStartDate}
+                onSavingsDepositAmountChange={setSavingsDepositAmount}
+                onSavingsDepositDateChange={setSavingsDepositDate}
+                onSaveSavingsSnapshot={saveSavingsSnapshot}
+                onAddSavingsDeposit={addSavingsDeposit}
               />
 
               {isSharedView && (
@@ -4021,7 +4284,7 @@ type OutgoingTransactionRow = {
   subtitle: string;
   amount: number;
   signedAmount: number;
-  kind: "fixed" | "variable" | "contribution" | "income";
+  kind: "fixed" | "variable" | "contribution" | "income" | "sparen";
   color: string;
   receiptUrl?: string;
   state?: FixedAgendaState;
@@ -4988,9 +5251,11 @@ function MonthSummaryCard({
   const summaryRows = [
     {
       label: "Uitgaven",
-      value: fixedTotal + totals.variableTotal,
+      value: fixedTotal + totals.variableTotal + totals.savingsTotal,
       tone: "red" as const,
-      detail: "Vaste lasten + variabel",
+      detail: totals.savingsTotal > 0
+        ? "Vaste lasten + variabel + sparen"
+        : "Vaste lasten + variabel",
     },
     {
       label: "Stortingen",
@@ -5134,6 +5399,161 @@ function MonthSummaryCard({
             PDF
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SavingsCard({
+  accountName,
+  snapshot,
+  currentBalance,
+  depositTotal,
+  suggestionAmount,
+  startAmount,
+  startDate,
+  depositAmount,
+  depositDate,
+  message,
+  isSavingSnapshot,
+  isSavingDeposit,
+  onStartAmountChange,
+  onStartDateChange,
+  onDepositAmountChange,
+  onDepositDateChange,
+  onSaveStartBalance,
+  onAddDeposit,
+}: {
+  accountName: string;
+  snapshot?: AccountBalanceSnapshot;
+  currentBalance: number | null;
+  depositTotal: number;
+  suggestionAmount: number;
+  startAmount: string;
+  startDate: string;
+  depositAmount: string;
+  depositDate: string;
+  message: string;
+  isSavingSnapshot: boolean;
+  isSavingDeposit: boolean;
+  onStartAmountChange: (value: string) => void;
+  onStartDateChange: (value: string) => void;
+  onDepositAmountChange: (value: string) => void;
+  onDepositDateChange: (value: string) => void;
+  onSaveStartBalance: () => void;
+  onAddDeposit: () => void;
+}) {
+  return (
+    <Card className="finance-card">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle>Sparen</CardTitle>
+            <CardDescription>{accountName}</CardDescription>
+          </div>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]">
+            <WalletCards className="h-5 w-5" />
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-[14px] border border-emerald-400/20 bg-[var(--positive-light)] p-3">
+          <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+            Huidig spaarsaldo
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-[var(--positive)]">
+            {currentBalance === null ? "Geen startsaldo" : currency(currentBalance)}
+          </p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            {snapshot
+              ? `Start ${currency(snapshot.balance)} op ${snapshot.snapshotDate} · ${currency(depositTotal)} weggezet`
+              : "Voer eerst een startsaldo in."}
+          </p>
+        </div>
+
+        {suggestionAmount > 0 && (
+          <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+            Verwacht {currency(suggestionAmount)} over deze maand — wegzetten?
+          </p>
+        )}
+
+        <details className="group rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-[var(--text-primary)]">
+            Startsaldo invoeren
+            <Plus className="h-4 w-4 text-[var(--text-muted)] transition group-open:rotate-45" />
+          </summary>
+          <div className="grid gap-2 border-t border-[var(--border)] p-3 sm:grid-cols-[1fr_9.5rem_auto]">
+            <Input
+              inputMode="decimal"
+              placeholder="Startsaldo"
+              value={startAmount}
+              className="h-10"
+              onChange={(event) => onStartAmountChange(event.target.value)}
+            />
+            <Input
+              type="date"
+              value={startDate}
+              className="h-10"
+              onChange={(event) => onStartDateChange(event.target.value)}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-10 justify-center"
+              disabled={isSavingSnapshot}
+              onClick={onSaveStartBalance}
+            >
+              {isSavingSnapshot ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Bewaar
+            </Button>
+          </div>
+        </details>
+
+        <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
+          <p className="mb-2 text-sm font-medium text-[var(--text-primary)]">
+            Storting registreren
+          </p>
+          <div className="grid gap-2 sm:grid-cols-[1fr_9.5rem_auto]">
+            <Input
+              inputMode="decimal"
+              placeholder="Bedrag"
+              value={depositAmount}
+              className="h-10"
+              onChange={(event) => onDepositAmountChange(event.target.value)}
+            />
+            <Input
+              type="date"
+              value={depositDate}
+              className="h-10"
+              onChange={(event) => onDepositDateChange(event.target.value)}
+            />
+            <Button
+              type="button"
+              size="sm"
+              className="accent-glow-hover h-10 justify-center"
+              disabled={isSavingDeposit}
+              onClick={onAddDeposit}
+            >
+              {isSavingDeposit ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowDownToLine className="h-4 w-4" />
+              )}
+              Opslaan
+            </Button>
+          </div>
+        </div>
+
+        {message && (
+          <p className="rounded-[12px] border border-[var(--border)] bg-black/10 p-3 text-sm text-[var(--text-secondary)]">
+            {message}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -5483,15 +5903,19 @@ function TransactionEditDialog({
       ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
       : transaction.type === "contribution"
         ? contributionDisplayName(transaction, true)
-        : labels.get(transaction.categoryId)?.name ?? "Uitgave";
+        : transaction.type === "sparen"
+          ? SAVINGS_CATEGORY_NAME
+          : labels.get(transaction.categoryId)?.name ?? "Uitgave";
   const dialogTitle =
     transaction.type === "income"
       ? "Inkomen wijzigen"
       : transaction.type === "contribution"
         ? "Storting wijzigen"
-        : transaction.type === "fixed"
-          ? "Vaste last wijzigen"
-          : "Uitgave wijzigen";
+        : transaction.type === "sparen"
+          ? "Spaarstorting wijzigen"
+          : transaction.type === "fixed"
+            ? "Vaste last wijzigen"
+            : "Uitgave wijzigen";
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-end bg-black/75 p-0 backdrop-blur-xl sm:place-items-center sm:p-6">
@@ -5815,12 +6239,30 @@ function MonthInsightsSection({
   selectedSixMonthTrend,
   chartsReady,
   deletingTransactionId,
+  savingsAccountName,
+  savingsSnapshot,
+  currentSavingsBalance,
+  savingsDepositTotal,
+  savingsSuggestionAmount,
+  savingsStartAmount,
+  savingsStartDate,
+  savingsDepositAmount,
+  savingsDepositDate,
+  savingsMessage,
+  isSavingSavingsSnapshot,
+  isSavingSavingsDeposit,
   onMonthChange,
   onExportExcel,
   onExportPdf,
   onDeleteTransaction,
   onEditTransaction,
   onOpenReceipt,
+  onSavingsStartAmountChange,
+  onSavingsStartDateChange,
+  onSavingsDepositAmountChange,
+  onSavingsDepositDateChange,
+  onSaveSavingsSnapshot,
+  onAddSavingsDeposit,
 }: {
   currentMonth: string;
   monthOptions: MonthOption[];
@@ -5836,12 +6278,30 @@ function MonthInsightsSection({
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
   chartsReady: boolean;
   deletingTransactionId: string | null;
+  savingsAccountName: string;
+  savingsSnapshot?: AccountBalanceSnapshot;
+  currentSavingsBalance: number | null;
+  savingsDepositTotal: number;
+  savingsSuggestionAmount: number;
+  savingsStartAmount: string;
+  savingsStartDate: string;
+  savingsDepositAmount: string;
+  savingsDepositDate: string;
+  savingsMessage: string;
+  isSavingSavingsSnapshot: boolean;
+  isSavingSavingsDeposit: boolean;
   onMonthChange: (month: string) => void;
   onExportExcel: (month: string) => void;
   onExportPdf: (month: string) => void;
   onDeleteTransaction: (transaction: Transaction) => void;
   onEditTransaction: (transaction: Transaction) => void;
   onOpenReceipt: (receipt: ReceiptViewerState) => void;
+  onSavingsStartAmountChange: (value: string) => void;
+  onSavingsStartDateChange: (value: string) => void;
+  onSavingsDepositAmountChange: (value: string) => void;
+  onSavingsDepositDateChange: (value: string) => void;
+  onSaveSavingsSnapshot: () => void;
+  onAddSavingsDeposit: () => void;
 }) {
   return (
     <section id="finance-month" className="scroll-mt-4 grid gap-4">
@@ -5874,17 +6334,39 @@ function MonthInsightsSection({
       />
 
       <div className="grid items-start gap-4 2xl:grid-cols-[minmax(460px,0.95fr)_minmax(0,1.05fr)]">
-        <MonthSummaryCard
-          description={monthDescription}
-          currentMonth={currentMonth}
-          totals={totals}
-          fixedTotal={fixedTotal}
-          pacing={variableSpendPacing}
-          showIncome={showIncome}
-          monthMessage={monthMessage}
-          onExportExcel={onExportExcel}
-          onExportPdf={onExportPdf}
-        />
+        <div className="grid gap-4">
+          <MonthSummaryCard
+            description={monthDescription}
+            currentMonth={currentMonth}
+            totals={totals}
+            fixedTotal={fixedTotal}
+            pacing={variableSpendPacing}
+            showIncome={showIncome}
+            monthMessage={monthMessage}
+            onExportExcel={onExportExcel}
+            onExportPdf={onExportPdf}
+          />
+          <SavingsCard
+            accountName={savingsAccountName}
+            snapshot={savingsSnapshot}
+            currentBalance={currentSavingsBalance}
+            depositTotal={savingsDepositTotal}
+            suggestionAmount={savingsSuggestionAmount}
+            startAmount={savingsStartAmount}
+            startDate={savingsStartDate}
+            depositAmount={savingsDepositAmount}
+            depositDate={savingsDepositDate}
+            message={savingsMessage}
+            isSavingSnapshot={isSavingSavingsSnapshot}
+            isSavingDeposit={isSavingSavingsDeposit}
+            onStartAmountChange={onSavingsStartAmountChange}
+            onStartDateChange={onSavingsStartDateChange}
+            onDepositAmountChange={onSavingsDepositAmountChange}
+            onDepositDateChange={onSavingsDepositDateChange}
+            onSaveStartBalance={onSaveSavingsSnapshot}
+            onAddDeposit={onAddSavingsDeposit}
+          />
+        </div>
         <ChartsPanel
           categoryRows={categoryRows}
           selectedSixMonthTrend={selectedSixMonthTrend}
@@ -9403,6 +9885,7 @@ function signedTransactionAmount(transaction: Transaction) {
     case "income":
     case "contribution":
       return amount;
+    case "sparen":
     case "fixed":
     case "variable":
       return -amount;
@@ -9720,6 +10203,22 @@ function buildOutgoingTransactionRows(
         transaction,
       };
     });
+  const savingsRows: OutgoingTransactionRow[] = monthTransactions
+    .filter((transaction) => transaction.type === "sparen")
+    .filter((transaction) => transaction.date <= today)
+    .map((transaction) => ({
+      id: `sparen-${transaction.id}`,
+      date: transaction.date,
+      title: SAVINGS_CATEGORY_NAME,
+      subtitle: [transaction.note, transaction.paidBy ?? transaction.enteredBy]
+        .filter(Boolean)
+        .join(" · "),
+      amount: transaction.amount,
+      signedAmount: -transaction.amount,
+      kind: "sparen",
+      color: "#10B981",
+      transaction,
+    }));
   const positiveRows: OutgoingTransactionRow[] = monthTransactions
     .filter(
       (transaction) =>
@@ -9755,7 +10254,7 @@ function buildOutgoingTransactionRows(
         transaction,
       };
     });
-  return [...fixedRows, ...variableRows, ...positiveRows].sort(
+  return [...fixedRows, ...variableRows, ...savingsRows, ...positiveRows].sort(
     (first, second) =>
       second.date.localeCompare(first.date) ||
       first.title.localeCompare(second.title, "nl"),
@@ -9826,6 +10325,10 @@ function transactionSortLabel(
     return contributionDisplayName(transaction, true);
   }
 
+  if (transaction.type === "sparen") {
+    return SAVINGS_CATEGORY_NAME;
+  }
+
   return labels.get(transaction.categoryId)?.name ?? transaction.type;
 }
 
@@ -9844,6 +10347,7 @@ function transactionRowMetaLabel(
   if (row.kind === "fixed") return "Vaste last";
   if (row.kind === "contribution") return "Storting";
   if (row.kind === "income") return "Inkomen";
+  if (row.kind === "sparen") return "Sparen";
   return "Uitgave";
 }
 
@@ -10543,7 +11047,13 @@ function variableCategoryOptions(
     .filter(
       (category) =>
         (category.kind === "variable" || category.kind === "both") &&
-        !["Inleg", "Stortingen", "Salaris", "Extra inkomsten"].includes(category.name),
+        ![
+          "Inleg",
+          "Stortingen",
+          "Salaris",
+          "Extra inkomsten",
+          SAVINGS_CATEGORY_NAME,
+        ].includes(category.name),
     )
     .sort((first, second) => {
       const usageDifference =
@@ -10578,6 +11088,13 @@ function transactionCategoryOptions(
         category.id === transaction.categoryId ||
         category.name === "Salaris" ||
         category.name === "Extra inkomsten"
+      );
+    }
+
+    if (transaction.type === "sparen") {
+      return (
+        category.id === transaction.categoryId ||
+        category.name === SAVINGS_CATEGORY_NAME
       );
     }
 

@@ -44,7 +44,7 @@ export type FixedExpenseInstance = {
 
 export type Transaction = {
   id: string;
-  type: "fixed" | "variable" | "contribution" | "income";
+  type: "fixed" | "variable" | "contribution" | "income" | "sparen";
   contributionKind?: ContributionKind;
   accountId?: string;
   accountName?: string;
@@ -113,6 +113,7 @@ export type MonthSummary = {
   incomeTotal: number;
   fixedTotal: number;
   variableTotal: number;
+  savingsTotal: number;
   expenseTotal: number;
   netTotal: number;
   total: number;

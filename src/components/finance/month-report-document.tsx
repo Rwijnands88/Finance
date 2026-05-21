@@ -186,7 +186,7 @@ export function MonthReportDocument({
             <SubtotalBox label="Bij" value={reportTotals.inflow} positive />
             <SubtotalBox
               label="Af"
-              value={reportTotals.fixed + reportTotals.variable}
+              value={reportTotals.fixed + reportTotals.variable + reportTotals.savings}
             />
             <SubtotalBox
               label="Netto"
@@ -548,6 +548,9 @@ function buildReportTotals(
   const variable = transactions
     .filter((transaction) => transaction.type === "variable")
     .reduce((total, transaction) => total + transaction.amount, 0);
+  const savings = transactions
+    .filter((transaction) => transaction.type === "sparen")
+    .reduce((total, transaction) => total + transaction.amount, 0);
   const fixed = fixedItems
     .filter((item) => item.status !== "overgeslagen")
     .reduce((total, item) => total + item.amount, 0);
@@ -559,7 +562,8 @@ function buildReportTotals(
     inflow,
     fixed,
     variable,
-    net: inflow - fixed - variable,
+    savings,
+    net: inflow - fixed - variable - savings,
   };
 }
 
@@ -627,6 +631,8 @@ function buildTransactionGroups(
     const name =
       transaction.type === "contribution" || transaction.type === "income"
         ? "Bijschrijvingen"
+        : transaction.type === "sparen"
+          ? "Sparen"
         : transaction.type === "fixed"
           ? "Vaste lasten transacties"
           : labels.get(transaction.categoryId)?.name ?? "Uitgaven";
@@ -656,6 +662,10 @@ function transactionTitle(
 
   if (transaction.type === "fixed") {
     return labels.get(transaction.categoryId)?.name ?? "Vaste last";
+  }
+
+  if (transaction.type === "sparen") {
+    return "Sparen";
   }
 
   return labels.get(transaction.categoryId)?.name ?? "Uitgave";

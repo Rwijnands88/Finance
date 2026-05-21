@@ -10,7 +10,7 @@ type CreateTransactionBody = {
   date?: string;
   note?: string | null;
   receiptUrl?: string | null;
-  type?: "variable" | "contribution" | "income";
+  type?: "variable" | "contribution" | "income" | "sparen";
   contributionKind?: ContributionKind | null;
   paidById?: string | null;
   incomeKind?: "salary" | "extra";
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!["variable", "contribution", "income"].includes(transactionType)) {
+  if (!["variable", "contribution", "income", "sparen"].includes(transactionType)) {
     return NextResponse.json(
       { error: "Transactietype is ongeldig." },
       { status: 400 },
@@ -234,6 +234,25 @@ export async function POST(request: Request) {
             error instanceof Error
               ? error.message
               : "Inkomstencategorie kon niet worden gemaakt.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (transactionType === "sparen") {
+    try {
+      categoryId = await getOrCreateSavingsCategory(
+        supabase,
+        body.householdId,
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Spaardoelcategorie kon niet worden gemaakt.",
         },
         { status: 400 },
       );
@@ -495,6 +514,44 @@ async function getOrCreateContributionCategory(
       kind: "variable",
       color: "#34D399",
       sort_order: 115,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return category.id;
+}
+
+async function getOrCreateSavingsCategory(
+  supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>,
+  householdId: string,
+) {
+  const { data: existingCategory, error: existingError } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("household_id", householdId)
+    .eq("name", "Sparen")
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  if (existingCategory) {
+    return existingCategory.id;
+  }
+
+  const { data: category, error } = await supabase
+    .from("categories")
+    .insert({
+      household_id: householdId,
+      name: "Sparen",
+      kind: "variable",
+      color: "#10B981",
+      sort_order: 118,
     })
     .select("id")
     .single();

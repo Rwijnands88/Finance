@@ -29,7 +29,12 @@ export function totalsForMonth(transactions: Transaction[], month: string) {
       .filter((transaction) => transaction.type === "income")
       .map((transaction) => transaction.amount),
   );
-  const expenseTotal = fixedTotal + variableTotal;
+  const savingsTotal = sum(
+    monthTransactions
+      .filter((transaction) => transaction.type === "sparen")
+      .map((transaction) => transaction.amount),
+  );
+  const expenseTotal = fixedTotal + variableTotal + savingsTotal;
 
   return {
     month,
@@ -37,6 +42,7 @@ export function totalsForMonth(transactions: Transaction[], month: string) {
     incomeTotal,
     fixedTotal,
     variableTotal,
+    savingsTotal,
     expenseTotal,
     netTotal: contributionTotal + incomeTotal - expenseTotal,
     total: expenseTotal,
@@ -56,7 +62,8 @@ export function categoryTotals(
       (transaction) =>
         transaction.date.startsWith(month) &&
         transaction.type !== "contribution" &&
-        transaction.type !== "income",
+        transaction.type !== "income" &&
+        transaction.type !== "sparen",
     )
     .forEach((transaction) => {
       grouped.set(
@@ -86,7 +93,8 @@ export function totalsByPerson(transactions: Transaction[], month: string) {
       (transaction) =>
         transaction.date.startsWith(month) &&
         transaction.type !== "contribution" &&
-        transaction.type !== "income",
+        transaction.type !== "income" &&
+        transaction.type !== "sparen",
     )
     .reduce(
       (result, transaction) => {
