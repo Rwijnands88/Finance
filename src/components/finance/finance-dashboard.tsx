@@ -128,6 +128,10 @@ type CashflowEvent = {
   day: number;
   amount: number;
 };
+type CashflowStartSnapshot = Pick<
+  AccountBalanceSnapshot,
+  "balance" | "snapshotDate"
+>;
 type ContributionCoverageResult = {
   amount: number;
   expectedVariableTotal: number;
@@ -367,10 +371,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     null,
   );
   const autoConfirmingFixedInstanceIds = useRef(new Set<string>());
+  const autoBookingContributionPlanIds = useRef(new Set<string>());
   const lastForegroundRefreshAt = useRef(0);
-  const [bookingContributionPlanId, setBookingContributionPlanId] = useState<
-    string | null
-  >(null);
   const [skippingFixedInstanceId, setSkippingFixedInstanceId] = useState<
     string | null
   >(null);
@@ -497,6 +499,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     () => new Set(loadedMonthKeys),
     [loadedMonthKeys],
   );
+  const today = new Date().toISOString().slice(0, 10);
 
   const latestBalanceSnapshot = useMemo(
     () =>
@@ -509,6 +512,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         )[0],
     [balanceSnapshots, currentMonth, selectedAccountId],
   );
+  const cashflowStartSnapshot = latestBalanceSnapshot;
+  const showOpeningBalanceReminder =
+    today === `${currentMonth}-01` &&
+    !balanceSnapshots.some(
+      (snapshot) =>
+        snapshot.accountId === selectedAccountId &&
+        snapshot.snapshotDate === today,
+    );
   const viewCopy = isSharedView
     ? {
         label: "Gezamenlijke rekening",
@@ -706,7 +717,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     (total, plan) => total + plan.remaining,
     0,
   );
-  const today = new Date().toISOString().slice(0, 10);
   const calculatedBalance = latestBalanceSnapshot
     ? latestBalanceSnapshot.balance +
       selectedTransactions
@@ -797,21 +807,30 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   useEffect(() => {
     void autoConfirmDueFixedExpenses(currentMonth);
   }, [currentMonth, fixedInstances, recurringExpenses, today]);
+  useEffect(() => {
+    if (!defaultAccount || !isSharedView) {
+      return;
+    }
+
+    contributionPlanRows
+      .filter((plan) => plan.remaining > 0)
+      .filter((plan) => dateForBillingDay(currentMonth, plan.depositDay) <= today)
+      .filter((plan) => !autoBookingContributionPlanIds.current.has(plan.id))
+      .forEach((plan) => {
+        autoBookingContributionPlanIds.current.add(plan.id);
+        void bookExpectedContributionPlan(plan, { automatic: true });
+      });
+  }, [contributionPlanRows, currentMonth, defaultAccount, isSharedView, today]);
   const outgoingTransactionRows = useMemo(
     () =>
       buildOutgoingTransactionRows(
         monthTransactions,
         fixedAgendaItems,
-        isSharedView ? contributionPlanRows : [],
         labels,
-        currentMonth,
         today,
       ),
     [
-      contributionPlanRows,
-      currentMonth,
       fixedAgendaItems,
-      isSharedView,
       labels,
       monthTransactions,
       today,
@@ -934,15 +953,17 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     ],
   );
   const cashflowEvents = useMemo(() => {
+    const futureFixedEvents = fixedAgendaItems
+      .filter((item) => item.canSkip && item.date > today)
+      .map((item) => ({
+        date: item.date,
+        day: item.day,
+        amount: -item.amount,
+      }));
+
     if (isSharedView) {
       return [
-        ...fixedAgendaItems
-          .filter((item) => item.canSkip && item.date > today)
-          .map((item) => ({
-            date: item.date,
-            day: item.day,
-            amount: -item.amount,
-          })),
+        ...futureFixedEvents,
         ...contributionPlanRows
           .filter((plan) => plan.remaining > 0)
           .map((plan) => {
@@ -979,7 +1000,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         amount: transaction.amount,
       }));
 
-    return [...ownContributionPlanEvents, ...incomeEvents] satisfies CashflowEvent[];
+    return [
+      ...futureFixedEvents,
+      ...ownContributionPlanEvents,
+      ...incomeEvents,
+    ] satisfies CashflowEvent[];
   }, [
     contributionPlanRows,
     currentMonth,
@@ -992,14 +1017,18 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const cashflowTimeline = useMemo(
     () =>
       buildCashflowTimeline({
-        startBalance: calculatedBalance ?? 0,
+        startSnapshot: cashflowStartSnapshot,
+        currentBalance: calculatedBalance,
         month: currentMonth,
+        transactions: selectedTransactions,
         events: cashflowEvents,
       }),
     [
       calculatedBalance,
       cashflowEvents,
+      cashflowStartSnapshot,
       currentMonth,
+      selectedTransactions,
     ],
   );
 
@@ -1588,17 +1617,26 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     return true;
   }
 
-  async function bookExpectedContributionPlan(plan: ContributionPlanRow) {
+  async function bookExpectedContributionPlan(
+    plan: ContributionPlanRow,
+    options: { automatic?: boolean } = {},
+  ) {
+    const isAutomatic = options.automatic === true;
+
     if (!defaultAccount || plan.remaining <= 0) {
-      setMonthMessage("Deze verwachte storting kan niet geboekt worden.");
+      if (!isAutomatic) {
+        setMonthMessage("Deze verwachte storting kan niet geboekt worden.");
+      }
+      autoBookingContributionPlanIds.current.delete(plan.id);
       return;
     }
 
     const transactionDate = dateForBillingDay(currentMonth, plan.depositDay);
     const note = plan.label || "Geplande storting";
 
-    setBookingContributionPlanId(plan.id);
-    setMonthMessage("");
+    if (!isAutomatic) {
+      setMonthMessage("");
+    }
 
     const response = await fetch("/api/transactions", {
       method: "POST",
@@ -1618,14 +1656,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     });
     const result = await response.json();
 
-    setBookingContributionPlanId(null);
+    autoBookingContributionPlanIds.current.delete(plan.id);
 
     if (!response.ok) {
-      setMonthMessage(
-        typeof result.error === "string"
-          ? result.error
-          : "Storting boeken lukte niet. Probeer het nog eens.",
-      );
+      if (!isAutomatic) {
+        setMonthMessage(
+          typeof result.error === "string"
+            ? result.error
+            : "Storting verwerken lukte niet. Probeer het nog eens.",
+        );
+      }
       return;
     }
 
@@ -1641,8 +1681,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         averageMonthly: 0,
       } satisfies DashboardData["categories"][number]);
 
-    setTransactions((items) => [
-      {
+    const plannedTransaction = {
         id: result.transaction.id,
         type: "contribution",
         contributionKind: "planned",
@@ -1657,12 +1696,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         enteredBy: initialData.currentPerson,
         paidById: result.transaction.paidById ?? plan.userId,
         paidBy: plan.person,
-      },
-      ...items,
-    ]);
-    setSelectedAccountId(defaultAccount.id);
-    setQuickAccount(defaultAccount.id);
-    setMonthMessage(`${plan.label || "Storting"} geboekt.`);
+      } satisfies Transaction;
+
+    setTransactions((items) =>
+      mergeById(items, [plannedTransaction]).sort((first, second) =>
+        second.date.localeCompare(first.date),
+      ),
+    );
+
+    if (!isAutomatic) {
+      setSelectedAccountId(defaultAccount.id);
+      setQuickAccount(defaultAccount.id);
+      setMonthMessage(`${plan.label || "Storting"} geboekt.`);
+    }
   }
 
   async function saveBalanceSnapshot() {
@@ -2044,6 +2090,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         id: plan.id,
         householdId: initialData.householdId,
         label,
+        month: currentMonth,
         monthlyAmount: amount,
         depositDay,
       }),
@@ -2062,6 +2109,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
 
     const updatedPlan = result.plan as ContributionPlan;
+    const deletedTransactionIds = Array.isArray(result.deletedTransactionIds)
+      ? (result.deletedTransactionIds as string[])
+      : [];
+
+    if (deletedTransactionIds.length > 0) {
+      setTransactions((items) =>
+        items.filter((item) => !deletedTransactionIds.includes(item.id)),
+      );
+    }
+
     setContributionPlans((plans) =>
       sortContributionPlans(
         plans.map((item) => (item.id === updatedPlan.id ? updatedPlan : item)),
@@ -2118,6 +2175,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         accountId: defaultAccount.id,
         userId: member.userId,
         label,
+        month: currentMonth,
         monthlyAmount: amount,
         depositDay,
       }),
@@ -2136,6 +2194,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
 
     const createdPlan = result.plan as ContributionPlan;
+    const deletedTransactionIds = Array.isArray(result.deletedTransactionIds)
+      ? (result.deletedTransactionIds as string[])
+      : [];
+
+    if (deletedTransactionIds.length > 0) {
+      setTransactions((items) =>
+        items.filter((item) => !deletedTransactionIds.includes(item.id)),
+      );
+    }
+
     setContributionPlans((plans) => sortContributionPlans([...plans, createdPlan]));
     setContributionPlanDrafts((drafts) => ({
       ...drafts,
@@ -3337,6 +3405,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             }}
           />
 
+          {showOpeningBalanceReminder && (
+            <div className="rounded-[14px] border border-[var(--border)] bg-[var(--accent-light)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+              Nieuwe maand — vergeet je openingssaldo niet in te voeren.
+            </div>
+          )}
+
           <DashboardHero
             label={viewCopy.label}
             value={dashboardPrimaryValue}
@@ -3348,6 +3422,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             points={cashflowTimeline}
             month={currentMonth}
             buffer={cashflowBuffer}
+            startSnapshot={cashflowStartSnapshot}
             chartReady={mobileChartsReady}
             onBufferChange={(value) =>
               updateCashflowBuffer(selectedAccountId, value)
@@ -3554,11 +3629,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             freeSpaceTotal={heroBudget.remainingFreeBudget}
             fixedTotal={fixedTotalForCurrentMonth}
             deletingTransactionId={deletingTransactionId}
-            bookingContributionPlanId={bookingContributionPlanId}
             onDeleteTransaction={deleteTransaction}
             onEditTransaction={startEditingTransaction}
             onOpenReceipt={setReceiptViewer}
-            onBookExpectedContribution={bookExpectedContributionPlan}
           />
           <MonthSummaryCard
             title={viewCopy.monthTitle}
@@ -3606,6 +3679,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             className="scrollbar-hidden min-h-0 overflow-y-auto pr-1"
           >
             <div className="grid min-w-0 content-start gap-4 pb-4">
+              {showOpeningBalanceReminder && (
+                <div className="rounded-[14px] border border-[var(--border)] bg-[var(--accent-light)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+                  Nieuwe maand — vergeet je openingssaldo niet in te voeren.
+                </div>
+              )}
+
               <section id="finance-dashboard">
                 <DashboardHero
                   label={viewCopy.label}
@@ -3619,6 +3698,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 points={cashflowTimeline}
                 month={currentMonth}
                 buffer={cashflowBuffer}
+                startSnapshot={cashflowStartSnapshot}
                 chartReady={chartsReady && isDesktopViewport === true}
                 onBufferChange={(value) =>
                   updateCashflowBuffer(selectedAccountId, value)
@@ -3640,14 +3720,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 chartsReady={chartsReady && isDesktopViewport === true}
                 monthOptions={monthOptions}
                 deletingTransactionId={deletingTransactionId}
-                bookingContributionPlanId={bookingContributionPlanId}
                 onMonthChange={changeCurrentMonth}
                 onExportExcel={exportExcel}
                 onExportPdf={(month) => void exportPdf(month)}
                 onDeleteTransaction={deleteTransaction}
                 onEditTransaction={startEditingTransaction}
                 onOpenReceipt={setReceiptViewer}
-                onBookExpectedContribution={bookExpectedContributionPlan}
               />
 
               {isSharedView && (
@@ -3892,7 +3970,6 @@ type OutgoingTransactionRow = {
   receiptUrl?: string;
   state?: FixedAgendaState;
   transaction?: Transaction;
-  expectedContributionPlan?: ContributionPlanRow;
   isExpected?: boolean;
 };
 
@@ -4072,6 +4149,7 @@ function CashflowTimelineCard({
   points,
   month,
   buffer,
+  startSnapshot,
   chartReady = true,
   onBufferChange,
   compact = false,
@@ -4079,11 +4157,13 @@ function CashflowTimelineCard({
   points: CashflowPoint[];
   month: string;
   buffer: number;
+  startSnapshot?: CashflowStartSnapshot;
   chartReady?: boolean;
   onBufferChange: (value: number) => void;
   compact?: boolean;
 }) {
   const insight = cashflowInsight(points, buffer);
+  const hasCashflowPoints = points.length > 0;
 
   return (
     <Card className="finance-card">
@@ -4098,6 +4178,11 @@ function CashflowTimelineCard({
             <CardTitle>Cashflow</CardTitle>
             <CardDescription className={cn(compact && "leading-4")}>
               Lopend saldo deze maand
+              <span className="mt-1 block text-[11px] text-[var(--text-muted)]">
+                {startSnapshot
+                  ? `Saldo op ${formatCashflowStartDate(startSnapshot.snapshotDate)}: ${currency(startSnapshot.balance)}`
+                  : "Geen openingssaldo ingevoerd"}
+              </span>
             </CardDescription>
           </div>
           <div className={cn("w-24", compact && "w-20 sm:w-24")}>
@@ -4119,20 +4204,29 @@ function CashflowTimelineCard({
       <CardContent className={cn("space-y-3", compact && "space-y-2 px-3 pb-3 pt-0 sm:p-5 sm:pt-0")}>
         <div className={cn("h-40", compact && "h-28 min-[390px]:h-32 sm:h-40")}>
           {chartReady ? (
-            <CashflowRechartsChart points={points} month={month} buffer={buffer} />
+            <CashflowRechartsChart
+              points={points}
+              month={month}
+              buffer={buffer}
+              emptyMessage="Voer een openingssaldo in om de cashflow te starten."
+            />
           ) : (
             <div className="h-full rounded-[12px] border border-dashed border-[var(--border)] bg-black/10" />
           )}
         </div>
-        <CashflowLegend />
-        <p
-          className={cn(
-            "rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-5 text-[var(--text-secondary)]",
-            compact && "line-clamp-2 p-2 text-xs leading-4 sm:p-3 sm:text-sm sm:leading-5",
-          )}
-        >
-          {insight.text}
-        </p>
+        {hasCashflowPoints && (
+          <>
+            <CashflowLegend />
+            <p
+              className={cn(
+                "rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm leading-5 text-[var(--text-secondary)]",
+                compact && "line-clamp-2 p-2 text-xs leading-4 sm:p-3 sm:text-sm sm:leading-5",
+              )}
+            >
+              {insight.text}
+            </p>
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -4165,15 +4259,17 @@ function CashflowRechartsChart({
   points,
   month,
   buffer,
+  emptyMessage = "Nog geen cashflowpunten.",
 }: {
   points: CashflowPoint[];
   month: string;
   buffer: number;
+  emptyMessage?: string;
 }) {
   if (!points.length) {
     return (
       <div className="flex h-full items-center justify-center rounded-[12px] border border-dashed border-[var(--border)] bg-black/10 text-xs text-[var(--text-muted)]">
-        Nog geen cashflowpunten.
+        {emptyMessage}
       </div>
     );
   }
@@ -4909,22 +5005,18 @@ function AllTransactionsCard({
   freeSpaceTotal,
   fixedTotal,
   deletingTransactionId,
-  bookingContributionPlanId,
   onDeleteTransaction,
   onEditTransaction,
   onOpenReceipt,
-  onBookExpectedContribution,
 }: {
   currentMonth: string;
   rows: OutgoingTransactionRow[];
   freeSpaceTotal: number;
   fixedTotal: number;
   deletingTransactionId: string | null;
-  bookingContributionPlanId: string | null;
   onDeleteTransaction: (transaction: Transaction) => void;
   onEditTransaction: (transaction: Transaction) => void;
   onOpenReceipt: (receipt: ReceiptViewerState) => void;
-  onBookExpectedContribution: (plan: ContributionPlanRow) => void;
 }) {
   const [displayLimit, setDisplayLimit] = useState<TransactionDisplayLimit>(10);
   const today = new Date().toISOString().slice(0, 10);
@@ -4975,13 +5067,9 @@ function AllTransactionsCard({
                 row.state === "today" || row.state === "upcoming";
               const isDeleting =
                 !!row.transaction && deletingTransactionId === row.transaction.id;
-              const isBooking =
-                !!row.expectedContributionPlan &&
-                bookingContributionPlanId === row.expectedContributionPlan.id;
               const hasActions =
                 Boolean(row.transaction) ||
-                Boolean(row.receiptUrl) ||
-                Boolean(row.expectedContributionPlan);
+                Boolean(row.receiptUrl);
 
 	              return (
 	                <div
@@ -5069,25 +5157,6 @@ function AllTransactionsCard({
 	                        onOpen={onOpenReceipt}
 	                        compact
 	                      />
-	                    )}
-	                    {row.expectedContributionPlan && (
-	                      <Button
-	                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-8 w-full px-0 text-xs"
-                        disabled={isBooking}
-                        onClick={() =>
-                          onBookExpectedContribution(row.expectedContributionPlan!)
-                        }
-                      >
-                        {isBooking ? (
-                          <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Check className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-	                        Boeken
-	                      </Button>
 	                    )}
 	                    {row.transaction && (
 	                      <Button
@@ -5606,14 +5675,12 @@ function MonthInsightsSection({
   selectedSixMonthTrend,
   chartsReady,
   deletingTransactionId,
-  bookingContributionPlanId,
   onMonthChange,
   onExportExcel,
   onExportPdf,
   onDeleteTransaction,
   onEditTransaction,
   onOpenReceipt,
-  onBookExpectedContribution,
 }: {
   currentMonth: string;
   monthOptions: MonthOption[];
@@ -5629,14 +5696,12 @@ function MonthInsightsSection({
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
   chartsReady: boolean;
   deletingTransactionId: string | null;
-  bookingContributionPlanId: string | null;
   onMonthChange: (month: string) => void;
   onExportExcel: (month: string) => void;
   onExportPdf: (month: string) => void;
   onDeleteTransaction: (transaction: Transaction) => void;
   onEditTransaction: (transaction: Transaction) => void;
   onOpenReceipt: (receipt: ReceiptViewerState) => void;
-  onBookExpectedContribution: (plan: ContributionPlanRow) => void;
 }) {
   return (
     <section id="finance-month" className="scroll-mt-4 grid gap-4">
@@ -5663,11 +5728,9 @@ function MonthInsightsSection({
         freeSpaceTotal={freeSpaceTotal}
         fixedTotal={fixedTotal}
         deletingTransactionId={deletingTransactionId}
-        bookingContributionPlanId={bookingContributionPlanId}
         onDeleteTransaction={onDeleteTransaction}
         onEditTransaction={onEditTransaction}
         onOpenReceipt={onOpenReceipt}
-        onBookExpectedContribution={onBookExpectedContribution}
       />
 
       <div className="grid items-start gap-4 2xl:grid-cols-[minmax(460px,0.95fr)_minmax(0,1.05fr)]">
@@ -7732,7 +7795,7 @@ function ContributionCard({
             }}
           >
             <ArrowDownToLine className="h-4 w-4" />
-            Storting boeken
+            Storting toevoegen
           </Button>
         </div>
 
@@ -7957,13 +8020,13 @@ function ContributionBookingDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Storting boeken"
+        aria-label="Storting toevoegen"
         className="max-h-[92vh] w-full overflow-y-auto rounded-t-[24px] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-2xl sm:max-w-md sm:rounded-[24px] sm:p-5"
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-              Storting boeken
+              Storting toevoegen
             </h2>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               Losse storting op de gezamenlijke rekening.
@@ -9162,11 +9225,18 @@ function loadImage(file: File) {
 }
 
 function signedTransactionAmount(transaction: Transaction) {
-  if (transaction.type === "income" || transaction.type === "contribution") {
-    return transaction.amount;
-  }
+  const amount = Math.abs(transaction.amount);
 
-  return -transaction.amount;
+  switch (transaction.type) {
+    case "income":
+    case "contribution":
+      return amount;
+    case "fixed":
+    case "variable":
+      return -amount;
+    default:
+      return 0;
+  }
 }
 
 function buildHeroBudgetSnapshot({
@@ -9392,9 +9462,7 @@ function buildPersonalContributionCoverage({
 function buildOutgoingTransactionRows(
   monthTransactions: Transaction[],
   fixedItems: FixedAgendaItem[],
-  contributionPlans: ContributionPlanRow[],
   labels: Map<string, DashboardData["categories"][number]>,
-  month: string,
   today: string,
 ) {
   const fixedRows: OutgoingTransactionRow[] = fixedItems
@@ -9465,28 +9533,7 @@ function buildOutgoingTransactionRows(
         transaction,
       };
     });
-  const expectedContributionRows: OutgoingTransactionRow[] = contributionPlans
-    .filter((plan) => plan.remaining > 0)
-    .map((plan) => {
-      const date = dateForBillingDay(month, plan.depositDay);
-
-      return { plan, date };
-    })
-    .filter(({ date }) => date <= today)
-    .map(({ plan, date }) => ({
-      id: `expected-contribution-${plan.id}-${date}`,
-      date,
-      title: plan.label || "Geplande storting",
-      subtitle: `${plan.person} · verwacht`,
-      amount: plan.remaining,
-      signedAmount: plan.remaining,
-      kind: "contribution",
-      color: "#10B981",
-      expectedContributionPlan: plan,
-      isExpected: true,
-    }));
-
-  return [...fixedRows, ...variableRows, ...positiveRows, ...expectedContributionRows].sort(
+  return [...fixedRows, ...variableRows, ...positiveRows].sort(
     (first, second) =>
       second.date.localeCompare(first.date) ||
       first.title.localeCompare(second.title, "nl"),
@@ -9793,38 +9840,81 @@ function readCashflowBuffer(accountId: string, allowLegacyFallback = false) {
 }
 
 function buildCashflowTimeline({
-  startBalance,
+  startSnapshot,
+  currentBalance,
   month,
+  transactions,
   events,
 }: {
-  startBalance: number;
+  startSnapshot?: CashflowStartSnapshot;
+  currentBalance: number | null;
   month: string;
+  transactions: Transaction[];
   events: CashflowEvent[];
 }) {
+  if (!startSnapshot) {
+    return [];
+  }
+
   const [, monthNumber] = month.split("-").map(Number);
   const daysInMonth = new Date(Number(month.slice(0, 4)), monthNumber, 0).getDate();
-  const dailyChanges = Array.from({ length: daysInMonth }, () => 0);
+  const actualDailyChanges = Array.from({ length: daysInMonth }, () => 0);
+  const projectedDailyChanges = Array.from({ length: daysInMonth }, () => 0);
   const today = new Date().toISOString().slice(0, 10);
-  const startDay = today.startsWith(month)
-    ? Number(today.slice(8, 10))
-    : 1;
-  const startDate = dateForBillingDay(month, startDay);
-  const addDailyChange = (day: number, amount: number) => {
+  const currentMonth = today.slice(0, 7);
+  const isCurrentMonth = today.startsWith(month);
+  const monthStartDate = `${month}-01`;
+  const nextMonthStart = monthStart(addIsoMonths(month, 1));
+  const dayIndex = (day: number) => {
     const safeDay = Math.min(Math.max(day, 1), daysInMonth);
-    dailyChanges[safeDay - 1] += amount;
+    return safeDay - 1;
   };
+
+  transactions
+    .filter((transaction) => transaction.date.startsWith(month))
+    .forEach((transaction) => {
+      actualDailyChanges[
+        dayIndex(Number(transaction.date.slice(8, 10)))
+      ] += signedTransactionAmount(transaction);
+    });
 
   events
     .filter((event) => event.date.startsWith(month))
-    .filter((event) => event.date >= startDate)
-    .forEach((event) => addDailyChange(event.day, event.amount));
+    .forEach((event) => {
+      projectedDailyChanges[dayIndex(event.day)] += event.amount;
+    });
 
-  let runningBalance = startBalance;
+  const transactionsBetweenSnapshotAndMonthStart = transactions
+    .filter((transaction) => transaction.date >= startSnapshot.snapshotDate)
+    .filter((transaction) => transaction.date < monthStartDate)
+    .filter((transaction) => transaction.date < nextMonthStart)
+    .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0);
+  const transactionsBetweenMonthStartAndSnapshot = transactions
+    .filter((transaction) => transaction.date >= monthStartDate)
+    .filter((transaction) => transaction.date < startSnapshot.snapshotDate)
+    .filter((transaction) => transaction.date < nextMonthStart)
+    .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0);
+  const openingBalance =
+    startSnapshot.snapshotDate <= monthStartDate
+      ? startSnapshot.balance + transactionsBetweenSnapshotAndMonthStart
+      : startSnapshot.balance - transactionsBetweenMonthStartAndSnapshot;
 
-  return dailyChanges.slice(startDay - 1).map((amount, index) => {
-    const day = startDay + index;
+  let runningBalance = openingBalance;
 
-    runningBalance += amount;
+  return Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const date = dateForBillingDay(month, day);
+
+    if (isCurrentMonth && date === today && currentBalance !== null) {
+      runningBalance = currentBalance;
+    } else if (
+      date > startSnapshot.snapshotDate &&
+      (isCurrentMonth ? date < today : month < currentMonth)
+    ) {
+      runningBalance += actualDailyChanges[index];
+    } else {
+      runningBalance += projectedDailyChanges[index];
+    }
 
     return {
       day,
@@ -9935,6 +10025,13 @@ function formatCashflowDateTick(month: string, day: number) {
     day: "2-digit",
     month: "short",
   }).format(new Date(`${dateForBillingDay(month, day)}T00:00:00`));
+}
+
+function formatCashflowStartDate(date: string) {
+  return new Intl.DateTimeFormat("nl-NL", {
+    day: "numeric",
+    month: "long",
+  }).format(new Date(`${date}T00:00:00`));
 }
 
 function formatCashflowAxisValue(value: number) {

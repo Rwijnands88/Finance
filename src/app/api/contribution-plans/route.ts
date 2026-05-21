@@ -8,6 +8,7 @@ type ContributionPlanBody = {
   accountId?: string;
   userId?: string;
   label?: string;
+  month?: string;
   monthlyAmount?: number;
   depositDay?: number;
 };
@@ -21,6 +22,12 @@ export async function POST(request: Request) {
   }
 
   const supabase = await getSupabaseServerClient();
+  const monthValidationError = validateContributionPlanMonth(body.month);
+
+  if (monthValidationError) {
+    return monthValidationError;
+  }
+
   const {
     data: { user },
     error: userError,
@@ -43,6 +50,17 @@ export async function POST(request: Request) {
       { error: memberError?.message ?? "Gebruiker hoort niet bij dit huishouden." },
       { status: 400 },
     );
+  }
+
+  const { deletedTransactionIds, error: cleanupError } =
+    await deletePlannedContributionTransactionsForMonth(supabase, {
+      householdId: body.householdId!,
+      accountId: body.accountId!,
+      month: body.month!,
+    });
+
+  if (cleanupError) {
+    return NextResponse.json({ error: cleanupError.message }, { status: 400 });
   }
 
   const { data: plan, error } = await supabase
@@ -70,6 +88,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     plan: mapContributionPlan(plan, profile?.display_name ?? "Onbekend"),
+    deletedTransactionIds,
   });
 }
 
@@ -89,6 +108,12 @@ export async function PATCH(request: Request) {
     return validationError;
   }
 
+  const monthValidationError = validateContributionPlanMonth(body.month);
+
+  if (monthValidationError) {
+    return monthValidationError;
+  }
+
   const supabase = await getSupabaseServerClient();
   const {
     data: { user },
@@ -97,6 +122,31 @@ export async function PATCH(request: Request) {
 
   if (userError || !user) {
     return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+
+  const { data: existingPlan, error: existingPlanError } = await supabase
+    .from("contribution_plans")
+    .select("id, account_id")
+    .eq("id", body.id)
+    .eq("household_id", body.householdId)
+    .maybeSingle();
+
+  if (existingPlanError || !existingPlan) {
+    return NextResponse.json(
+      { error: existingPlanError?.message ?? "Stortingsafspraak ontbreekt." },
+      { status: 400 },
+    );
+  }
+
+  const { deletedTransactionIds, error: cleanupError } =
+    await deletePlannedContributionTransactionsForMonth(supabase, {
+      householdId: body.householdId,
+      accountId: existingPlan.account_id,
+      month: body.month!,
+    });
+
+  if (cleanupError) {
+    return NextResponse.json({ error: cleanupError.message }, { status: 400 });
   }
 
   const { data: plan, error } = await supabase
@@ -123,6 +173,7 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({
     plan: mapContributionPlan(plan, profile?.display_name ?? "Onbekend"),
+    deletedTransactionIds,
   });
 }
 
@@ -184,4 +235,58 @@ function validateContributionPlanBody(
   }
 
   return null;
+}
+
+function validateContributionPlanMonth(month: ContributionPlanBody["month"]) {
+  if (typeof month !== "string" || !/^\d{4}-\d{2}$/.test(month)) {
+    return NextResponse.json(
+      { error: "Maand voor opschonen ontbreekt." },
+      { status: 400 },
+    );
+  }
+
+  return null;
+}
+
+async function deletePlannedContributionTransactionsForMonth(
+  supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>,
+  {
+    householdId,
+    accountId,
+    month,
+  }: {
+    householdId: string;
+    accountId: string;
+    month: string;
+  },
+) {
+  const monthStart = `${month}-01`;
+  const monthEnd = addMonths(monthStart, 1);
+  const { data, error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("household_id", householdId)
+    .eq("account_id", accountId)
+    .eq("type", "contribution")
+    .eq("contribution_kind", "planned")
+    .gte("transaction_date", monthStart)
+    .lt("transaction_date", monthEnd)
+    .select("id");
+
+  return {
+    deletedTransactionIds: (data ?? []).map((transaction) => transaction.id),
+    error,
+  };
+}
+
+function addMonths(isoDate: string, months: number) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setMonth(date.getMonth() + months);
+
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
