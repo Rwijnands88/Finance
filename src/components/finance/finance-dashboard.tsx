@@ -6525,12 +6525,15 @@ function ChartsPanel({
         <CardContent
           className={cn(
             "grid gap-4",
-            featured
-              ? "md:grid-cols-[220px_minmax(0,1fr)]"
-              : "md:grid-cols-[0.72fr_1.28fr] lg:grid-cols-1",
+            !featured && "md:grid-cols-[0.72fr_1.28fr] lg:grid-cols-1",
           )}
         >
-          <div className={cn("relative overflow-visible", hasCategoryData ? "h-48" : "h-36")}>
+          <div
+            className={cn(
+              "relative overflow-visible",
+              hasCategoryData ? (featured ? "h-40" : "h-48") : "h-36",
+            )}
+          >
             {chartsReady && hasCategoryData && (
               <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                 <PieChart>
