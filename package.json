@@ -9,6 +9,8 @@
     "start": "next start",
     "electron:dev": "concurrently -k -s first -n next,electron -c blue,magenta \"npm run dev\" \"wait-on http://localhost:3000 && ELECTRON_USE_EXTERNAL_SERVER=true ELECTRON_START_URL=http://localhost:3000 electron .\"",
     "electron:build": "npm run build && electron-builder --mac dmg",
+    "electron:build:arm64": "npm run build && electron-builder --mac dmg --arm64",
+    "electron:build:x64": "npm run build && electron-builder --mac dmg --x64",
     "lint": "eslint"
   },
   "dependencies": {

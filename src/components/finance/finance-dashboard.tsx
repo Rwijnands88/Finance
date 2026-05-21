@@ -6603,55 +6603,57 @@ function ChartsPanel({
                 Zodra er uitgaven staan, zie je hier direct welke categorieen de maand bepalen.
               </p>
             )}
-            {visibleCategoryRows.filter((row) => row.amount > 0).map((row) => {
-              const overBudget = row.average > 0 && row.amount > row.average;
+            <div className="space-y-3 px-3">
+              {visibleCategoryRows.filter((row) => row.amount > 0).map((row) => {
+                const overBudget = row.average > 0 && row.amount > row.average;
 
-              return (
-                <div
-                  key={row.categoryId}
-                  className="grid grid-cols-[minmax(0,1fr)_5.75rem] items-center gap-3 text-xs"
-                >
-                  <div className="grid min-w-0 gap-2">
-                    <span className="flex min-w-0 items-center gap-2 text-[var(--text-secondary)]">
-                      <span className="truncate">{row.name}</span>
-                    </span>
-                    <CategoryProgressBar
-                      value={row.amount}
-                      max={categoryProgressMax}
-                      color={overBudget ? "#EF4444" : row.color}
-                    />
-                  </div>
-                  <span
-                    className={cn(
-                      "justify-self-end text-right font-medium",
-                      overBudget ? "text-[var(--negative)]" : "text-[var(--positive)]",
-                    )}
+                return (
+                  <div
+                    key={row.categoryId}
+                    className="grid grid-cols-[minmax(0,1fr)_5.75rem] items-end gap-3 text-xs"
                   >
-                    {currency(row.amount)}
-                  </span>
-                </div>
-              );
-            })}
-            {hasHiddenCategories && (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
-                {!showAllCategories && (
-                  <span>Plus {hiddenCategoryCount} kleinere categorieen.</span>
-                )}
-                <button
-                  type="button"
-                  aria-expanded={showAllCategories}
-                  className={cn(
-                    "rounded-[999px] px-2.5 py-1 font-medium transition",
-                    showAllCategories
-                      ? "bg-[var(--accent-light)] text-[var(--accent)]"
-                      : "text-[var(--text-muted)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]",
+                    <div className="grid min-w-0 gap-2">
+                      <span className="flex min-w-0 items-center gap-2 text-[var(--text-secondary)]">
+                        <span className="truncate">{row.name}</span>
+                      </span>
+                      <CategoryProgressBar
+                        value={row.amount}
+                        max={categoryProgressMax}
+                        color={overBudget ? "#EF4444" : row.color}
+                      />
+                    </div>
+                    <span
+                      className={cn(
+                        "justify-self-end pb-px text-right font-medium",
+                        overBudget ? "text-[var(--negative)]" : "text-[var(--positive)]",
+                      )}
+                    >
+                      {currency(row.amount)}
+                    </span>
+                  </div>
+                );
+              })}
+              {hasHiddenCategories && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+                  {!showAllCategories && (
+                    <span>Plus {hiddenCategoryCount} kleinere categorieen.</span>
                   )}
-                  onClick={() => setShowAllCategories((current) => !current)}
-                >
-                  {showAllCategories ? "Minder tonen" : "Toon alles"}
-                </button>
-              </div>
-            )}
+                  <button
+                    type="button"
+                    aria-expanded={showAllCategories}
+                    className={cn(
+                      "rounded-[999px] px-2.5 py-1 font-medium transition",
+                      showAllCategories
+                        ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                        : "text-[var(--text-muted)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]",
+                    )}
+                    onClick={() => setShowAllCategories((current) => !current)}
+                  >
+                    {showAllCategories ? "Minder tonen" : "Toon alles"}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
