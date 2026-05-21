@@ -78,6 +78,8 @@ const JOINT_CONTRIBUTION_FIXED_CATEGORY_ID = "__joint_contribution_fixed__";
 const JOINT_CONTRIBUTION_FIXED_CATEGORY_NAME = "Inleg gezamenlijk";
 const SAVINGS_SNAPSHOT_NOTE = "__finance_savings_snapshot__";
 const SAVINGS_CATEGORY_NAME = "Sparen";
+const VARIABLE_EXPENSE_COLOR = "#14B8A6";
+const SAVINGS_COLOR = "#10B981";
 
 function isSavingsSnapshot(snapshot: Pick<AccountBalanceSnapshot, "note">) {
   return snapshot.note === SAVINGS_SNAPSHOT_NOTE;
@@ -1997,7 +1999,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         id: result.transaction.categoryId,
         name: SAVINGS_CATEGORY_NAME,
         kind: "variable",
-        color: "#10B981",
+        color: SAVINGS_COLOR,
         averageMonthly: 0,
         sortOrder: 118,
       } satisfies DashboardData["categories"][number]);
@@ -6701,7 +6703,7 @@ function ChartsPanel({
                   cursor={{ fill: "rgba(99, 102, 241, 0.08)" }}
                 />
                 <Bar dataKey="fixed" fill="var(--accent)" radius={[8, 8, 3, 3]} />
-                <Bar dataKey="variable" fill="var(--positive)" radius={[8, 8, 3, 3]} />
+                <Bar dataKey="variable" fill={VARIABLE_EXPENSE_COLOR} radius={[8, 8, 3, 3]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -6726,7 +6728,7 @@ function ChartsPanel({
             Vast
           </span>
           <span className="inline-flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-[var(--positive)]" />
+            <span className="h-2 w-2 rounded-full bg-[#14B8A6]" />
             Variabel
           </span>
         </div>
@@ -6807,7 +6809,7 @@ function FixedExpenseAgenda({
 
         <div className={cn("grid grid-cols-3 gap-2", compact && "grid-cols-1")}>
           <AgendaTotal label="Deze maand" value={monthlyTotal} tone="indigo" />
-          <AgendaTotal label="Verwerkt" value={processedTotal} tone="emerald" />
+          <AgendaTotal label="Verwerkt" value={processedTotal} tone="slate" />
           <AgendaTotal label="Nog open" value={openTotal} tone="zinc" />
         </div>
 
@@ -7163,7 +7165,7 @@ function FixedExpenseCalendar({
                           <span
                             className={cn(
                               "h-2 w-2 rounded-full bg-[var(--accent)]",
-                              hasProcessed && "bg-[var(--positive)]",
+                              hasProcessed && "bg-[#64748B]",
                             )}
                           />
                         )}
@@ -7221,14 +7223,14 @@ function AgendaTotal({
 }: {
   label: string;
   value: number;
-  tone: "indigo" | "emerald" | "zinc";
+  tone: "indigo" | "slate" | "zinc";
 }) {
   return (
     <div
       className={cn(
         "rounded-[14px] border p-3",
         tone === "indigo" && "border-[var(--border-strong)] bg-[var(--accent-light)]",
-        tone === "emerald" && "border-emerald-400/20 bg-[var(--positive-light)]",
+        tone === "slate" && "border-[#64748B]/25 bg-[#64748B]/10",
         tone === "zinc" && "border-[var(--border)] bg-[var(--bg-surface)]",
       )}
     >
@@ -7293,13 +7295,13 @@ function AgendaRow({
         <div
           className={cn(
             "absolute top-8 bottom-[-0.5rem] w-px bg-[var(--border)]",
-            isProcessed && "bg-[var(--positive)] opacity-40",
+            isProcessed && "bg-[#64748B] opacity-50",
           )}
         />
         <div
           className={cn(
             "z-10 flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-card)] text-[13px] font-medium text-[var(--text-secondary)]",
-            isProcessed && "border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]",
+            isProcessed && "border-[#64748B]/30 bg-[#64748B]/10 text-[#64748B]",
             item.state === "today" && "border-[var(--accent)] text-[var(--accent)]",
             isHighlighted && "border-[var(--accent)] bg-[var(--accent-light)]",
           )}
@@ -7627,9 +7629,9 @@ function PersonCostInsight({
   categoryRows: ReturnType<typeof categoryTotalsByPerson>;
   isSharedView: boolean;
 }) {
-  const maxPersonTotal = Math.max(
-    ...people.map((person) => personTotals[person] ?? 0),
-    1,
+  const totalPersonSpend = people.reduce(
+    (total, person) => total + (personTotals[person] ?? 0),
+    0,
   );
   const title = isSharedView
     ? "Gezamenlijke uitgaven per persoon"
@@ -7638,6 +7640,9 @@ function PersonCostInsight({
     ? "Wie voegde welke variabele kosten toe."
     : "Prive-uitgaven op deze rekening, uitgesplitst waar mogelijk.";
   const topRows = categoryRows.slice(0, 3);
+  const identityPeople = ["Ralph", "Dorine"];
+  const personIdentityColor = (person: string) =>
+    person === "Ralph" ? "#F97316" : "#8B5CF6";
 
   return (
     <Card className="bg-[#141416]">
@@ -7651,7 +7656,9 @@ function PersonCostInsight({
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
           {people.map((person) => {
             const value = personTotals[person] ?? 0;
-            const percentage = maxPersonTotal > 0 ? (value / maxPersonTotal) * 100 : 0;
+            const percentage =
+              totalPersonSpend > 0 ? Math.round((value / totalPersonSpend) * 100) : 0;
+            const personColor = personIdentityColor(person);
 
             return (
               <div
@@ -7659,28 +7666,25 @@ function PersonCostInsight({
                 className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex min-w-0 items-center">
                     <span
-                      className={cn(
-                        "h-2.5 w-2.5 rounded-full",
-                        person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
-                      )}
-                    />
-                    <span className="truncate text-sm text-zinc-300">
+                      className="truncate text-sm"
+                      style={{ color: personColor }}
+                    >
                       {person}
                     </span>
                   </div>
                   <span className="text-sm font-semibold text-zinc-50">
-                    {currency(value)}
+                    {currency(value)}{" "}
+                    <span className="text-xs font-medium text-zinc-500">
+                      ({percentage}%)
+                    </span>
                   </span>
                 </div>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-900">
                   <div
-                    className={cn(
-                      "h-full rounded-full",
-                      person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
-                    )}
-                    style={{ width: `${percentage}%` }}
+                    className="h-full rounded-full"
+                    style={{ width: `${percentage}%`, backgroundColor: personColor }}
                   />
                 </div>
               </div>
@@ -7695,47 +7699,81 @@ function PersonCostInsight({
             </p>
           )}
 
-          {topRows.map((row) => (
-            <div
-              key={row.categoryId}
-              className="grid gap-2 rounded-[13px] border border-zinc-800/60 bg-zinc-950/25 p-3"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: row.color }}
-                  />
-                  <p className="truncate text-sm font-medium text-zinc-100">
-                    {row.name}
+          {topRows.map((row) => {
+            const visiblePeople = identityPeople.filter((person) =>
+              people.includes(person),
+            );
+            const amountByPerson = new Map(
+              row.people.map((personRow) => [personRow.person, personRow.amount]),
+            );
+
+            return (
+              <div
+                key={row.categoryId}
+                className="grid gap-2 rounded-[13px] border border-zinc-800/60 bg-zinc-950/25 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: row.color }}
+                    />
+                    <p className="truncate text-sm font-medium text-zinc-100">
+                      {row.name}
+                    </p>
+                  </div>
+                  <p className="text-sm font-semibold text-zinc-50">
+                    {currency(row.total)}
                   </p>
                 </div>
-                <p className="text-sm font-semibold text-zinc-50">
-                  {currency(row.total)}
-                </p>
-              </div>
-              <div className="grid gap-1.5">
-                {row.people.map((personRow) => (
-                  <div
-                    key={personRow.person}
-                    className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-2 text-xs"
-                  >
-                    <span className="truncate text-zinc-500">
-                      {personRow.person}
-                    </span>
-                    <CategoryProgressBar
-                      value={personRow.amount}
-                      max={row.total}
-                      color={row.color}
-                    />
-                    <span className="text-zinc-300">
-                      {currency(personRow.amount)}
-                    </span>
+                <div className="grid gap-1.5">
+                  <div className="flex h-2.5 overflow-hidden rounded-full bg-zinc-950">
+                    {visiblePeople.map((person) => {
+                      const amount = amountByPerson.get(person) ?? 0;
+
+                      if (amount <= 0) {
+                        return null;
+                      }
+
+                      return (
+                        <div
+                          key={person}
+                          className="h-full"
+                          style={{
+                            width: `${(amount / Math.max(row.total, 1)) * 100}%`,
+                            backgroundColor: personIdentityColor(person),
+                          }}
+                        />
+                      );
+                    })}
                   </div>
-                ))}
+                  <div className="grid grid-cols-2 gap-3 text-xs font-medium">
+                    {people.includes("Ralph") ? (
+                      <span className="truncate" style={{ color: personIdentityColor("Ralph") }}>
+                        {(amountByPerson.get("Ralph") ?? 0) > 0
+                          ? currency(amountByPerson.get("Ralph") ?? 0)
+                          : ""}
+                      </span>
+                    ) : (
+                      <span />
+                    )}
+                    {people.includes("Dorine") ? (
+                      <span
+                        className="truncate text-right"
+                        style={{ color: personIdentityColor("Dorine") }}
+                      >
+                        {(amountByPerson.get("Dorine") ?? 0) > 0
+                          ? currency(amountByPerson.get("Dorine") ?? 0)
+                          : ""}
+                      </span>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -8653,11 +8691,6 @@ function ContributionCard({
             label="Extra stortingen"
             value={currency(extraTotal)}
             tone={extraTotal > 0 ? "emerald" : "zinc"}
-          />
-          <ContributionStat
-            label="Belastingteruggave"
-            value={currency(taxReturnTotal)}
-            tone={taxReturnTotal > 0 ? "emerald" : "zinc"}
           />
           {coverage && <ContributionCoverageCard coverage={coverage} />}
         </div>
@@ -10459,7 +10492,7 @@ function buildOutgoingTransactionRows(
       amount: transaction.amount,
       signedAmount: -transaction.amount,
       kind: "sparen",
-      color: "#10B981",
+      color: SAVINGS_COLOR,
       transaction,
     }));
   const positiveRows: OutgoingTransactionRow[] = monthTransactions
