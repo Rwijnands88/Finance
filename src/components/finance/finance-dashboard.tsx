@@ -28,6 +28,7 @@ import {
   BarChart,
   Cell,
   CartesianGrid,
+  LabelList,
   Line,
   LineChart,
   Pie,
@@ -140,6 +141,20 @@ type ContributionCoverageResult = {
   dataDays: number;
   tone: "emerald" | "red" | "zinc";
   text: string;
+};
+type VariableSpendPacingResult = {
+  estimatedVariableTotal: number;
+  forecastVariableTotal: number;
+  currentVariableTotal: number;
+  previousMonthTotalToDate: number;
+  expectedToDate: number;
+  historicalDailyAverage: number;
+  remainingDays: number;
+  historyMonths: number;
+  dataDays: number;
+  progress: number;
+  previousProgress: number;
+  tone: "emerald" | "orange" | "red" | "zinc";
 };
 
 type ContributionPersonBreakdown = {
@@ -526,7 +541,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         description:
           "Voor vaste lasten, boodschappen, tanken en alles wat jullie samen betalen.",
         quickTitle: "Gezamenlijke uitgave",
-        monthTitle: "Gezamenlijk maandoverzicht",
         monthDescription: `${selectedAccount?.name ?? "Gezamenlijke rekening"} in ${monthLabel(currentMonth)}.`,
       }
     : {
@@ -534,7 +548,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         description:
           "Alleen prive-uitgaven, inkomen en eigen vaste lasten van de ingelogde gebruiker.",
         quickTitle: "Prive-uitgave",
-        monthTitle: "Prive maandoverzicht",
         monthDescription: `${selectedAccount?.name ?? "Mijn rekening"} in ${monthLabel(currentMonth)}.`,
       };
 
@@ -683,6 +696,30 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         )
         .reduce((total, transaction) => total + transaction.amount, 0),
     [currentMonth, defaultAccount?.id, transactions],
+  );
+  const selectedExtraContributionTotal = useMemo(
+    () =>
+      selectedTransactions
+        .filter(
+          (transaction) =>
+            transaction.type === "contribution" &&
+            transaction.contributionKind === "extra" &&
+            transaction.date.startsWith(currentMonth),
+        )
+        .reduce((total, transaction) => total + transaction.amount, 0),
+    [currentMonth, selectedTransactions],
+  );
+  const selectedTaxReturnContributionTotal = useMemo(
+    () =>
+      selectedTransactions
+        .filter(
+          (transaction) =>
+            transaction.type === "contribution" &&
+            transaction.contributionKind === "belastingteruggave" &&
+            transaction.date.startsWith(currentMonth),
+        )
+        .reduce((total, transaction) => total + transaction.amount, 0),
+    [currentMonth, selectedTransactions],
   );
   const contributionBreakdown = useMemo(
     () =>
@@ -852,6 +889,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .filter((transaction) => transaction.date.startsWith(currentMonth))
         .filter((transaction) => transaction.date <= today)
         .reduce((total, transaction) => total + transaction.amount, 0),
+    [currentMonth, selectedTransactions, today],
+  );
+  const variableSpendPacing = useMemo(
+    () =>
+      buildVariableSpendPacing({
+        transactions: selectedTransactions,
+        month: currentMonth,
+        today,
+      }),
     [currentMonth, selectedTransactions, today],
   );
   const incomeTotalToDate = useMemo(
@@ -1533,6 +1579,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   async function addContribution() {
     const amount = parseCurrencyInput(contributionAmount);
+    const targetAccount = isSharedView ? defaultAccount : selectedAccount;
     const contributionMember =
       initialData.householdMembers.find(
         (member) => member.userId === contributionPaidById,
@@ -1541,7 +1588,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         (member) => member.userId === initialData.currentUserId,
       );
 
-    if (!amount || amount <= 0 || !defaultAccount || !contributionMember) {
+    if (!amount || amount <= 0 || !targetAccount || !contributionMember) {
       setContributionMessage("Vul een geldig bedrag in.");
       return false;
     }
@@ -1556,7 +1603,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       },
       body: JSON.stringify({
         householdId: initialData.householdId,
-        accountId: defaultAccount.id,
+        accountId: targetAccount.id,
         amount,
         date: contributionDate,
         note: contributionNote || defaultContributionNote(contributionKind),
@@ -1595,9 +1642,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         id: result.transaction.id,
         type: "contribution",
         contributionKind,
-        accountId: defaultAccount.id,
-        accountName: defaultAccount.name,
-        accountKind: defaultAccount.kind,
+        accountId: targetAccount.id,
+        accountName: targetAccount.name,
+        accountKind: targetAccount.kind,
         categoryId: contributionCategory.id,
         amount,
         date: contributionDate,
@@ -1612,8 +1659,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setContributionAmount("");
     setContributionNote("");
     setContributionMessage("Storting toegevoegd.");
-    setSelectedAccountId(defaultAccount.id);
-    setQuickAccount(defaultAccount.id);
+    setSelectedAccountId(targetAccount.id);
+    setQuickAccount(targetAccount.id);
     return true;
   }
 
@@ -3574,41 +3621,45 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onIncomeNoteChange={setIncomeNote}
             onAddIncome={addIncome}
           />
-          {isSharedView && (
-            <ContributionCard
-              amount={contributionAmount}
-              date={contributionDate}
-              kind={contributionKind}
-              note={contributionNote}
-              paidById={contributionPaidById}
-              person={initialData.currentPerson}
-              householdMembers={initialData.householdMembers}
-              plans={contributionPlanRows}
-              planDrafts={contributionPlanDrafts}
-              newPlanDrafts={newContributionPlanDrafts}
-              planMessage={contributionPlanMessage}
-              savingPlanId={savingContributionPlanId}
-              plannedTotal={plannedContributionTotal}
-              receivedTotal={monthTotals.contributionTotal}
-              extraTotal={extraContributionTotal}
-              taxReturnTotal={taxReturnContributionTotal}
-              remainingTotal={remainingContributionTotal}
-              breakdown={contributionBreakdown}
-              coverage={contributionCoverage}
-              message={contributionMessage}
-              isSaving={isSavingContribution}
-              onAmountChange={setContributionAmount}
-              onDateChange={setContributionDate}
-              onKindChange={setContributionKind}
-              onPaidByChange={setContributionPaidById}
-              onNoteChange={setContributionNote}
-              onPlanDraftChange={updateContributionPlanDraft}
-              onNewPlanDraftChange={updateNewContributionPlanDraft}
-              onPlanSave={saveContributionPlan}
-              onPlanCreate={createContributionPlan}
-              onSubmit={addContribution}
-            />
-          )}
+          <ContributionCard
+            accountName={selectedAccount?.name ?? viewCopy.label}
+            showPlanning={isSharedView}
+            amount={contributionAmount}
+            date={contributionDate}
+            kind={contributionKind}
+            note={contributionNote}
+            paidById={contributionPaidById}
+            person={initialData.currentPerson}
+            householdMembers={initialData.householdMembers}
+            plans={isSharedView ? contributionPlanRows : []}
+            planDrafts={contributionPlanDrafts}
+            newPlanDrafts={newContributionPlanDrafts}
+            planMessage={isSharedView ? contributionPlanMessage : ""}
+            savingPlanId={savingContributionPlanId}
+            plannedTotal={isSharedView ? plannedContributionTotal : 0}
+            receivedTotal={monthTotals.contributionTotal}
+            extraTotal={isSharedView ? extraContributionTotal : selectedExtraContributionTotal}
+            taxReturnTotal={
+              isSharedView
+                ? taxReturnContributionTotal
+                : selectedTaxReturnContributionTotal
+            }
+            remainingTotal={isSharedView ? remainingContributionTotal : 0}
+            breakdown={isSharedView ? contributionBreakdown : []}
+            coverage={isSharedView ? contributionCoverage : undefined}
+            message={contributionMessage}
+            isSaving={isSavingContribution}
+            onAmountChange={setContributionAmount}
+            onDateChange={setContributionDate}
+            onKindChange={setContributionKind}
+            onPaidByChange={setContributionPaidById}
+            onNoteChange={setContributionNote}
+            onPlanDraftChange={updateContributionPlanDraft}
+            onNewPlanDraftChange={updateNewContributionPlanDraft}
+            onPlanSave={saveContributionPlan}
+            onPlanCreate={createContributionPlan}
+            onSubmit={addContribution}
+          />
         </section>
 
         <section
@@ -3634,10 +3685,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onOpenReceipt={setReceiptViewer}
           />
           <MonthSummaryCard
-            title={viewCopy.monthTitle}
             description={viewCopy.monthDescription}
             currentMonth={currentMonth}
             totals={monthTotals}
+            fixedTotal={fixedTotalForCurrentMonth}
+            pacing={variableSpendPacing}
             showIncome={!isSharedView}
             monthMessage={monthMessage}
             onExportExcel={exportExcel}
@@ -3707,13 +3759,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
               <MonthInsightsSection
                 currentMonth={currentMonth}
-                monthTitle={viewCopy.monthTitle}
                 monthDescription={viewCopy.monthDescription}
                 outgoingRows={outgoingTransactionRows}
                 totals={monthTotals}
                 showIncome={!isSharedView}
                 freeSpaceTotal={heroBudget.remainingFreeBudget}
                 fixedTotal={fixedTotalForCurrentMonth}
+                variableSpendPacing={variableSpendPacing}
                 monthMessage={monthMessage}
                 categoryRows={categoryRows}
                 selectedSixMonthTrend={selectedSixMonthTrend}
@@ -3846,41 +3898,45 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               />
             </section>
 
-            {isSharedView && (
-              <ContributionCard
-                amount={contributionAmount}
-                date={contributionDate}
-                kind={contributionKind}
-                note={contributionNote}
-                paidById={contributionPaidById}
-                person={initialData.currentPerson}
-                householdMembers={initialData.householdMembers}
-                plans={contributionPlanRows}
-                planDrafts={contributionPlanDrafts}
-                newPlanDrafts={newContributionPlanDrafts}
-                planMessage={contributionPlanMessage}
-                savingPlanId={savingContributionPlanId}
-                plannedTotal={plannedContributionTotal}
-                receivedTotal={monthTotals.contributionTotal}
-                extraTotal={extraContributionTotal}
-                taxReturnTotal={taxReturnContributionTotal}
-                remainingTotal={remainingContributionTotal}
-                breakdown={contributionBreakdown}
-                coverage={contributionCoverage}
-                message={contributionMessage}
-                isSaving={isSavingContribution}
-                onAmountChange={setContributionAmount}
-                onDateChange={setContributionDate}
-                onKindChange={setContributionKind}
-                onPaidByChange={setContributionPaidById}
-                onNoteChange={setContributionNote}
-                onPlanDraftChange={updateContributionPlanDraft}
-                onNewPlanDraftChange={updateNewContributionPlanDraft}
-                onPlanSave={saveContributionPlan}
-                onPlanCreate={createContributionPlan}
-                onSubmit={addContribution}
-              />
-            )}
+            <ContributionCard
+              accountName={selectedAccount?.name ?? viewCopy.label}
+              showPlanning={isSharedView}
+              amount={contributionAmount}
+              date={contributionDate}
+              kind={contributionKind}
+              note={contributionNote}
+              paidById={contributionPaidById}
+              person={initialData.currentPerson}
+              householdMembers={initialData.householdMembers}
+              plans={isSharedView ? contributionPlanRows : []}
+              planDrafts={contributionPlanDrafts}
+              newPlanDrafts={newContributionPlanDrafts}
+              planMessage={isSharedView ? contributionPlanMessage : ""}
+              savingPlanId={savingContributionPlanId}
+              plannedTotal={isSharedView ? plannedContributionTotal : 0}
+              receivedTotal={monthTotals.contributionTotal}
+              extraTotal={isSharedView ? extraContributionTotal : selectedExtraContributionTotal}
+              taxReturnTotal={
+                isSharedView
+                  ? taxReturnContributionTotal
+                  : selectedTaxReturnContributionTotal
+              }
+              remainingTotal={isSharedView ? remainingContributionTotal : 0}
+              breakdown={isSharedView ? contributionBreakdown : []}
+              coverage={isSharedView ? contributionCoverage : undefined}
+              message={contributionMessage}
+              isSaving={isSavingContribution}
+              onAmountChange={setContributionAmount}
+              onDateChange={setContributionDate}
+              onKindChange={setContributionKind}
+              onPaidByChange={setContributionPaidById}
+              onNoteChange={setContributionNote}
+              onPlanDraftChange={updateContributionPlanDraft}
+              onNewPlanDraftChange={updateNewContributionPlanDraft}
+              onPlanSave={saveContributionPlan}
+              onPlanCreate={createContributionPlan}
+              onSubmit={addContribution}
+            />
 
             <BankAppsCard />
           </aside>
@@ -4882,28 +4938,57 @@ function MonthTransactionsCard({
 }
 
 function MonthSummaryCard({
-  title,
   description,
   currentMonth,
   totals,
+  fixedTotal,
+  pacing,
   showIncome,
   monthMessage,
   onExportExcel,
   onExportPdf,
 }: {
-  title: string;
   description: string;
   currentMonth: string;
   totals: ReturnType<typeof totalsForMonth>;
+  fixedTotal: number;
+  pacing: VariableSpendPacingResult;
   showIncome: boolean;
   monthMessage: string;
   onExportExcel: (month: string) => void;
   onExportPdf: (month: string) => void;
 }) {
+  const maxPacingValue = Math.max(
+    pacing.estimatedVariableTotal,
+    pacing.currentVariableTotal,
+    pacing.previousMonthTotalToDate,
+    1,
+  );
+  const actualPacingColor =
+    pacing.currentVariableTotal <= pacing.estimatedVariableTotal
+      ? "#10B981"
+      : "#EF4444";
+  const pacingChartRows = [
+    {
+      label: "Inschatting",
+      value: pacing.estimatedVariableTotal,
+      fill: "#6366F1",
+    },
+    {
+      label: "Werkelijk",
+      value: pacing.currentVariableTotal,
+      fill: actualPacingColor,
+    },
+    {
+      label: "Vorige maand",
+      value: pacing.previousMonthTotalToDate,
+      fill: "#71717A",
+    },
+  ];
   const summaryRows = [
     {
       label: "Uitgaven",
-      value: totals.expenseTotal,
+      value: fixedTotal + totals.variableTotal,
       tone: "red" as const,
       detail: "Vaste lasten + variabel",
     },
@@ -4911,7 +4996,7 @@ function MonthSummaryCard({
       label: "Stortingen",
       value: totals.contributionTotal,
       tone: "emerald" as const,
-      detail: "Op de gezamenlijke rekening",
+      detail: showIncome ? "Op deze rekening" : "Op de gezamenlijke rekening",
     },
     ...(showIncome
       ? [
@@ -4929,7 +5014,7 @@ function MonthSummaryCard({
     <Card className="finance-card">
       <CardHeader className="grid gap-3 pb-3 sm:grid-cols-[1fr_auto] sm:items-start">
         <div className="min-w-0">
-          <CardTitle>{title}</CardTitle>
+          <CardTitle>Maandoverzicht</CardTitle>
           <CardDescription className="max-w-[34rem]">{description}</CardDescription>
         </div>
         <Badge className="w-fit border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)]">
@@ -4972,6 +5057,61 @@ function MonthSummaryCard({
               </p>
             </div>
           ))}
+        </div>
+
+        <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-3">
+          <div className="mb-2 flex items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium text-[var(--text-primary)]">
+                Budget vs werkelijk
+              </p>
+              <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                Variabele kosten t/m dag {pacing.dataDays}
+              </p>
+            </div>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              {pacing.historyMonths > 0
+                ? `${pacing.historyMonths} mnd gemiddeld`
+                : "Nog geen historie"}
+            </p>
+          </div>
+          <div className="h-36 sm:h-40">
+            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+              <BarChart
+                data={pacingChartRows}
+                barCategoryGap="28%"
+                margin={{ top: 8, right: 4, bottom: 0, left: 4 }}
+              >
+                <XAxis
+                  dataKey="label"
+                  axisLine={false}
+                  tickLine={false}
+                  interval={0}
+                  tick={{ fill: "var(--text-secondary)", fontSize: 10 }}
+                />
+                <YAxis domain={[0, Math.ceil(maxPacingValue * 1.12)]} hide />
+                <ReferenceLine
+                  y={pacing.estimatedVariableTotal}
+                  stroke="rgba(250, 250, 250, 0.62)"
+                  strokeDasharray="4 4"
+                  strokeWidth={1}
+                />
+                <Bar dataKey="value" radius={[8, 8, 3, 3]} minPointSize={14}>
+                  <LabelList
+                    dataKey="value"
+                    position="insideTop"
+                    formatter={(value) => currency(Number(value ?? 0))}
+                    fill="#FAFAFA"
+                    fontSize={11}
+                    fontWeight={700}
+                  />
+                  {pacingChartRows.map((row) => (
+                    <Cell key={row.label} fill={row.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         <div className="grid gap-2 sm:grid-cols-2">
@@ -5663,13 +5803,13 @@ function ReceiptViewer({
 function MonthInsightsSection({
   currentMonth,
   monthOptions,
-  monthTitle,
   monthDescription,
   outgoingRows,
   totals,
   showIncome,
   freeSpaceTotal,
   fixedTotal,
+  variableSpendPacing,
   monthMessage,
   categoryRows,
   selectedSixMonthTrend,
@@ -5684,13 +5824,13 @@ function MonthInsightsSection({
 }: {
   currentMonth: string;
   monthOptions: MonthOption[];
-  monthTitle: string;
   monthDescription: string;
   outgoingRows: OutgoingTransactionRow[];
   totals: ReturnType<typeof totalsForMonth>;
   showIncome: boolean;
   freeSpaceTotal: number;
   fixedTotal: number;
+  variableSpendPacing: VariableSpendPacingResult;
   monthMessage: string;
   categoryRows: ReturnType<typeof categoryTotals>;
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
@@ -5735,10 +5875,11 @@ function MonthInsightsSection({
 
       <div className="grid items-start gap-4 2xl:grid-cols-[minmax(460px,0.95fr)_minmax(0,1.05fr)]">
         <MonthSummaryCard
-          title={monthTitle}
           description={monthDescription}
           currentMonth={currentMonth}
           totals={totals}
+          fixedTotal={fixedTotal}
+          pacing={variableSpendPacing}
           showIncome={showIncome}
           monthMessage={monthMessage}
           onExportExcel={onExportExcel}
@@ -7585,6 +7726,8 @@ function ExportDialog({
 }
 
 function ContributionCard({
+  accountName,
+  showPlanning = true,
   amount,
   date,
   kind,
@@ -7617,6 +7760,8 @@ function ContributionCard({
   onPlanCreate,
   onSubmit,
 }: {
+  accountName: string;
+  showPlanning?: boolean;
   amount: string;
   date: string;
   kind: ContributionKind;
@@ -7640,7 +7785,7 @@ function ContributionCard({
   taxReturnTotal: number;
   remainingTotal: number;
   breakdown: ContributionPersonBreakdown[];
-  coverage: ContributionCoverageResult;
+  coverage?: ContributionCoverageResult;
   message: string;
   isSaving: boolean;
   onAmountChange: (value: string) => void;
@@ -7679,7 +7824,9 @@ function ContributionCard({
       <CardHeader>
         <CardTitle>Stortingen</CardTitle>
         <CardDescription>
-          Wat er deze maand op de gezamenlijke rekening binnenkomt.
+          {showPlanning
+            ? "Wat er deze maand op de gezamenlijke rekening binnenkomt."
+            : `Losse stortingen op ${accountName}.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -7691,78 +7838,92 @@ function ContributionCard({
             {currency(receivedTotal)}
           </p>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-            <span className="text-[var(--text-secondary)]">
-              Geplande stortingen {currency(plannedTotal)}
-            </span>
-            <span
-              className={cn(
-                "text-right",
-                remainingTotal > 0 ? "text-[var(--accent)]" : "text-[var(--positive)]",
-              )}
-            >
-              Nog {currency(remainingTotal)}
-            </span>
+            {showPlanning ? (
+              <>
+                <span className="text-[var(--text-secondary)]">
+                  Geplande stortingen {currency(plannedTotal)}
+                </span>
+                <span
+                  className={cn(
+                    "text-right",
+                    remainingTotal > 0
+                      ? "text-[var(--accent)]"
+                      : "text-[var(--positive)]",
+                  )}
+                >
+                  Nog {currency(remainingTotal)}
+                </span>
+              </>
+            ) : (
+              <span className="col-span-2 text-[var(--text-secondary)]">
+                Losse stortingen op {accountName}
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="divide-y divide-[var(--border)] rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]">
-          {plansByPerson.map(({ member, plans: personPlans }) => (
-            <div key={member.userId} className="space-y-2 px-3 py-2.5">
-              <p className="text-sm font-medium text-[var(--text-primary)]">
-                {member.displayName}
-              </p>
-              <div className="space-y-1.5">
-                {personPlans.map((plan) => {
-                  const isComplete = plan.remaining <= 0;
+        {showPlanning && (
+          <div className="divide-y divide-[var(--border)] rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]">
+            {plansByPerson.map(({ member, plans: personPlans }) => (
+              <div key={member.userId} className="space-y-2 px-3 py-2.5">
+                <p className="text-sm font-medium text-[var(--text-primary)]">
+                  {member.displayName}
+                </p>
+                <div className="space-y-1.5">
+                  {personPlans.map((plan) => {
+                    const isComplete = plan.remaining <= 0;
 
-                  return (
-                    <div
-                      key={plan.id}
-                      className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[10px] bg-black/10 px-2.5 py-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-medium text-[var(--text-primary)]">
-                          {plan.label}
-                        </p>
-                        <p className="mt-0.5 truncate text-[11px] text-[var(--text-secondary)]">
-                          {currency(plan.monthlyAmount)} · dag {plan.depositDay} · {currency(plan.received)} binnen
-                        </p>
-                      </div>
-                      <Badge
-                        className={cn(
-                          "border-[var(--border)] bg-black/10 text-[var(--text-secondary)]",
-                          isComplete &&
-                            "border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]",
-                        )}
+                    return (
+                      <div
+                        key={plan.id}
+                        className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[10px] bg-black/10 px-2.5 py-2"
                       >
-                        {isComplete ? currency(plan.received) : currency(plan.remaining)}
-                      </Badge>
-                    </div>
-                  );
-                })}
-                {personPlans.length === 0 && (
-                  <p className="rounded-[10px] bg-black/10 px-2.5 py-2 text-xs text-[var(--text-secondary)]">
-                    Nog geen geplande storting.
-                  </p>
-                )}
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium text-[var(--text-primary)]">
+                            {plan.label}
+                          </p>
+                          <p className="mt-0.5 truncate text-[11px] text-[var(--text-secondary)]">
+                            {currency(plan.monthlyAmount)} · dag {plan.depositDay} · {currency(plan.received)} binnen
+                          </p>
+                        </div>
+                        <Badge
+                          className={cn(
+                            "border-[var(--border)] bg-black/10 text-[var(--text-secondary)]",
+                            isComplete &&
+                              "border-emerald-400/20 bg-[var(--positive-light)] text-[var(--positive)]",
+                          )}
+                        >
+                          {isComplete ? currency(plan.received) : currency(plan.remaining)}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                  {personPlans.length === 0 && (
+                    <p className="rounded-[10px] bg-black/10 px-2.5 py-2 text-xs text-[var(--text-secondary)]">
+                      Nog geen geplande storting.
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          {plans.length === 0 && (
-            <p className="p-3 text-sm text-[var(--text-secondary)]">
-              Geplande stortingen verschijnen zodra Supabase chunk 20 is uitgevoerd.
-            </p>
-          )}
-        </div>
+            ))}
+            {plans.length === 0 && (
+              <p className="p-3 text-sm text-[var(--text-secondary)]">
+                Geplande stortingen verschijnen zodra Supabase chunk 20 is uitgevoerd.
+              </p>
+            )}
+          </div>
+        )}
 
-        <ContributionBreakdownList people={breakdown} />
+        {showPlanning && <ContributionBreakdownList people={breakdown} />}
 
         <div className="grid grid-cols-2 gap-2 text-sm">
-          <ContributionStat
-            label="Nog verwacht"
-            value={currency(remainingTotal)}
-            tone={remainingTotal > 0 ? "indigo" : "emerald"}
-          />
+          {showPlanning && (
+            <ContributionStat
+              label="Nog verwacht"
+              value={currency(remainingTotal)}
+              tone={remainingTotal > 0 ? "indigo" : "emerald"}
+            />
+          )}
           <ContributionStat
             label="Extra stortingen"
             value={currency(extraTotal)}
@@ -7773,10 +7934,10 @@ function ContributionCard({
             value={currency(taxReturnTotal)}
             tone={taxReturnTotal > 0 ? "emerald" : "zinc"}
           />
-          <ContributionCoverageCard coverage={coverage} />
+          {coverage && <ContributionCoverageCard coverage={coverage} />}
         </div>
 
-        {planMessage && (
+        {showPlanning && planMessage && (
           <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)]">
             {planMessage}
           </p>
@@ -7786,7 +7947,7 @@ function ContributionCard({
           <Button
             type="button"
             variant="secondary"
-            className="h-10 justify-center border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10"
+            className="h-10 w-full justify-center border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10 sm:col-span-2"
             onClick={() => {
               if (kind === "planned") {
                 onKindChange("extra");
@@ -7799,143 +7960,151 @@ function ContributionCard({
           </Button>
         </div>
 
-        <details className="group rounded-[14px] border border-[var(--border)] bg-black/10">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-[var(--text-primary)]">
-            Geplande storting instellen
-            <Plus className="h-4 w-4 text-[var(--text-muted)] transition group-open:rotate-45" />
-          </summary>
-	          <div className="grid gap-3 border-t border-[var(--border)] p-3">
-	            {plansByPerson.map(({ member, plans: personPlans }) => {
-	              const newDraft = newPlanDrafts[member.userId] ?? {
-	                label: "",
-	                amount: "",
-	                depositDay: "1",
-	              };
-	              const isSavingNewPlan = savingPlanId === `new:${member.userId}`;
-	
-	              return (
-	                <div key={member.userId} className="grid gap-2 rounded-[12px] bg-[var(--bg-surface)] p-2">
-	                  <p className="text-xs font-medium text-[var(--text-secondary)]">
-	                    {member.displayName}
-	                  </p>
-	                  {personPlans.map((plan) => {
-	                    const draft = planDrafts[plan.id] ?? {
-	                      label: plan.label,
-	                      amount: String(plan.monthlyAmount || ""),
-	                      depositDay: String(plan.depositDay),
-	                    };
-	                    const isSavingPlan = savingPlanId === plan.id;
-	
-	                    return (
-	                      <div key={plan.id} className="grid gap-2 rounded-[10px] bg-black/10 p-2">
-	                        <Input
-	                          value={draft.label}
-	                          placeholder="Naam"
-	                          className="h-9"
-	                          onChange={(event) =>
-	                            onPlanDraftChange(plan.id, "label", event.target.value)
-	                          }
-	                        />
-	                        <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
-	                          <Input
-	                            inputMode="decimal"
-	                            value={draft.amount}
-	                            placeholder="Maandbedrag"
-	                            className="h-9"
-	                            onChange={(event) =>
-	                              onPlanDraftChange(plan.id, "amount", event.target.value)
-	                            }
-	                          />
-	                          <Select
-	                            value={draft.depositDay}
-	                            className="h-9"
-	                            aria-label={`Stortdag ${plan.label}`}
-	                            onChange={(event) =>
-	                              onPlanDraftChange(plan.id, "depositDay", event.target.value)
-	                            }
-	                          >
-	                            {Array.from({ length: 31 }, (_, index) => index + 1).map(
-	                              (day) => (
-	                                <option key={day} value={day}>
-	                                  Dag {day}
-	                                </option>
-	                              ),
-	                            )}
-	                          </Select>
-	                          <Button
-	                            size="icon"
-	                            variant="secondary"
-	                            title={`${plan.label} bewaren`}
-	                            className="h-9 w-9"
-	                            disabled={isSavingPlan}
-	                            onClick={() => onPlanSave(plan)}
-	                          >
-	                            {isSavingPlan ? (
-	                              <LoaderCircle className="h-4 w-4 animate-spin" />
-	                            ) : (
-	                              <Save className="h-4 w-4" />
-	                            )}
-	                          </Button>
-	                        </div>
-	                      </div>
-	                    );
-	                  })}
-	                  <div className="grid gap-2 rounded-[10px] border border-dashed border-[var(--border)] p-2">
-	                    <Input
-	                      value={newDraft.label}
-	                      placeholder="Nieuwe planning"
-	                      className="h-9"
-	                      onChange={(event) =>
-	                        onNewPlanDraftChange(member.userId, "label", event.target.value)
-	                      }
-	                    />
-	                    <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
-	                      <Input
-	                        inputMode="decimal"
-	                        value={newDraft.amount}
-	                        placeholder="Bedrag"
-	                        className="h-9"
-	                        onChange={(event) =>
-	                          onNewPlanDraftChange(member.userId, "amount", event.target.value)
-	                        }
-	                      />
-	                      <Select
-	                        value={newDraft.depositDay}
-	                        className="h-9"
-	                        aria-label={`Nieuwe stortdag ${member.displayName}`}
-	                        onChange={(event) =>
-	                          onNewPlanDraftChange(member.userId, "depositDay", event.target.value)
-	                        }
-	                      >
-	                        {Array.from({ length: 31 }, (_, index) => index + 1).map(
-	                          (day) => (
-	                            <option key={day} value={day}>
-	                              Dag {day}
-	                            </option>
-	                          ),
-	                        )}
-	                      </Select>
-	                      <Button
-	                        size="icon"
-	                        variant="secondary"
-	                        title={`Planning voor ${member.displayName} toevoegen`}
-	                        className="h-9 w-9"
-	                        disabled={isSavingNewPlan}
-	                        onClick={() => onPlanCreate(member)}
-	                      >
-	                        {isSavingNewPlan ? (
-	                          <LoaderCircle className="h-4 w-4 animate-spin" />
-	                        ) : (
-	                          <Plus className="h-4 w-4" />
-	                        )}
-	                      </Button>
-	                    </div>
-	                  </div>
-	                </div>
-	              );
-	            })}
-	          </div>
-	        </details>
+        {showPlanning && (
+          <details className="group rounded-[14px] border border-[var(--border)] bg-black/10">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-[var(--text-primary)]">
+              Geplande storting instellen
+              <Plus className="h-4 w-4 text-[var(--text-muted)] transition group-open:rotate-45" />
+            </summary>
+            <div className="grid gap-3 border-t border-[var(--border)] p-3">
+              {plansByPerson.map(({ member, plans: personPlans }) => {
+                const newDraft = newPlanDrafts[member.userId] ?? {
+                  label: "",
+                  amount: "",
+                  depositDay: "1",
+                };
+                const isSavingNewPlan = savingPlanId === `new:${member.userId}`;
+
+                return (
+                  <div
+                    key={member.userId}
+                    className="grid gap-2 rounded-[12px] bg-[var(--bg-surface)] p-2"
+                  >
+                    <p className="text-xs font-medium text-[var(--text-secondary)]">
+                      {member.displayName}
+                    </p>
+                    {personPlans.map((plan) => {
+                      const draft = planDrafts[plan.id] ?? {
+                        label: plan.label,
+                        amount: String(plan.monthlyAmount || ""),
+                        depositDay: String(plan.depositDay),
+                      };
+                      const isSavingPlan = savingPlanId === plan.id;
+
+                      return (
+                        <div
+                          key={plan.id}
+                          className="grid gap-2 rounded-[10px] bg-black/10 p-2"
+                        >
+                          <Input
+                            value={draft.label}
+                            placeholder="Naam"
+                            className="h-9"
+                            onChange={(event) =>
+                              onPlanDraftChange(plan.id, "label", event.target.value)
+                            }
+                          />
+                          <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
+                            <Input
+                              inputMode="decimal"
+                              value={draft.amount}
+                              placeholder="Maandbedrag"
+                              className="h-9"
+                              onChange={(event) =>
+                                onPlanDraftChange(plan.id, "amount", event.target.value)
+                              }
+                            />
+                            <Select
+                              value={draft.depositDay}
+                              className="h-9"
+                              aria-label={`Stortdag ${plan.label}`}
+                              onChange={(event) =>
+                                onPlanDraftChange(plan.id, "depositDay", event.target.value)
+                              }
+                            >
+                              {Array.from({ length: 31 }, (_, index) => index + 1).map(
+                                (day) => (
+                                  <option key={day} value={day}>
+                                    Dag {day}
+                                  </option>
+                                ),
+                              )}
+                            </Select>
+                            <Button
+                              size="icon"
+                              variant="secondary"
+                              title={`${plan.label} bewaren`}
+                              className="h-9 w-9"
+                              disabled={isSavingPlan}
+                              onClick={() => onPlanSave(plan)}
+                            >
+                              {isSavingPlan ? (
+                                <LoaderCircle className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Save className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div className="grid gap-2 rounded-[10px] border border-dashed border-[var(--border)] p-2">
+                      <Input
+                        value={newDraft.label}
+                        placeholder="Nieuwe planning"
+                        className="h-9"
+                        onChange={(event) =>
+                          onNewPlanDraftChange(member.userId, "label", event.target.value)
+                        }
+                      />
+                      <div className="grid grid-cols-[1fr_6.2rem_auto] gap-2">
+                        <Input
+                          inputMode="decimal"
+                          value={newDraft.amount}
+                          placeholder="Bedrag"
+                          className="h-9"
+                          onChange={(event) =>
+                            onNewPlanDraftChange(member.userId, "amount", event.target.value)
+                          }
+                        />
+                        <Select
+                          value={newDraft.depositDay}
+                          className="h-9"
+                          aria-label={`Nieuwe stortdag ${member.displayName}`}
+                          onChange={(event) =>
+                            onNewPlanDraftChange(member.userId, "depositDay", event.target.value)
+                          }
+                        >
+                          {Array.from({ length: 31 }, (_, index) => index + 1).map(
+                            (day) => (
+                              <option key={day} value={day}>
+                                Dag {day}
+                              </option>
+                            ),
+                          )}
+                        </Select>
+                        <Button
+                          size="icon"
+                          variant="secondary"
+                          title={`Planning voor ${member.displayName} toevoegen`}
+                          className="h-9 w-9"
+                          disabled={isSavingNewPlan}
+                          onClick={() => onPlanCreate(member)}
+                        >
+                          {isSavingNewPlan ? (
+                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Plus className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </details>
+        )}
 
         {message && (
           <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)]">
@@ -7950,6 +8119,7 @@ function ContributionCard({
           note={note}
           paidById={paidById}
           person={person}
+          accountName={accountName}
           householdMembers={householdMembers}
           isSaving={isSaving}
           message={message}
@@ -7974,6 +8144,7 @@ function ContributionBookingDialog({
   note,
   paidById,
   person,
+  accountName,
   householdMembers,
   isSaving,
   message,
@@ -7992,6 +8163,7 @@ function ContributionBookingDialog({
   note: string;
   paidById: string;
   person: string;
+  accountName: string;
   householdMembers: DashboardData["householdMembers"];
   isSaving: boolean;
   message: string;
@@ -8029,7 +8201,7 @@ function ContributionBookingDialog({
               Storting toevoegen
             </h2>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              Losse storting op de gezamenlijke rekening.
+              Losse storting op {accountName}.
             </p>
           </div>
           <Button
@@ -8083,7 +8255,7 @@ function ContributionBookingDialog({
             <Input
               type="date"
               value={date}
-              className="h-10"
+              className="finance-mobile-date-anchor h-10"
               onChange={(event) => onDateChange(event.target.value)}
             />
           </FieldLabel>
@@ -8987,7 +9159,7 @@ function QuickEntryCard({
             <Input
               type="date"
               value={date}
-              className="h-11 border-transparent bg-black/10 text-xs"
+              className="finance-mobile-date-anchor h-11 border-transparent bg-black/10 text-xs"
               onChange={(event) => onDateChange(event.target.value)}
             />
           </label>
@@ -9303,21 +9475,17 @@ function depositProgressTone(progress: number): "emerald" | "orange" | "red" {
   return "red";
 }
 
-function buildContributionCoverage({
+function buildVariableSpendPacing({
   transactions,
   month,
-  plannedContributionTotal,
-  fixedTotal,
-  buffer,
+  today,
 }: {
   transactions: Transaction[];
   month: string;
-  plannedContributionTotal: number;
-  fixedTotal: number;
-  buffer: number;
-}): ContributionCoverageResult {
+  today: string;
+}): VariableSpendPacingResult {
   const daysInMonth = daysInIsoMonth(month);
-  const dataDays = dataDaysForMonth(month);
+  const dataDays = dataDaysForMonth(month, today);
   const remainingDays = Math.max(daysInMonth - dataDays, 0);
   const currentVariableTotal = variableTotalForMonth(
     transactions,
@@ -9333,15 +9501,86 @@ function buildContributionCoverage({
     }))
     .filter((row) => row.total > 0);
   const historyMonths = historicalRows.length;
+  const historicalDays = historicalRows.reduce((total, row) => total + row.days, 0);
   const historicalDailyAverage =
     historicalRows.reduce((total, row) => total + row.total, 0) /
-    Math.max(
-      historicalRows.reduce((total, row) => total + row.days, 0),
-      1,
-    );
+    Math.max(historicalDays, 1);
+  const estimatedVariableTotal =
+    historyMonths > 0 ? historicalDailyAverage * daysInMonth : currentVariableTotal;
+  const expectedToDate =
+    historyMonths > 0 ? historicalDailyAverage * dataDays : currentVariableTotal;
+  const previousMonth = addIsoMonths(month, -1);
+  const previousMonthDay = Math.min(dataDays, daysInIsoMonth(previousMonth));
+  const previousMonthTotalToDate =
+    previousMonthDay > 0
+      ? variableTotalForMonth(transactions, previousMonth, previousMonthDay)
+      : 0;
+  const paceRatio =
+    expectedToDate > 0
+      ? currentVariableTotal / expectedToDate
+      : currentVariableTotal > 0
+        ? Number.POSITIVE_INFINITY
+        : 0;
+  const tone =
+    historyMonths === 0
+      ? "zinc"
+      : paceRatio <= 0.85
+        ? "emerald"
+        : paceRatio <= 1.05
+          ? "orange"
+          : "red";
+
+  return {
+    estimatedVariableTotal,
+    forecastVariableTotal:
+      historyMonths > 0
+        ? currentVariableTotal + historicalDailyAverage * remainingDays
+        : currentVariableTotal,
+    currentVariableTotal,
+    previousMonthTotalToDate,
+    expectedToDate,
+    historicalDailyAverage,
+    remainingDays,
+    historyMonths,
+    dataDays,
+    progress:
+      estimatedVariableTotal > 0
+        ? clampPercentage((currentVariableTotal / estimatedVariableTotal) * 100)
+        : currentVariableTotal > 0
+          ? 100
+          : 0,
+    previousProgress:
+      estimatedVariableTotal > 0
+        ? clampPercentage((previousMonthTotalToDate / estimatedVariableTotal) * 100)
+        : previousMonthTotalToDate > 0
+          ? 100
+          : 0,
+    tone,
+  };
+}
+
+function buildContributionCoverage({
+  transactions,
+  month,
+  plannedContributionTotal,
+  fixedTotal,
+  buffer,
+}: {
+  transactions: Transaction[];
+  month: string;
+  plannedContributionTotal: number;
+  fixedTotal: number;
+  buffer: number;
+}): ContributionCoverageResult {
+  const pacing = buildVariableSpendPacing({
+    transactions,
+    month,
+    today: new Date().toISOString().slice(0, 10),
+  });
+  const { currentVariableTotal, dataDays, historyMonths } = pacing;
   const hasForecast = dataDays >= 10 && historyMonths >= 3;
   const expectedVariableTotal = hasForecast
-    ? currentVariableTotal + historicalDailyAverage * remainingDays
+    ? pacing.forecastVariableTotal
     : currentVariableTotal;
   const amount =
     plannedContributionTotal - fixedTotal - expectedVariableTotal - buffer;
@@ -9394,32 +9633,15 @@ function buildPersonalContributionCoverage({
   ownMonthlyContributionTotal: number;
   buffer: number;
 }): ContributionCoverageResult {
-  const daysInMonth = daysInIsoMonth(month);
-  const dataDays = dataDaysForMonth(month);
-  const remainingDays = Math.max(daysInMonth - dataDays, 0);
-  const currentVariableTotal = variableTotalForMonth(
+  const pacing = buildVariableSpendPacing({
     transactions,
     month,
-    dataDays,
-  );
-  const historicalMonths = [1, 2, 3].map((offset) => addIsoMonths(month, -offset));
-  const historicalRows = historicalMonths
-    .map((historicalMonth) => ({
-      month: historicalMonth,
-      total: variableTotalForMonth(transactions, historicalMonth),
-      days: daysInIsoMonth(historicalMonth),
-    }))
-    .filter((row) => row.total > 0);
-  const historyMonths = historicalRows.length;
-  const historicalDailyAverage =
-    historicalRows.reduce((total, row) => total + row.total, 0) /
-    Math.max(
-      historicalRows.reduce((total, row) => total + row.days, 0),
-      1,
-    );
+    today: new Date().toISOString().slice(0, 10),
+  });
+  const { currentVariableTotal, dataDays, historyMonths } = pacing;
   const hasForecast = dataDays >= 10 && historyMonths >= 2;
   const expectedVariableTotal = hasForecast
-    ? currentVariableTotal + historicalDailyAverage * remainingDays
+    ? pacing.forecastVariableTotal
     : currentVariableTotal;
   const amount =
     incomeTotal - ownMonthlyContributionTotal - expectedVariableTotal - buffer;
@@ -9802,8 +10024,10 @@ function variableTotalForMonth(
     .reduce((total, transaction) => total + transaction.amount, 0);
 }
 
-function dataDaysForMonth(month: string) {
-  const today = new Date().toISOString().slice(0, 10);
+function dataDaysForMonth(
+  month: string,
+  today = new Date().toISOString().slice(0, 10),
+) {
   const currentMonth = today.slice(0, 7);
 
   if (month === currentMonth) {
