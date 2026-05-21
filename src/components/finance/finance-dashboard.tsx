@@ -600,7 +600,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     [categories, currentMonth, selectedTransactions],
   );
   const personTotals = useMemo(
-    () => totalsByPerson(selectedTransactions, currentMonth),
+    () =>
+      totalsByPerson(
+        selectedTransactions.filter(
+          (transaction) => transaction.type === "variable",
+        ),
+        currentMonth,
+      ),
     [currentMonth, selectedTransactions],
   );
   const categoryPersonRows = useMemo(
@@ -801,10 +807,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         labels,
       ),
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
-  );
-  const personInsightFixedItems = useMemo(
-    () => fixedAgendaItems.filter((item) => item.state !== "skipped" && item.date <= today),
-    [fixedAgendaItems, today],
   );
   useEffect(() => {
     if (!latestBalanceSnapshot) {
@@ -1955,7 +1957,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
     if (!selectedAccount || !amount || amount <= 0) {
       setSavingsMessage("Vul een geldig spaarbedrag in.");
-      return;
+      return false;
     }
 
     setIsSavingSavingsDeposit(true);
@@ -1986,7 +1988,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           ? result.error
           : "Spaarstorting opslaan lukte niet.",
       );
-      return;
+      return false;
     }
 
     const savingsCategory =
@@ -2030,6 +2032,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     ]);
     setSavingsDepositAmount("");
     setSavingsMessage("Spaarstorting toegevoegd.");
+    return true;
   }
 
   async function addIncome() {
@@ -3733,11 +3736,37 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           />
           <FixedExpenseAgenda
             items={fixedAgendaItems}
+            transactions={selectedTransactions}
+            plannedContributions={isSharedView ? contributionPlanRows : []}
             currentMonth={currentMonth}
             message={fixedMessage}
             highlightedId={highlightedFixedInstanceId}
             skippingId={skippingFixedInstanceId}
             onSkip={skipFixedExpense}
+          />
+          <SavingsCard
+            accountName={
+              isSharedView
+                ? "Gezamenlijke spaarrekening"
+                : `${initialData.currentPerson} spaarrekening`
+            }
+            snapshot={latestSavingsSnapshot}
+            currentBalance={currentSavingsBalance}
+            depositTotal={savingsDepositTotalToDate}
+            suggestionAmount={savingsSuggestionAmount}
+            startAmount={savingsStartAmount}
+            startDate={savingsStartDate}
+            depositAmount={savingsDepositAmount}
+            depositDate={savingsDepositDate}
+            message={savingsMessage}
+            isSavingSnapshot={isSavingSavingsSnapshot}
+            isSavingDeposit={isSavingSavingsDeposit}
+            onStartAmountChange={setSavingsStartAmount}
+            onStartDateChange={setSavingsStartDate}
+            onDepositAmountChange={setSavingsDepositAmount}
+            onDepositDateChange={setSavingsDepositDate}
+            onSaveStartBalance={saveSavingsSnapshot}
+            onAddDeposit={addSavingsDeposit}
           />
           {isMobileFixedManagerVisible && (
             <FixedExpenseManager
@@ -3912,30 +3941,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onExportExcel={exportExcel}
             onExportPdf={(month) => void exportPdf(month)}
           />
-          <SavingsCard
-            accountName={
-              isSharedView
-                ? "Gezamenlijke spaarrekening"
-                : `${initialData.currentPerson} spaarrekening`
-            }
-            snapshot={latestSavingsSnapshot}
-            currentBalance={currentSavingsBalance}
-            depositTotal={savingsDepositTotalToDate}
-            suggestionAmount={savingsSuggestionAmount}
-            startAmount={savingsStartAmount}
-            startDate={savingsStartDate}
-            depositAmount={savingsDepositAmount}
-            depositDate={savingsDepositDate}
-            message={savingsMessage}
-            isSavingSnapshot={isSavingSavingsSnapshot}
-            isSavingDeposit={isSavingSavingsDeposit}
-            onStartAmountChange={setSavingsStartAmount}
-            onStartDateChange={setSavingsStartDate}
-            onDepositAmountChange={setSavingsDepositAmount}
-            onDepositDateChange={setSavingsDepositDate}
-            onSaveStartBalance={saveSavingsSnapshot}
-            onAddDeposit={addSavingsDeposit}
-          />
           <ChartsPanel
             categoryRows={categoryRows}
             selectedSixMonthTrend={selectedSixMonthTrend}
@@ -3946,7 +3951,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               people={initialData.people}
               personTotals={personTotals}
               categoryRows={categoryPersonRows}
-              fixedItems={personInsightFixedItems}
               isSharedView={isSharedView}
             />
           )}
@@ -4013,34 +4017,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 chartsReady={chartsReady && isDesktopViewport === true}
                 monthOptions={monthOptions}
                 deletingTransactionId={deletingTransactionId}
-                savingsAccountName={
-                  isSharedView
-                    ? "Gezamenlijke spaarrekening"
-                    : `${initialData.currentPerson} spaarrekening`
-                }
-                savingsSnapshot={latestSavingsSnapshot}
-                currentSavingsBalance={currentSavingsBalance}
-                savingsDepositTotal={savingsDepositTotalToDate}
-                savingsSuggestionAmount={savingsSuggestionAmount}
-                savingsStartAmount={savingsStartAmount}
-                savingsStartDate={savingsStartDate}
-                savingsDepositAmount={savingsDepositAmount}
-                savingsDepositDate={savingsDepositDate}
-                savingsMessage={savingsMessage}
-                isSavingSavingsSnapshot={isSavingSavingsSnapshot}
-                isSavingSavingsDeposit={isSavingSavingsDeposit}
                 onMonthChange={changeCurrentMonth}
                 onExportExcel={exportExcel}
                 onExportPdf={(month) => void exportPdf(month)}
                 onDeleteTransaction={deleteTransaction}
                 onEditTransaction={startEditingTransaction}
                 onOpenReceipt={setReceiptViewer}
-                onSavingsStartAmountChange={setSavingsStartAmount}
-                onSavingsStartDateChange={setSavingsStartDate}
-                onSavingsDepositAmountChange={setSavingsDepositAmount}
-                onSavingsDepositDateChange={setSavingsDepositDate}
-                onSaveSavingsSnapshot={saveSavingsSnapshot}
-                onAddSavingsDeposit={addSavingsDeposit}
               />
 
               {isSharedView && (
@@ -4048,7 +4030,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   people={initialData.people}
                   personTotals={personTotals}
                   categoryRows={categoryPersonRows}
-                  fixedItems={personInsightFixedItems}
                   isSharedView={isSharedView}
                 />
               )}
@@ -4056,11 +4037,37 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               <section id="finance-fixed" className="scroll-mt-4 grid gap-4">
                 <FixedExpenseAgenda
                   items={fixedAgendaItems}
+                  transactions={selectedTransactions}
+                  plannedContributions={isSharedView ? contributionPlanRows : []}
                   currentMonth={currentMonth}
                   message={fixedMessage}
                   highlightedId={highlightedFixedInstanceId}
                   skippingId={skippingFixedInstanceId}
                   onSkip={skipFixedExpense}
+                />
+                <SavingsCard
+                  accountName={
+                    isSharedView
+                      ? "Gezamenlijke spaarrekening"
+                      : `${initialData.currentPerson} spaarrekening`
+                  }
+                  snapshot={latestSavingsSnapshot}
+                  currentBalance={currentSavingsBalance}
+                  depositTotal={savingsDepositTotalToDate}
+                  suggestionAmount={savingsSuggestionAmount}
+                  startAmount={savingsStartAmount}
+                  startDate={savingsStartDate}
+                  depositAmount={savingsDepositAmount}
+                  depositDate={savingsDepositDate}
+                  message={savingsMessage}
+                  isSavingSnapshot={isSavingSavingsSnapshot}
+                  isSavingDeposit={isSavingSavingsDeposit}
+                  onStartAmountChange={setSavingsStartAmount}
+                  onStartDateChange={setSavingsStartDate}
+                  onDepositAmountChange={setSavingsDepositAmount}
+                  onDepositDateChange={setSavingsDepositDate}
+                  onSaveStartBalance={saveSavingsSnapshot}
+                  onAddDeposit={addSavingsDeposit}
                 />
                 <FixedExpenseManager
                   expenses={selectedRecurringExpenses}
@@ -4275,6 +4282,14 @@ type FixedAgendaItem = {
   state: FixedAgendaState;
   canSkip: boolean;
   note?: string;
+};
+
+type CalendarTooltipItem = {
+  id: string;
+  name: string;
+  amount: number;
+  color: string;
+  kind: "fixed" | "contribution";
 };
 
 type OutgoingTransactionRow = {
@@ -5235,7 +5250,7 @@ function MonthSummaryCard({
     {
       label: "Inschatting",
       value: pacing.estimatedVariableTotal,
-      fill: "#6366F1",
+      fill: "#64748B",
     },
     {
       label: "Werkelijk",
@@ -5441,8 +5456,10 @@ function SavingsCard({
   onDepositAmountChange: (value: string) => void;
   onDepositDateChange: (value: string) => void;
   onSaveStartBalance: () => void;
-  onAddDeposit: () => void;
+  onAddDeposit: () => boolean | Promise<boolean>;
 }) {
+  const [isDepositOpen, setIsDepositOpen] = useState(false);
+
   return (
     <Card className="finance-card">
       <CardHeader className="pb-3">
@@ -5462,12 +5479,12 @@ function SavingsCard({
             Huidig spaarsaldo
           </p>
           <p className="mt-1 text-2xl font-semibold text-[var(--positive)]">
-            {currentBalance === null ? "Geen startsaldo" : currency(currentBalance)}
+            {currentBalance === null ? "Geen saldo" : currency(currentBalance)}
           </p>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
             {snapshot
-              ? `Start ${currency(snapshot.balance)} op ${snapshot.snapshotDate} · ${currency(depositTotal)} weggezet`
-              : "Voer eerst een startsaldo in."}
+              ? `Saldo ${currency(snapshot.balance)} op ${snapshot.snapshotDate} · ${currency(depositTotal)} weggezet`
+              : "Voer eerst een saldo in."}
           </p>
         </div>
 
@@ -5479,13 +5496,13 @@ function SavingsCard({
 
         <details className="group rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)]">
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-[var(--text-primary)]">
-            Startsaldo invoeren
+            Saldo aanpassen
             <Plus className="h-4 w-4 text-[var(--text-muted)] transition group-open:rotate-45" />
           </summary>
           <div className="grid gap-2 border-t border-[var(--border)] p-3 sm:grid-cols-[1fr_9.5rem_auto]">
             <Input
               inputMode="decimal"
-              placeholder="Startsaldo"
+              placeholder="Saldo"
               value={startAmount}
               className="h-10"
               onChange={(event) => onStartAmountChange(event.target.value)}
@@ -5514,32 +5531,143 @@ function SavingsCard({
           </div>
         </details>
 
-        <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
-          <p className="mb-2 text-sm font-medium text-[var(--text-primary)]">
-            Storting registreren
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-10 w-full justify-center border-emerald-400/20 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/10"
+          onClick={() => setIsDepositOpen(true)}
+        >
+          <ArrowDownToLine className="h-4 w-4" />
+          Storting toevoegen
+        </Button>
+
+        {message && (
+          <p className="rounded-[12px] border border-[var(--border)] bg-black/10 p-3 text-sm text-[var(--text-secondary)]">
+            {message}
           </p>
-          <div className="grid gap-2 sm:grid-cols-[1fr_9.5rem_auto]">
+        )}
+        <SavingsDepositDialog
+          open={isDepositOpen}
+          accountName={accountName}
+          amount={depositAmount}
+          date={depositDate}
+          message={message}
+          isSaving={isSavingDeposit}
+          onAmountChange={onDepositAmountChange}
+          onDateChange={onDepositDateChange}
+          onClose={() => setIsDepositOpen(false)}
+          onSubmit={onAddDeposit}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function SavingsDepositDialog({
+  open,
+  accountName,
+  amount,
+  date,
+  message,
+  isSaving,
+  onAmountChange,
+  onDateChange,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  accountName: string;
+  amount: string;
+  date: string;
+  message: string;
+  isSaving: boolean;
+  onAmountChange: (value: string) => void;
+  onDateChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => boolean | Promise<boolean>;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  async function handleSubmit() {
+    const saved = await onSubmit();
+
+    if (saved) {
+      onClose();
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-end bg-black/75 p-0 backdrop-blur-xl sm:place-items-center sm:p-6">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Spaarstorting toevoegen"
+        className="max-h-[92vh] w-full overflow-y-auto rounded-t-[24px] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-2xl sm:max-w-md sm:rounded-[24px] sm:p-5"
+      >
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+              Storting toevoegen
+            </h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              Geld wegzetten op {accountName}.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-9 w-9 text-[var(--text-muted)]"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="grid gap-4">
+          <FieldLabel label="Bedrag">
             <Input
               inputMode="decimal"
               placeholder="Bedrag"
-              value={depositAmount}
-              className="h-10"
-              onChange={(event) => onDepositAmountChange(event.target.value)}
+              value={amount}
+              className="h-12 text-lg font-semibold"
+              onChange={(event) => onAmountChange(event.target.value)}
             />
+          </FieldLabel>
+
+          <FieldLabel label="Datum">
             <Input
               type="date"
-              value={depositDate}
-              className="h-10"
-              onChange={(event) => onDepositDateChange(event.target.value)}
+              value={date}
+              className="finance-mobile-date-anchor h-10"
+              onChange={(event) => onDateChange(event.target.value)}
             />
+          </FieldLabel>
+
+          {message && (
+            <p className="rounded-[12px] border border-[var(--border)] bg-[var(--bg-surface)] p-3 text-sm text-[var(--text-secondary)]">
+              {message}
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <Button
               type="button"
-              size="sm"
-              className="accent-glow-hover h-10 justify-center"
-              disabled={isSavingDeposit}
-              onClick={onAddDeposit}
+              variant="ghost"
+              className="h-11"
+              onClick={onClose}
             >
-              {isSavingDeposit ? (
+              Annuleren
+            </Button>
+            <Button
+              type="button"
+              className="accent-glow-hover h-11"
+              disabled={isSaving}
+              onClick={() => void handleSubmit()}
+            >
+              {isSaving ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />
               ) : (
                 <ArrowDownToLine className="h-4 w-4" />
@@ -5548,14 +5676,8 @@ function SavingsCard({
             </Button>
           </div>
         </div>
-
-        {message && (
-          <p className="rounded-[12px] border border-[var(--border)] bg-black/10 p-3 text-sm text-[var(--text-secondary)]">
-            {message}
-          </p>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -6239,30 +6361,12 @@ function MonthInsightsSection({
   selectedSixMonthTrend,
   chartsReady,
   deletingTransactionId,
-  savingsAccountName,
-  savingsSnapshot,
-  currentSavingsBalance,
-  savingsDepositTotal,
-  savingsSuggestionAmount,
-  savingsStartAmount,
-  savingsStartDate,
-  savingsDepositAmount,
-  savingsDepositDate,
-  savingsMessage,
-  isSavingSavingsSnapshot,
-  isSavingSavingsDeposit,
   onMonthChange,
   onExportExcel,
   onExportPdf,
   onDeleteTransaction,
   onEditTransaction,
   onOpenReceipt,
-  onSavingsStartAmountChange,
-  onSavingsStartDateChange,
-  onSavingsDepositAmountChange,
-  onSavingsDepositDateChange,
-  onSaveSavingsSnapshot,
-  onAddSavingsDeposit,
 }: {
   currentMonth: string;
   monthOptions: MonthOption[];
@@ -6278,30 +6382,12 @@ function MonthInsightsSection({
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
   chartsReady: boolean;
   deletingTransactionId: string | null;
-  savingsAccountName: string;
-  savingsSnapshot?: AccountBalanceSnapshot;
-  currentSavingsBalance: number | null;
-  savingsDepositTotal: number;
-  savingsSuggestionAmount: number;
-  savingsStartAmount: string;
-  savingsStartDate: string;
-  savingsDepositAmount: string;
-  savingsDepositDate: string;
-  savingsMessage: string;
-  isSavingSavingsSnapshot: boolean;
-  isSavingSavingsDeposit: boolean;
   onMonthChange: (month: string) => void;
   onExportExcel: (month: string) => void;
   onExportPdf: (month: string) => void;
   onDeleteTransaction: (transaction: Transaction) => void;
   onEditTransaction: (transaction: Transaction) => void;
   onOpenReceipt: (receipt: ReceiptViewerState) => void;
-  onSavingsStartAmountChange: (value: string) => void;
-  onSavingsStartDateChange: (value: string) => void;
-  onSavingsDepositAmountChange: (value: string) => void;
-  onSavingsDepositDateChange: (value: string) => void;
-  onSaveSavingsSnapshot: () => void;
-  onAddSavingsDeposit: () => void;
 }) {
   return (
     <section id="finance-month" className="scroll-mt-4 grid gap-4">
@@ -6346,26 +6432,6 @@ function MonthInsightsSection({
             onExportExcel={onExportExcel}
             onExportPdf={onExportPdf}
           />
-          <SavingsCard
-            accountName={savingsAccountName}
-            snapshot={savingsSnapshot}
-            currentBalance={currentSavingsBalance}
-            depositTotal={savingsDepositTotal}
-            suggestionAmount={savingsSuggestionAmount}
-            startAmount={savingsStartAmount}
-            startDate={savingsStartDate}
-            depositAmount={savingsDepositAmount}
-            depositDate={savingsDepositDate}
-            message={savingsMessage}
-            isSavingSnapshot={isSavingSavingsSnapshot}
-            isSavingDeposit={isSavingSavingsDeposit}
-            onStartAmountChange={onSavingsStartAmountChange}
-            onStartDateChange={onSavingsStartDateChange}
-            onDepositAmountChange={onSavingsDepositAmountChange}
-            onDepositDateChange={onSavingsDepositDateChange}
-            onSaveStartBalance={onSaveSavingsSnapshot}
-            onAddDeposit={onAddSavingsDeposit}
-          />
         </div>
         <ChartsPanel
           categoryRows={categoryRows}
@@ -6394,7 +6460,12 @@ function ChartsPanel({
   const totalCategories = categoryRows.reduce((total, row) => total + row.amount, 0);
   const hasCategoryData = totalCategories > 0;
   const topCategory = categoryRows[0];
-  const visibleCategoryRows = featured ? categoryRows.slice(0, 5) : categoryRows;
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const categoryPreviewLimit = 5;
+  const hasHiddenCategories = featured && categoryRows.length > categoryPreviewLimit;
+  const visibleCategoryRows =
+    featured && !showAllCategories ? categoryRows.slice(0, categoryPreviewLimit) : categoryRows;
+  const hiddenCategoryCount = Math.max(0, categoryRows.length - categoryPreviewLimit);
   const categoryProgressMax = Math.max(0, ...categoryRows.map((row) => row.amount));
   const [activeCategoryIndex, setActiveCategoryIndex] = useState<number | null>(null);
   const activeCategory =
@@ -6493,10 +6564,6 @@ function ChartsPanel({
                 </p>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: topCategory.color }}
-                    />
                     <p className="truncate text-sm font-medium text-[var(--text-primary)]">
                       {topCategory.name}
                     </p>
@@ -6518,24 +6585,21 @@ function ChartsPanel({
               return (
                 <div
                   key={row.categoryId}
-                  className="grid grid-cols-[minmax(5rem,1fr)_minmax(80px,200px)_auto] items-center gap-3 text-xs"
+                  className="grid grid-cols-[minmax(0,1fr)_5.75rem] items-center gap-3 text-xs"
                 >
-                  <span className="flex min-w-0 items-center gap-2 text-[var(--text-secondary)]">
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: row.color }}
+                  <div className="grid min-w-0 gap-2">
+                    <span className="flex min-w-0 items-center gap-2 text-[var(--text-secondary)]">
+                      <span className="truncate">{row.name}</span>
+                    </span>
+                    <CategoryProgressBar
+                      value={row.amount}
+                      max={categoryProgressMax}
+                      color={overBudget ? "#EF4444" : row.color}
                     />
-                    <span className="truncate">{row.name}</span>
-                  </span>
-                  <CategoryProgressBar
-                    value={row.amount}
-                    max={categoryProgressMax}
-                    color={overBudget ? "#EF4444" : row.color}
-                    className="max-w-[200px]"
-                  />
+                  </div>
                   <span
                     className={cn(
-                      "font-medium",
+                      "justify-self-end text-right font-medium",
                       overBudget ? "text-[var(--negative)]" : "text-[var(--positive)]",
                     )}
                   >
@@ -6544,10 +6608,25 @@ function ChartsPanel({
                 </div>
               );
             })}
-            {featured && categoryRows.length > visibleCategoryRows.length && (
-              <p className="text-xs text-[var(--text-muted)]">
-                Plus {categoryRows.length - visibleCategoryRows.length} kleinere categorieen.
-              </p>
+            {hasHiddenCategories && (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+                {!showAllCategories && (
+                  <span>Plus {hiddenCategoryCount} kleinere categorieen.</span>
+                )}
+                <button
+                  type="button"
+                  aria-expanded={showAllCategories}
+                  className={cn(
+                    "rounded-[999px] px-2.5 py-1 font-medium transition",
+                    showAllCategories
+                      ? "bg-[var(--accent-light)] text-[var(--accent)]"
+                      : "text-[var(--text-muted)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]",
+                  )}
+                  onClick={() => setShowAllCategories((current) => !current)}
+                >
+                  {showAllCategories ? "Minder tonen" : "Toon alles"}
+                </button>
+              </div>
             )}
           </div>
         </CardContent>
@@ -6639,6 +6718,8 @@ function ChartsPanel({
 
 function FixedExpenseAgenda({
   items,
+  transactions,
+  plannedContributions,
   currentMonth,
   message,
   highlightedId,
@@ -6647,6 +6728,8 @@ function FixedExpenseAgenda({
   compact = false,
 }: {
   items: FixedAgendaItem[];
+  transactions: Transaction[];
+  plannedContributions: ContributionPlanRow[];
   currentMonth: string;
   message?: string;
   highlightedId?: string | null;
@@ -6717,6 +6800,8 @@ function FixedExpenseAgenda({
           {!compact && (
             <FixedExpenseCalendar
               items={items}
+              transactions={transactions}
+              plannedContributions={plannedContributions}
               currentMonth={currentMonth}
               highlightedId={highlightedId}
             />
@@ -6762,10 +6847,14 @@ function FixedExpenseAgenda({
 
 function FixedExpenseCalendar({
   items,
+  transactions,
+  plannedContributions,
   currentMonth,
   highlightedId,
 }: {
   items: FixedAgendaItem[];
+  transactions: Transaction[];
+  plannedContributions: ContributionPlanRow[];
   currentMonth: string;
   highlightedId?: string | null;
 }) {
@@ -6773,8 +6862,20 @@ function FixedExpenseCalendar({
   const daysInMonth = new Date(year, monthNumber, 0).getDate();
   const firstDay = new Date(year, monthNumber - 1, 1).getDay();
   const leadingBlanks = firstDay === 0 ? 6 : firstDay - 1;
+  const today = new Date().toISOString().slice(0, 10);
   const itemsByDay = new Map<number, FixedAgendaItem[]>();
-  const [activeTooltipKey, setActiveTooltipKey] = useState<string | null>(null);
+  const contributionsByDay = new Map<number, CalendarTooltipItem[]>();
+  const calendarRef = useRef<HTMLDivElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const [activeTooltip, setActiveTooltip] = useState<{
+    key: string;
+    items: CalendarTooltipItem[];
+    position: {
+      left: number;
+      top: number;
+      width: number;
+    };
+  } | null>(null);
 
   items.forEach((item) => {
     const dayItems = itemsByDay.get(item.day) ?? [];
@@ -6782,25 +6883,190 @@ function FixedExpenseCalendar({
     itemsByDay.set(item.day, dayItems);
   });
 
+  transactions
+    .filter((transaction) => transaction.type === "contribution")
+    .filter(
+      (transaction) =>
+        transaction.contributionKind === "planned" ||
+        transaction.contributionKind === "extra",
+    )
+    .filter((transaction) => transaction.date.startsWith(currentMonth))
+    .forEach((transaction) => {
+      const day = Number(transaction.date.slice(8, 10));
+
+      if (!day || day < 1 || day > daysInMonth) {
+        return;
+      }
+
+      const dayItems = contributionsByDay.get(day) ?? [];
+      dayItems.push({
+        id: `contribution-${transaction.id}`,
+        name: contributionDisplayName(transaction, true),
+        amount: transaction.amount,
+        color: "#10B981",
+        kind: "contribution",
+      });
+      contributionsByDay.set(day, dayItems);
+    });
+
+  plannedContributions
+    .filter((plan) => plan.remaining > 0)
+    .map((plan) => ({
+      plan,
+      date: dateForBillingDay(currentMonth, plan.depositDay),
+    }))
+    .filter(({ date }) => date.startsWith(currentMonth) && date > today)
+    .forEach(({ plan, date }) => {
+      const day = Number(date.slice(8, 10));
+
+      if (!day || day < 1 || day > daysInMonth) {
+        return;
+      }
+
+      const dayItems = contributionsByDay.get(day) ?? [];
+      dayItems.push({
+        id: `planned-contribution-${plan.id}`,
+        name: `${plan.label || "Reguliere storting"} — ${plan.person}`,
+        amount: plan.remaining,
+        color: "#10B981",
+        kind: "contribution",
+      });
+      contributionsByDay.set(day, dayItems);
+    });
+
   const cells = [
     ...Array.from({ length: leadingBlanks }, (_, index) => ({
       key: `blank-${index}`,
       day: null as number | null,
-      items: [] as FixedAgendaItem[],
+      fixedItems: [] as FixedAgendaItem[],
+      contributionItems: [] as CalendarTooltipItem[],
+      items: [] as CalendarTooltipItem[],
     })),
     ...Array.from({ length: daysInMonth }, (_, index) => {
       const day = index + 1;
+      const fixedItems = itemsByDay.get(day) ?? [];
+      const contributionItems = contributionsByDay.get(day) ?? [];
 
       return {
         key: `day-${day}`,
         day,
-        items: itemsByDay.get(day) ?? [],
+        fixedItems,
+        contributionItems,
+        items: [
+          ...fixedItems.map((item) => ({
+            id: `fixed-${item.id}`,
+            name: item.name,
+            amount: item.amount,
+            color: item.categoryColor,
+            kind: "fixed" as const,
+          })),
+          ...contributionItems,
+        ],
       };
     }),
   ];
 
+  function clampTooltipPosition(value: number, min: number, max: number) {
+    return Math.min(Math.max(value, min), Math.max(min, max));
+  }
+
+  function openTooltip(cell: (typeof cells)[number], target: HTMLElement) {
+    if (cell.items.length === 0) {
+      return;
+    }
+
+    const rect = target.getBoundingClientRect();
+    const cardRect = calendarRef.current?.getBoundingClientRect();
+
+    if (!cardRect) {
+      return;
+    }
+
+    const margin = 12;
+    const width = Math.min(220, cardRect.width - margin * 2);
+    const estimatedHeight = Math.min(
+      cardRect.height - margin * 2,
+      34 + cell.items.length * 30,
+    );
+    const relativeLeft = rect.left - cardRect.left;
+    const relativeTop = rect.top - cardRect.top;
+    const cellCenter = relativeLeft + rect.width / 2;
+    const openRight = cellCenter <= cardRect.width / 2;
+    const preferredLeft = openRight
+      ? relativeLeft + rect.width + 8
+      : relativeLeft - width - 8;
+    const preferredTop = relativeTop + rect.height / 2 - estimatedHeight / 2;
+
+    setActiveTooltip({
+      key: cell.key,
+      items: cell.items,
+      position: {
+        left: clampTooltipPosition(
+          preferredLeft,
+          margin,
+          cardRect.width - width - margin,
+        ),
+        top: clampTooltipPosition(
+          preferredTop,
+          margin,
+          cardRect.height - estimatedHeight - margin,
+        ),
+        width,
+      },
+    });
+  }
+
+  useEffect(() => {
+    if (!activeTooltip) {
+      return;
+    }
+
+    function closeOnOutsidePointer(event: PointerEvent) {
+      const target = event.target;
+
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (tooltipRef.current?.contains(target)) {
+        return;
+      }
+
+      if (target instanceof Element && target.closest("[data-fixed-calendar-day]")) {
+        return;
+      }
+
+      setActiveTooltip(null);
+    }
+
+    function closeTooltip() {
+      setActiveTooltip(null);
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeTooltip();
+      }
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", closeTooltip);
+    window.addEventListener("scroll", closeTooltip, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", closeTooltip);
+      window.removeEventListener("scroll", closeTooltip, true);
+    };
+  }, [activeTooltip]);
+
   return (
-    <div className="relative z-[70] hidden overflow-visible rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-surface)] p-4 lg:block">
+    <div
+      ref={calendarRef}
+      className="relative z-[70] hidden overflow-hidden rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--bg-surface)] p-4 lg:block"
+    >
       <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-[var(--text-primary)]">Kalender</p>
@@ -6821,30 +7087,48 @@ function FixedExpenseCalendar({
       <div className="mt-2 grid grid-cols-7 gap-1">
         {cells.map((cell) => {
           const hasItems = cell.items.length > 0;
-          const isTooltipOpen = hasItems && activeTooltipKey === cell.key;
-          const isHighlighted = cell.items.some((item) => item.id === highlightedId);
-          const hasProcessed = cell.items.some((item) =>
+          const isTooltipOpen = hasItems && activeTooltip?.key === cell.key;
+          const hasFixedItems = cell.fixedItems.length > 0;
+          const hasContributions = cell.contributionItems.length > 0;
+          const isHighlighted = cell.fixedItems.some((item) => item.id === highlightedId);
+          const hasProcessed = cell.fixedItems.some((item) =>
             isProcessedAgendaState(item.state),
           );
 
           return (
             <div
               key={cell.key}
+              data-fixed-calendar-day={hasItems ? cell.key : undefined}
               className={cn(
                 "relative min-h-12 rounded-[10px] border border-transparent p-1.5 text-xs transition",
                 cell.day && "hover:bg-[var(--bg-card-hover)]",
-                hasItems && "border-[var(--border)] bg-[var(--accent-light)]",
+                hasFixedItems && "border-[var(--border)] bg-[var(--accent-light)]",
+                hasContributions &&
+                  "border-emerald-400/20 bg-emerald-500/10",
+                hasFixedItems &&
+                  hasContributions &&
+                  "border-emerald-400/25 bg-[linear-gradient(135deg,rgba(99,102,241,0.14),rgba(16,185,129,0.14))]",
                 isHighlighted && "border-[var(--accent)]",
                 isTooltipOpen && "z-[80]",
               )}
-              onMouseEnter={() => hasItems && setActiveTooltipKey(cell.key)}
-              onMouseLeave={() => setActiveTooltipKey(null)}
-              onFocus={() => hasItems && setActiveTooltipKey(cell.key)}
-              onBlur={() => setActiveTooltipKey(null)}
-              onClick={() =>
-                hasItems &&
-                setActiveTooltipKey((key) => (key === cell.key ? null : cell.key))
-              }
+              onMouseEnter={(event) => hasItems && openTooltip(cell, event.currentTarget)}
+              onMouseLeave={() => setActiveTooltip(null)}
+              onFocus={(event) => hasItems && openTooltip(cell, event.currentTarget)}
+              onBlur={() => setActiveTooltip(null)}
+              onClick={(event) => {
+                if (!hasItems) {
+                  return;
+                }
+
+                event.stopPropagation();
+
+                if (isTooltipOpen) {
+                  setActiveTooltip(null);
+                  return;
+                }
+
+                openTooltip(cell, event.currentTarget);
+              }}
               tabIndex={hasItems ? 0 : undefined}
             >
               {cell.day && (
@@ -6854,39 +7138,58 @@ function FixedExpenseCalendar({
                       {cell.day}
                     </span>
                     {hasItems && (
-                      <span
-                        className={cn(
-                          "h-2 w-2 rounded-full bg-[var(--accent)]",
-                          hasProcessed && "bg-[var(--positive)]",
+                      <span className="flex items-center gap-1">
+                        {hasFixedItems && (
+                          <span
+                            className={cn(
+                              "h-2 w-2 rounded-full bg-[var(--accent)]",
+                              hasProcessed && "bg-[var(--positive)]",
+                            )}
+                          />
                         )}
-                      />
+                        {hasContributions && (
+                          <span className="h-2 w-2 rounded-full bg-[#10B981] ring-1 ring-emerald-200/20" />
+                        )}
+                      </span>
                     )}
                   </div>
-                  {isTooltipOpen && (
-                    <div className="absolute left-1/2 top-full z-[120] mt-2 w-44 -translate-x-1/2 rounded-[12px] border border-[var(--border-strong)] bg-[#1E1E28] p-2 text-left shadow-[0_18px_45px_rgba(0,0,0,0.38)]">
-                      <div className="grid gap-1.5">
-                        {cell.items.map((item) => (
-                          <div
-                            key={item.id}
-                            className="grid grid-cols-[1fr_auto] items-center gap-2"
-                          >
-                            <span className="truncate text-[11px] font-medium text-[var(--text-primary)]">
-                              {item.name}
-                            </span>
-                            <span className="text-[11px] text-[var(--text-secondary)]">
-                              {currency(item.amount)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
             </div>
           );
         })}
       </div>
+      {activeTooltip && (
+        <div
+          ref={tooltipRef}
+          className="pointer-events-none absolute z-[90] rounded-[12px] border border-[var(--border-strong)] bg-[#1E1E28] p-2 text-left shadow-[0_18px_45px_rgba(0,0,0,0.38)]"
+          style={{
+            left: activeTooltip.position.left,
+            top: activeTooltip.position.top,
+            width: activeTooltip.position.width,
+          }}
+        >
+          <div className="grid gap-1.5">
+            {activeTooltip.items.map((item) => (
+              <div
+                key={item.id}
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: item.color }}
+                />
+                <span className="truncate text-[11px] font-medium text-[var(--text-primary)]">
+                  {item.name}
+                </span>
+                <span className="text-[11px] text-[var(--text-secondary)]">
+                  {currency(item.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -7297,16 +7600,13 @@ function PersonCostInsight({
   people,
   personTotals,
   categoryRows,
-  fixedItems,
   isSharedView,
 }: {
   people: string[];
   personTotals: Record<string, number>;
   categoryRows: ReturnType<typeof categoryTotalsByPerson>;
-  fixedItems: FixedAgendaItem[];
   isSharedView: boolean;
 }) {
-  const [mode, setMode] = useState<"variable" | "fixed">("variable");
   const maxPersonTotal = Math.max(
     ...people.map((person) => personTotals[person] ?? 0),
     1,
@@ -7315,186 +7615,109 @@ function PersonCostInsight({
     ? "Gezamenlijke uitgaven per persoon"
     : "Mijn toegevoegde uitgaven";
   const description = isSharedView
-    ? "Wie voegde deze maand welke gezamenlijke uitgaven toe."
+    ? "Wie voegde welke variabele kosten toe."
     : "Prive-uitgaven op deze rekening, uitgesplitst waar mogelijk.";
   const topRows = categoryRows.slice(0, 3);
-  const fixedTotal = fixedItems.reduce((total, item) => total + item.amount, 0);
-  const sortedFixedItems = [...fixedItems].sort(
-    (first, second) =>
-      first.date.localeCompare(second.date) || first.name.localeCompare(second.name, "nl"),
-  );
 
   return (
     <Card className="bg-[#141416]">
-      <CardHeader className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-start">
+      <CardHeader>
         <div>
           <CardTitle>{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
         </div>
-        <div className="flex w-fit rounded-full border border-zinc-800 bg-zinc-950/60 p-1 text-xs text-zinc-400">
-          <button
-            type="button"
-            className={cn(
-              "min-h-8 rounded-full px-3 font-medium transition",
-              mode === "variable" && "bg-indigo-500/15 text-indigo-200",
-            )}
-            onClick={() => setMode("variable")}
-          >
-            Variabel
-          </button>
-          <button
-            type="button"
-            className={cn(
-              "min-h-8 rounded-full px-3 font-medium transition",
-              mode === "fixed" && "bg-indigo-500/15 text-indigo-200",
-            )}
-            onClick={() => setMode("fixed")}
-          >
-            Vaste lasten
-          </button>
-        </div>
       </CardHeader>
-      {mode === "variable" ? (
-        <CardContent className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-            {people.map((person) => {
-              const value = personTotals[person] ?? 0;
-              const percentage = maxPersonTotal > 0 ? (value / maxPersonTotal) * 100 : 0;
+      <CardContent className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+          {people.map((person) => {
+            const value = personTotals[person] ?? 0;
+            const percentage = maxPersonTotal > 0 ? (value / maxPersonTotal) * 100 : 0;
 
-              return (
-                <div
-                  key={person}
-                  className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span
-                        className={cn(
-                          "h-2.5 w-2.5 rounded-full",
-                          person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
-                        )}
-                      />
-                      <span className="truncate text-sm text-zinc-300">
-                        {person}
-                      </span>
-                    </div>
-                    <span className="text-sm font-semibold text-zinc-50">
-                      {currency(value)}
-                    </span>
-                  </div>
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-900">
-                    <div
-                      className={cn(
-                        "h-full rounded-full",
-                        person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
-                      )}
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="space-y-2">
-            {categoryRows.length === 0 && (
-              <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-                Nog geen variabele uitgaven om te verdelen.
-              </p>
-            )}
-
-            {topRows.map((row) => (
+            return (
               <div
-                key={row.categoryId}
-                className="grid gap-2 rounded-[13px] border border-zinc-800/60 bg-zinc-950/25 p-3"
+                key={person}
+                className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2">
                     <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: row.color }}
+                      className={cn(
+                        "h-2.5 w-2.5 rounded-full",
+                        person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
+                      )}
                     />
-                    <p className="truncate text-sm font-medium text-zinc-100">
-                      {row.name}
-                    </p>
+                    <span className="truncate text-sm text-zinc-300">
+                      {person}
+                    </span>
                   </div>
-                  <p className="text-sm font-semibold text-zinc-50">
-                    {currency(row.total)}
-                  </p>
+                  <span className="text-sm font-semibold text-zinc-50">
+                    {currency(value)}
+                  </span>
                 </div>
-                <div className="grid gap-1.5">
-                  {row.people.map((personRow) => (
-                    <div
-                      key={personRow.person}
-                      className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-2 text-xs"
-                    >
-                      <span className="truncate text-zinc-500">
-                        {personRow.person}
-                      </span>
-                      <CategoryProgressBar
-                        value={personRow.amount}
-                        max={row.total}
-                        color={row.color}
-                      />
-                      <span className="text-zinc-300">
-                        {currency(personRow.amount)}
-                      </span>
-                    </div>
-                  ))}
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-900">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      person === "Ralph" ? "bg-indigo-500" : "bg-emerald-500",
+                    )}
+                    style={{ width: `${percentage}%` }}
+                  />
                 </div>
               </div>
-            ))}
-          </div>
-        </CardContent>
-      ) : (
-        <CardContent className="grid gap-3">
-          <div className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">
-                  Gezamenlijk
-                </p>
-                <p className="mt-1 text-sm text-zinc-300">Vaste lasten deze maand</p>
-              </div>
-              <p className="text-base font-semibold text-zinc-50">
-                {currency(fixedTotal)}
-              </p>
-            </div>
-          </div>
-          {sortedFixedItems.length === 0 ? (
+            );
+          })}
+        </div>
+
+        <div className="space-y-2">
+          {categoryRows.length === 0 && (
             <p className="rounded-[14px] border border-dashed border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-              Nog geen verwerkte vaste lasten deze maand.
+              Nog geen variabele uitgaven om te verdelen.
             </p>
-          ) : (
-            <div className="grid gap-2">
-              {sortedFixedItems.map((item) => (
-                <div
-                  key={`${item.recurringExpenseId}-${item.date}`}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[13px] border border-zinc-800/60 bg-zinc-950/25 p-3"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: item.categoryColor }}
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-zinc-100">
-                        {item.name}
-                      </p>
-                      <p className="truncate text-xs text-zinc-500">
-                        {item.categoryName}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-semibold text-zinc-50">
-                    {currency(item.amount)}
+          )}
+
+          {topRows.map((row) => (
+            <div
+              key={row.categoryId}
+              className="grid gap-2 rounded-[13px] border border-zinc-800/60 bg-zinc-950/25 p-3"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: row.color }}
+                  />
+                  <p className="truncate text-sm font-medium text-zinc-100">
+                    {row.name}
                   </p>
                 </div>
-              ))}
+                <p className="text-sm font-semibold text-zinc-50">
+                  {currency(row.total)}
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                {row.people.map((personRow) => (
+                  <div
+                    key={personRow.person}
+                    className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-2 text-xs"
+                  >
+                    <span className="truncate text-zinc-500">
+                      {personRow.person}
+                    </span>
+                    <CategoryProgressBar
+                      value={personRow.amount}
+                      max={row.total}
+                      color={row.color}
+                    />
+                    <span className="text-zinc-300">
+                      {currency(personRow.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-          )}
-        </CardContent>
-      )}
+          ))}
+        </div>
+      </CardContent>
     </Card>
   );
 }
