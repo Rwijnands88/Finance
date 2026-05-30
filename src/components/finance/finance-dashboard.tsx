@@ -406,6 +406,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [cryptoCoinId, setCryptoCoinId] = useState("");
   const [cryptoTicker, setCryptoTicker] = useState("");
   const [cryptoAmount, setCryptoAmount] = useState("");
+  const [editingCryptoPosition, setEditingCryptoPosition] =
+    useState<CryptoPosition | null>(null);
   const [investmentMessage, setInvestmentMessage] = useState("");
   const [isSavingDegiroPosition, setIsSavingDegiroPosition] = useState(false);
   const [isSavingCryptoPosition, setIsSavingCryptoPosition] = useState(false);
@@ -2189,7 +2191,24 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setInvestmentMessage("DeGiro-positie verwijderd.");
   }
 
-  async function addCryptoPosition() {
+  function resetCryptoPositionForm() {
+    setEditingCryptoPosition(null);
+    setCryptoCoinName("");
+    setCryptoCoinId("");
+    setCryptoTicker("");
+    setCryptoAmount("");
+  }
+
+  function editCryptoPosition(position: CryptoPosition) {
+    setEditingCryptoPosition(position);
+    setCryptoCoinName(position.coinName);
+    setCryptoCoinId(position.coinId);
+    setCryptoTicker(position.ticker);
+    setCryptoAmount(formatPositionAmountInput(position.amount));
+    setInvestmentMessage("");
+  }
+
+  async function saveCryptoPosition() {
     const amount = parseCurrencyInput(cryptoAmount);
 
     if (
@@ -2209,11 +2228,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setInvestmentMessage("");
 
     const response = await fetch("/api/crypto-positions", {
-      method: "POST",
+      method: editingCryptoPosition ? "PATCH" : "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        positionId: editingCryptoPosition?.id,
         coinName: cryptoCoinName,
         coinId: cryptoCoinId,
         ticker: cryptoTicker,
@@ -2239,11 +2259,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         first.coinName.localeCompare(second.coinName, "nl"),
       ),
     );
-    setCryptoCoinName("");
-    setCryptoCoinId("");
-    setCryptoTicker("");
-    setCryptoAmount("");
+    resetCryptoPositionForm();
     setInvestmentMessage("Crypto-positie bijgewerkt.");
+    return true;
   }
 
   async function deleteCryptoPosition(position: CryptoPosition) {
@@ -4069,6 +4087,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               cryptoCoinId={cryptoCoinId}
               cryptoTicker={cryptoTicker}
               cryptoAmount={cryptoAmount}
+              editingCryptoPosition={editingCryptoPosition}
               message={investmentMessage}
               isSavingDegiroPosition={isSavingDegiroPosition}
               isSavingCryptoPosition={isSavingCryptoPosition}
@@ -4085,7 +4104,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onCryptoCoinIdChange={setCryptoCoinId}
               onCryptoTickerChange={setCryptoTicker}
               onCryptoAmountChange={setCryptoAmount}
-              onAddCryptoPosition={addCryptoPosition}
+              onCreateCryptoPosition={resetCryptoPositionForm}
+              onEditCryptoPosition={editCryptoPosition}
+              onSaveCryptoPosition={saveCryptoPosition}
               onDeleteCryptoPosition={deleteCryptoPosition}
             />
           )}
@@ -4404,6 +4425,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                     cryptoCoinId={cryptoCoinId}
                     cryptoTicker={cryptoTicker}
                     cryptoAmount={cryptoAmount}
+                    editingCryptoPosition={editingCryptoPosition}
                     message={investmentMessage}
                     isSavingDegiroPosition={isSavingDegiroPosition}
                     isSavingCryptoPosition={isSavingCryptoPosition}
@@ -4420,7 +4442,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                     onCryptoCoinIdChange={setCryptoCoinId}
                     onCryptoTickerChange={setCryptoTicker}
                     onCryptoAmountChange={setCryptoAmount}
-                    onAddCryptoPosition={addCryptoPosition}
+                    onCreateCryptoPosition={resetCryptoPositionForm}
+                    onEditCryptoPosition={editCryptoPosition}
+                    onSaveCryptoPosition={saveCryptoPosition}
                     onDeleteCryptoPosition={deleteCryptoPosition}
                   />
                 )}
@@ -6064,6 +6088,7 @@ function InvestmentSection({
   cryptoCoinId,
   cryptoTicker,
   cryptoAmount,
+  editingCryptoPosition,
   message,
   isSavingDegiroPosition,
   isSavingCryptoPosition,
@@ -6080,7 +6105,9 @@ function InvestmentSection({
   onCryptoCoinIdChange,
   onCryptoTickerChange,
   onCryptoAmountChange,
-  onAddCryptoPosition,
+  onCreateCryptoPosition,
+  onEditCryptoPosition,
+  onSaveCryptoPosition,
   onDeleteCryptoPosition,
 }: {
   degiroPositions: DegiroPosition[];
@@ -6094,6 +6121,7 @@ function InvestmentSection({
   cryptoCoinId: string;
   cryptoTicker: string;
   cryptoAmount: string;
+  editingCryptoPosition: CryptoPosition | null;
   message: string;
   isSavingDegiroPosition: boolean;
   isSavingCryptoPosition: boolean;
@@ -6110,7 +6138,9 @@ function InvestmentSection({
   onCryptoCoinIdChange: (value: string) => void;
   onCryptoTickerChange: (value: string) => void;
   onCryptoAmountChange: (value: string) => void;
-  onAddCryptoPosition: () => void;
+  onCreateCryptoPosition: () => void;
+  onEditCryptoPosition: (position: CryptoPosition) => void;
+  onSaveCryptoPosition: () => Promise<boolean | void>;
   onDeleteCryptoPosition: (position: CryptoPosition) => void;
 }) {
   const [isDegiroOpen, setIsDegiroOpen] = useState(false);
@@ -6128,6 +6158,18 @@ function InvestmentSection({
   const closeDegiroModal = () => {
     setIsDegiroModalOpen(false);
     onCreateDegiroPosition();
+  };
+  const openCryptoCreateModal = () => {
+    onCreateCryptoPosition();
+    setIsCryptoModalOpen(true);
+  };
+  const openCryptoEditModal = (position: CryptoPosition) => {
+    onEditCryptoPosition(position);
+    setIsCryptoModalOpen(true);
+  };
+  const closeCryptoModal = () => {
+    setIsCryptoModalOpen(false);
+    onCreateCryptoPosition();
   };
   const degiroTickers = useMemo(
     () =>
@@ -6412,6 +6454,15 @@ function InvestmentSection({
                     <div
                       key={position.id}
                       className="grid gap-2 border-b border-[#27272A] py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] md:items-center md:gap-3"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openCryptoEditModal(position)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openCryptoEditModal(position);
+                        }
+                      }}
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-[#FAFAFA]">
@@ -6450,7 +6501,11 @@ function InvestmentSection({
                         variant="ghost"
                         className="h-9 w-9 justify-self-end text-[#A1A1AA] hover:bg-white/[0.04] hover:text-red-300"
                         disabled={deletingCryptoPositionId === position.id}
-                        onClick={() => onDeleteCryptoPosition(position)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDeleteCryptoPosition(position);
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
                       >
                         {deletingCryptoPositionId === position.id ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -6470,7 +6525,7 @@ function InvestmentSection({
               variant="ghost"
               aria-label="Crypto-positie toevoegen"
               className="mt-3 h-9 w-9 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-              onClick={() => setIsCryptoModalOpen(true)}
+              onClick={openCryptoCreateModal}
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -6604,7 +6659,7 @@ function InvestmentSection({
                   CRYPTO
                 </p>
                 <h3 className="mt-1 text-lg font-semibold text-[#FAFAFA]">
-                  Positie toevoegen
+                  {editingCryptoPosition ? "Positie bewerken" : "Positie toevoegen"}
                 </h3>
               </div>
               <Button
@@ -6612,7 +6667,7 @@ function InvestmentSection({
                 size="icon"
                 variant="ghost"
                 className="h-9 w-9 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-                onClick={() => setIsCryptoModalOpen(false)}
+                onClick={closeCryptoModal}
               >
                 <X className="h-4 w-4" />
               </Button>
@@ -6657,7 +6712,7 @@ function InvestmentSection({
                 type="button"
                 variant="ghost"
                 className="h-10 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-                onClick={() => setIsCryptoModalOpen(false)}
+                onClick={closeCryptoModal}
               >
                 Sluiten
               </Button>
@@ -6667,14 +6722,23 @@ function InvestmentSection({
                 variant="secondary"
                 className="h-10 justify-center"
                 disabled={isSavingCryptoPosition}
-                onClick={onAddCryptoPosition}
+                onClick={async () => {
+                  const wasEditing = Boolean(editingCryptoPosition);
+                  const saved = await onSaveCryptoPosition();
+
+                  if (saved && wasEditing) {
+                    setIsCryptoModalOpen(false);
+                  }
+                }}
               >
                 {isSavingCryptoPosition ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : editingCryptoPosition ? (
+                  <Save className="h-4 w-4" />
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}
-                Toevoegen
+                {editingCryptoPosition ? "Opslaan" : "Toevoegen"}
               </Button>
             </div>
           </div>
