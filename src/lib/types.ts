@@ -100,6 +100,7 @@ export type CryptoPosition = {
 export type DashboardData = {
   householdId: string;
   currentUserId: string;
+  currentUserEmail?: string;
   currentPerson: Person;
   selectedMonth: string;
   people: Person[];

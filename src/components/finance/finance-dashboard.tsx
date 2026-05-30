@@ -21,6 +21,7 @@ import {
   Save,
   Settings,
   Trash2,
+  TrendingUp,
   WalletCards,
   X,
 } from "lucide-react";
@@ -1045,6 +1046,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     heroBudget.remainingFreeBudget > 0 ? heroBudget.remainingFreeBudget : 0;
   const showInvestmentSection =
     !isSharedView && investmentSettings.investingEnabled;
+  const showPdtNavLink =
+    showInvestmentSection &&
+    initialData.currentUserEmail === "ralph.wijnands1988@gmail.com";
   const displayedExpenseTotal = monthTotals.expenseTotal;
   const displayedNetTotal =
     monthTotals.contributionTotal + monthTotals.incomeTotal - displayedExpenseTotal;
@@ -3929,7 +3933,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           {showInvestmentSection && (
             <InvestmentSection
               degiroTotal={investmentSettings.degiroTotal}
-              savingsBalance={currentSavingsBalance}
               degiroDraft={degiroTotalDraft}
               cryptoPositions={cryptoPositions}
               cryptoCoinName={cryptoCoinName}
@@ -4145,6 +4148,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               selectedAccountId={selectedAccountId}
               currentPerson={initialData.currentPerson}
               activeSection={activeSection}
+              showPdtLink={showPdtNavLink}
               onSelect={(accountId) => {
                 setSelectedAccountId(accountId);
                 setQuickAccount(accountId);
@@ -4254,7 +4258,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 {showInvestmentSection && (
                   <InvestmentSection
                     degiroTotal={investmentSettings.degiroTotal}
-                    savingsBalance={currentSavingsBalance}
                     degiroDraft={degiroTotalDraft}
                     cryptoPositions={cryptoPositions}
                     cryptoCoinName={cryptoCoinName}
@@ -4523,7 +4526,7 @@ function MobileBottomNav({
   const items = sectionNavItems();
 
   return (
-    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 items-start border-t border-[var(--border)] lg:hidden">
+    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 items-start border-t border-[var(--border)] lg:hidden">
       {items.map((item) => {
         const isActive = activeSection === item.id;
         const Icon = item.icon;
@@ -4546,14 +4549,6 @@ function MobileBottomNav({
           </button>
         );
       })}
-      <a
-        href="/instellingen"
-        className="flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-[14px] text-[12px] font-semibold leading-none text-[var(--text-muted)]"
-        aria-label="Instellingen"
-      >
-        <Settings className="h-6 w-6 shrink-0" />
-        <span className="max-w-full whitespace-nowrap">Instel</span>
-      </a>
     </nav>
   );
 }
@@ -5136,6 +5131,7 @@ function AccountRail({
   selectedAccountId,
   currentPerson,
   activeSection,
+  showPdtLink,
   onSelect,
   onSectionChange,
 }: {
@@ -5143,6 +5139,7 @@ function AccountRail({
   selectedAccountId: string;
   currentPerson: string;
   activeSection: ActiveSection;
+  showPdtLink: boolean;
   onSelect: (accountId: string) => void;
   onSectionChange: (section: ActiveSection) => void;
 }) {
@@ -5216,6 +5213,17 @@ function AccountRail({
               </button>
             );
           })}
+          {showPdtLink && (
+            <a
+              href="https://app.portfoliodividendtracker.com/login"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/[0.04]"
+            >
+              <TrendingUp className="h-4 w-4" />
+              PDT
+            </a>
+          )}
           <a
             href="/instellingen"
             className="flex items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/[0.04]"
@@ -5906,7 +5914,6 @@ function SavingsDepositDialog({
 
 function InvestmentSection({
   degiroTotal,
-  savingsBalance,
   degiroDraft,
   cryptoPositions,
   cryptoCoinName,
@@ -5927,7 +5934,6 @@ function InvestmentSection({
   onDeleteCryptoPosition,
 }: {
   degiroTotal: number;
-  savingsBalance: number | null;
   degiroDraft: string;
   cryptoPositions: CryptoPosition[];
   cryptoCoinName: string;
@@ -5947,6 +5953,8 @@ function InvestmentSection({
   onAddCryptoPosition: () => void;
   onDeleteCryptoPosition: (position: CryptoPosition) => void;
 }) {
+  const [isEditingDegiro, setIsEditingDegiro] = useState(false);
+  const [isCryptoModalOpen, setIsCryptoModalOpen] = useState(false);
   const [pricesByCoinId, setPricesByCoinId] = useState<Record<string, number>>(
     {},
   );
@@ -6024,113 +6032,158 @@ function InvestmentSection({
     0,
   );
   const investmentTotal = degiroTotal + cryptoTotal;
-  const totalWealth = (savingsBalance ?? 0) + investmentTotal;
+
+  async function saveDegiroAndClose() {
+    await onSaveDegiroTotal();
+    setIsEditingDegiro(false);
+  }
 
   return (
-    <Card className="finance-card">
-      <CardHeader className="pb-3">
+    <Card className="border-[#27272A] bg-[#18181B]">
+      <CardHeader className="pb-4">
         <div className="flex items-start justify-between gap-4">
           <div>
             <CardTitle>Investeren</CardTitle>
             <CardDescription>Handmatig bijgewerkte beleggingen.</CardDescription>
           </div>
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-indigo-400/20 bg-[var(--accent-light)] text-[var(--accent)]">
+          <a
+            href="https://app.portfoliodividendtracker.com/login"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open PDT"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#27272A] text-[#A1A1AA] transition hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+          >
             <Globe className="h-5 w-5" />
-          </span>
+          </a>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
-                DeGiro
+      <CardContent className="space-y-0">
+        <section className="pb-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
+                DEGIRO
               </p>
-              <p className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">
-                {currency(degiroTotal)}
-              </p>
+              {isEditingDegiro ? (
+                <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,220px)_auto]">
+                  <Input
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    value={degiroDraft}
+                    className="h-10 border-[#27272A] bg-black/20 text-[#FAFAFA]"
+                    onChange={(event) => onDegiroDraftChange(event.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-10 justify-center"
+                    disabled={isSavingDegiroTotal}
+                    onClick={() => void saveDegiroAndClose()}
+                  >
+                    {isSavingDegiroTotal ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    Bewaar
+                  </Button>
+                </div>
+              ) : (
+                <p className="mt-1 text-xl font-semibold text-[#FAFAFA]">
+                  {currency(degiroTotal)}
+                </p>
+              )}
             </div>
-            <a
-              href="https://app.pdt.nl"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-[12px] border border-[var(--border)] px-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]"
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-10 w-10 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+              onClick={() => setIsEditingDegiro((isEditing) => !isEditing)}
             >
-              <Globe className="h-4 w-4" />
-              Open PDT
-            </a>
+              <Pencil className="h-4 w-4" />
+            </Button>
           </div>
-        </div>
+        </section>
 
-        <div className="grid gap-2 rounded-[14px] border border-[var(--border)] bg-black/10 p-3 sm:grid-cols-[1fr_auto]">
-          <FieldLabel label="Portfolio totaal">
-            <Input
-              inputMode="decimal"
-              placeholder="0,00"
-              value={degiroDraft}
-              className="h-10"
-              onChange={(event) => onDegiroDraftChange(event.target.value)}
-            />
-          </FieldLabel>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            className="h-10 self-end justify-center"
-            disabled={isSavingDegiroTotal}
-            onClick={onSaveDegiroTotal}
-          >
-            {isSavingDegiroTotal ? (
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            Bewaar
-          </Button>
-        </div>
-
-        <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
-          <div className="flex items-start justify-between gap-3">
+        <section className="border-t border-[#27272A] py-5">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
-                Crypto
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
+                CRYPTO
               </p>
-              <p className="mt-1 text-2xl font-semibold text-[var(--positive)]">
-                {currency(cryptoTotal)}
-              </p>
+              {isLoadingPrices && (
+                <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
+              )}
             </div>
-            <p className="text-right text-xs text-[var(--text-secondary)]">
-              {isLoadingPrices
-                ? "Koersen laden..."
-                : `${cryptoPositions.length} ${cryptoPositions.length === 1 ? "coin" : "coins"}`}
-            </p>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-10 w-10 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+              onClick={() => setIsCryptoModalOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
           </div>
 
-          <div className="mt-3 grid gap-2">
+          <div className="mt-4">
             {cryptoRows.length === 0 ? (
-              <p className="rounded-[12px] border border-[var(--border)] bg-black/10 p-3 text-sm text-[var(--text-secondary)]">
-                Nog geen crypto-posities toegevoegd.
+              <p className="text-sm text-[#A1A1AA]">
+                Nog geen posities
               </p>
             ) : (
-              cryptoRows.map(({ position, price, value }) => (
-                <div
-                  key={position.id}
-                  className="rounded-[12px] border border-[var(--border)] bg-black/10 p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
+              <div className="grid">
+                <div className="hidden grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] gap-3 border-b border-[#27272A] pb-2 text-xs font-medium uppercase tracking-wider text-[#A1A1AA] md:grid">
+                  <span>Naam</span>
+                  <span>Ticker</span>
+                  <span className="text-right">Hoeveelheid</span>
+                  <span className="text-right">Koers</span>
+                  <span className="text-right">Waarde</span>
+                  <span />
+                </div>
+                {cryptoRows.map(({ position, price, value }) => (
+                  <div
+                    key={position.id}
+                    className="grid gap-2 border-b border-[#27272A] py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] md:items-center md:gap-3"
+                  >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                      <p className="truncate text-sm font-semibold text-[#FAFAFA]">
                         {position.coinName}
                       </p>
-                      <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                        {position.ticker} · {formatCryptoAmount(position.amount)}
+                      <p className="text-xs text-[#A1A1AA] md:hidden">
+                        {position.ticker}
+                      </p>
+                    </div>
+                    <p className="hidden text-sm text-[#A1A1AA] md:block">
+                      {position.ticker}
+                    </p>
+                    <div className="grid grid-cols-3 gap-2 text-xs text-[#A1A1AA] md:contents">
+                      <p className="md:text-right md:text-sm">
+                        <span className="block md:hidden">Hoeveelheid</span>
+                        <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
+                          {formatCryptoAmount(position.amount)}
+                        </span>
+                      </p>
+                      <p className="text-right md:text-sm">
+                        <span className="block md:hidden">Koers</span>
+                        <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
+                          {typeof price === "number" ? preciseCurrency(price) : "-"}
+                        </span>
+                      </p>
+                      <p className="text-right md:text-sm">
+                        <span className="block md:hidden">Waarde</span>
+                        <span className="font-semibold text-[#FAFAFA]">
+                          {value === null ? "-" : preciseCurrency(value)}
+                        </span>
                       </p>
                     </div>
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      className="h-8 w-8 shrink-0 text-[var(--text-muted)] hover:text-red-300"
+                      className="h-9 w-9 justify-self-end text-[#A1A1AA] hover:bg-white/[0.04] hover:text-red-300"
                       disabled={deletingCryptoPositionId === position.id}
                       onClick={() => onDeleteCryptoPosition(position)}
                     >
@@ -6141,118 +6194,123 @@ function InvestmentSection({
                       )}
                     </Button>
                   </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--text-secondary)]">
-                    <div>
-                      <span className="block text-[var(--text-muted)]">Koers</span>
-                      <span className="font-medium text-[var(--text-primary)]">
-                        {typeof price === "number" ? preciseCurrency(price) : "-"}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="block text-[var(--text-muted)]">Waarde</span>
-                      <span className="font-medium text-[var(--positive)]">
-                        {value === null ? "-" : preciseCurrency(value)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
 
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#27272A] pt-3 text-sm">
+            <span className="text-[#A1A1AA]">Totaal crypto</span>
+            <span className="font-semibold text-[#FAFAFA]">
+              {currency(cryptoTotal)}
+            </span>
+          </div>
+
           {priceMessage && (
-            <p className="mt-2 text-xs text-[var(--text-secondary)]">
+            <p className="mt-2 text-xs text-[#A1A1AA]">
               {priceMessage}
             </p>
           )}
-        </div>
-
-        <div className="grid gap-2 rounded-[14px] border border-[var(--border)] bg-black/10 p-3">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <FieldLabel label="Naam">
-              <Input
-                placeholder="Bitcoin"
-                value={cryptoCoinName}
-                className="h-10"
-                onChange={(event) => onCryptoCoinNameChange(event.target.value)}
-              />
-            </FieldLabel>
-            <FieldLabel label="CoinGecko ID">
-              <Input
-                placeholder="bitcoin"
-                value={cryptoCoinId}
-                className="h-10"
-                onChange={(event) => onCryptoCoinIdChange(event.target.value)}
-              />
-            </FieldLabel>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-[0.75fr_1fr_auto]">
-            <FieldLabel label="Ticker">
-              <Input
-                placeholder="BTC"
-                value={cryptoTicker}
-                className="h-10"
-                onChange={(event) => onCryptoTickerChange(event.target.value)}
-              />
-            </FieldLabel>
-            <FieldLabel label="Hoeveelheid">
-              <Input
-                inputMode="decimal"
-                placeholder="0,00000000"
-                value={cryptoAmount}
-                className="h-10"
-                onChange={(event) => onCryptoAmountChange(event.target.value)}
-              />
-            </FieldLabel>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="h-10 self-end justify-center"
-              disabled={isSavingCryptoPosition}
-              onClick={onAddCryptoPosition}
-            >
-              {isSavingCryptoPosition ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              Toevoegen
-            </Button>
-          </div>
-        </div>
+        </section>
 
         {message && (
-          <p className="rounded-[12px] border border-[var(--border)] bg-black/10 p-3 text-sm text-[var(--text-secondary)]">
+          <p className="mb-4 rounded-[12px] border border-[#27272A] bg-black/10 p-3 text-sm text-[#A1A1AA]">
             {message}
           </p>
         )}
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
-            <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
-              Investeren totaal
-            </p>
-            <p className="mt-1 text-xl font-semibold text-[var(--text-primary)]">
-              {currency(investmentTotal)}
-            </p>
-            <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              DeGiro + crypto
-            </p>
-          </div>
-          <div className="rounded-[14px] border border-emerald-400/20 bg-[var(--positive-light)] p-3">
-            <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
-              Totaalvermogen
-            </p>
-            <p className="mt-1 text-xl font-semibold text-[var(--positive)]">
-              {currency(totalWealth)}
-            </p>
-            <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              Sparen + investeren
-            </p>
+        <section className="flex items-center justify-between gap-4 border-t border-[#27272A] pt-4">
+          <p className="text-sm text-[#A1A1AA]">Investeren totaal</p>
+          <p className="text-xl font-semibold text-[#FAFAFA]">
+            {currency(investmentTotal)}
+          </p>
+        </section>
+      </CardContent>
+      {isCryptoModalOpen && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:items-center sm:pb-4">
+          <div className="w-full max-w-lg rounded-[18px] border border-[#27272A] bg-[#18181B] p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
+                  CRYPTO
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-[#FAFAFA]">
+                  Positie toevoegen
+                </h3>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-9 w-9 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+                onClick={() => setIsCryptoModalOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <FieldLabel label="Naam">
+                <Input
+                  placeholder="Bitcoin"
+                  value={cryptoCoinName}
+                  className="h-10 border-[#27272A] bg-black/20 text-[#FAFAFA]"
+                  onChange={(event) => onCryptoCoinNameChange(event.target.value)}
+                />
+              </FieldLabel>
+              <FieldLabel label="CoinGecko ID">
+                <Input
+                  placeholder="bitcoin"
+                  value={cryptoCoinId}
+                  className="h-10 border-[#27272A] bg-black/20 text-[#FAFAFA]"
+                  onChange={(event) => onCryptoCoinIdChange(event.target.value)}
+                />
+              </FieldLabel>
+              <FieldLabel label="Ticker">
+                <Input
+                  placeholder="BTC"
+                  value={cryptoTicker}
+                  className="h-10 border-[#27272A] bg-black/20 text-[#FAFAFA]"
+                  onChange={(event) => onCryptoTickerChange(event.target.value)}
+                />
+              </FieldLabel>
+              <FieldLabel label="Hoeveelheid">
+                <Input
+                  inputMode="decimal"
+                  placeholder="0,00000000"
+                  value={cryptoAmount}
+                  className="h-10 border-[#27272A] bg-black/20 text-[#FAFAFA]"
+                  onChange={(event) => onCryptoAmountChange(event.target.value)}
+                />
+              </FieldLabel>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-10 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+                onClick={() => setIsCryptoModalOpen(false)}
+              >
+                Sluiten
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-10 justify-center"
+                disabled={isSavingCryptoPosition}
+                onClick={onAddCryptoPosition}
+              >
+                {isSavingCryptoPosition ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Toevoegen
+              </Button>
+            </div>
           </div>
         </div>
-      </CardContent>
+      )}
     </Card>
   );
 }

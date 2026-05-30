@@ -186,6 +186,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   return {
     householdId: membership.household_id,
     currentUserId: user.id,
+    currentUserEmail: user.email ?? undefined,
     currentPerson,
     selectedMonth,
     people,
