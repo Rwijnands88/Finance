@@ -6277,14 +6277,13 @@ function InvestmentSection({
             </div>
 
             {degiroPositions.length > 0 && (
-              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-end gap-3 border-t border-[#27272A] pt-3">
+              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_max-content] items-end gap-3 border-t border-[#27272A] pt-3">
                 <p className="text-sm font-semibold text-[#FAFAFA]">
                   Totaal DeGiro
                 </p>
                 <p className="justify-self-end text-right text-xl font-semibold tabular-nums text-[#FAFAFA]">
                   {currency(degiroTotal)}
                 </p>
-                <span aria-hidden="true" />
               </div>
             )}
             <Button
@@ -6412,14 +6411,13 @@ function InvestmentSection({
             </div>
 
             {cryptoPositions.length > 0 && (
-              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-end gap-3 border-t border-[#27272A] pt-3">
+              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_max-content] items-end gap-3 border-t border-[#27272A] pt-3">
                 <p className="text-sm font-semibold text-[#FAFAFA]">
                   Totaal Crypto
                 </p>
                 <p className="justify-self-end text-right text-xl font-semibold tabular-nums text-[#FAFAFA]">
                   {currency(cryptoTotal)}
                 </p>
-                <span aria-hidden="true" />
               </div>
             )}
             <Button
@@ -6446,14 +6444,13 @@ function InvestmentSection({
           </p>
         )}
 
-        <section className="grid grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-end gap-3 border-t border-[#27272A] pt-3">
+        <section className="grid grid-cols-[minmax(0,1fr)_max-content] items-end gap-3 border-t border-[#27272A] pt-3">
           <p className="text-sm font-semibold text-[#FAFAFA]">
             Totaal
           </p>
           <p className="justify-self-end text-right text-2xl font-semibold tabular-nums text-[#FAFAFA]">
             {currency(investmentTotal)}
           </p>
-          <span aria-hidden="true" />
         </section>
       </CardContent>
       {isDegiroModalOpen && (
