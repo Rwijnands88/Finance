@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   ArrowDownToLine,
@@ -5955,67 +5955,19 @@ function InvestmentSection({
 }) {
   const [isEditingDegiro, setIsEditingDegiro] = useState(false);
   const [isCryptoModalOpen, setIsCryptoModalOpen] = useState(false);
-  const [pricesByCoinId, setPricesByCoinId] = useState<Record<string, number>>(
-    {},
-  );
-  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
-  const [priceMessage, setPriceMessage] = useState("");
   const coinIds = useMemo(
-    () => Array.from(new Set(cryptoPositions.map((position) => position.coinId))),
+    () =>
+      Array.from(
+        new Set(
+          cryptoPositions
+            .map((position) => position.coinId.trim())
+            .filter(Boolean),
+        ),
+      ).sort(),
     [cryptoPositions],
   );
-
-  useEffect(() => {
-    if (coinIds.length === 0) {
-      setPricesByCoinId({});
-      setPriceMessage("");
-      return;
-    }
-
-    let isCancelled = false;
-
-    async function loadPrices() {
-      setIsLoadingPrices(true);
-      setPriceMessage("");
-
-      try {
-        const ids = coinIds.map(encodeURIComponent).join(",");
-        const response = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=eur`,
-        );
-
-        if (!response.ok) {
-          throw new Error("Koersen ophalen lukte niet.");
-        }
-
-        const data = (await response.json()) as Record<string, { eur?: number }>;
-        const nextPrices = Object.fromEntries(
-          coinIds.flatMap((coinId) => {
-            const price = data[coinId]?.eur;
-            return typeof price === "number" ? [[coinId, price]] : [];
-          }),
-        );
-
-        if (!isCancelled) {
-          setPricesByCoinId(nextPrices);
-        }
-      } catch {
-        if (!isCancelled) {
-          setPriceMessage("Live koersen ophalen lukte niet.");
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoadingPrices(false);
-        }
-      }
-    }
-
-    void loadPrices();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [coinIds]);
+  const { pricesByCoinId, isLoadingPrices, priceMessage } =
+    useCryptoPrices(coinIds);
 
   const cryptoRows = cryptoPositions.map((position) => {
     const price = pricesByCoinId[position.coinId];
@@ -6040,11 +5992,10 @@ function InvestmentSection({
 
   return (
     <Card className="border-[#27272A] bg-[#18181B]">
-      <CardHeader className="pb-4">
+      <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-4">
           <div>
             <CardTitle>Investeren</CardTitle>
-            <CardDescription>Handmatig bijgewerkte beleggingen.</CardDescription>
           </div>
           <a
             href="https://app.portfoliodividendtracker.com/login"
@@ -6058,7 +6009,7 @@ function InvestmentSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-0">
-        <section className="pb-5">
+        <section className="pb-3">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
@@ -6099,6 +6050,7 @@ function InvestmentSection({
               type="button"
               size="icon"
               variant="ghost"
+              aria-label="DeGiro bedrag bewerken"
               className="h-10 w-10 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
               onClick={() => setIsEditingDegiro((isEditing) => !isEditing)}
             >
@@ -6107,7 +6059,7 @@ function InvestmentSection({
           </div>
         </section>
 
-        <section className="border-t border-[#27272A] py-5">
+        <section className="border-t border-[#27272A] py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
@@ -6121,6 +6073,7 @@ function InvestmentSection({
               type="button"
               size="icon"
               variant="ghost"
+              aria-label="Crypto-positie toevoegen"
               className="h-10 w-10 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
               onClick={() => setIsCryptoModalOpen(true)}
             >
@@ -6128,7 +6081,7 @@ function InvestmentSection({
             </Button>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-3">
             {cryptoRows.length === 0 ? (
               <p className="text-sm text-[#A1A1AA]">
                 Nog geen posities
@@ -6199,12 +6152,14 @@ function InvestmentSection({
             )}
           </div>
 
-          <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#27272A] pt-3 text-sm">
-            <span className="text-[#A1A1AA]">Totaal crypto</span>
-            <span className="font-semibold text-[#FAFAFA]">
-              {currency(cryptoTotal)}
-            </span>
-          </div>
+          {cryptoPositions.length > 0 && (
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#27272A] pt-3 text-sm">
+              <span className="text-[#A1A1AA]">Totaal crypto</span>
+              <span className="font-semibold text-[#FAFAFA]">
+                {currency(cryptoTotal)}
+              </span>
+            </div>
+          )}
 
           {priceMessage && (
             <p className="mt-2 text-xs text-[#A1A1AA]">
@@ -6219,7 +6174,7 @@ function InvestmentSection({
           </p>
         )}
 
-        <section className="flex items-center justify-between gap-4 border-t border-[#27272A] pt-4">
+        <section className="flex items-center justify-between gap-4 border-t border-[#27272A] pt-3">
           <p className="text-sm text-[#A1A1AA]">Investeren totaal</p>
           <p className="text-xl font-semibold text-[#FAFAFA]">
             {currency(investmentTotal)}
@@ -6313,6 +6268,88 @@ function InvestmentSection({
       )}
     </Card>
   );
+}
+
+function useCryptoPrices(coinIds: string[]) {
+  const coinIdKey = useMemo(() => coinIds.join(","), [coinIds]);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const serializedPricesRef = useRef("");
+  const [pricesByCoinId, setPricesByCoinId] = useState<Record<string, number>>(
+    {},
+  );
+  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+  const [priceMessage, setPriceMessage] = useState("");
+
+  const loadPrices = useCallback(async () => {
+    if (!coinIdKey) return;
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setIsLoadingPrices(true);
+    setPriceMessage((current) => (current ? "" : current));
+
+    try {
+      const ids = coinIdKey.split(",");
+      const encodedIds = ids.map(encodeURIComponent).join(",");
+      const response = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${encodedIds}&vs_currencies=eur`,
+        { signal: controller.signal },
+      );
+
+      if (!response.ok) {
+        throw new Error("Koersen ophalen lukte niet.");
+      }
+
+      const data = (await response.json()) as Record<string, { eur?: number }>;
+      const nextPrices = Object.fromEntries(
+        ids.flatMap((coinId) => {
+          const price = data[coinId]?.eur;
+          return typeof price === "number" ? [[coinId, price]] : [];
+        }),
+      );
+      const serializedPrices = JSON.stringify(nextPrices);
+
+      if (serializedPricesRef.current !== serializedPrices) {
+        serializedPricesRef.current = serializedPrices;
+        setPricesByCoinId(nextPrices);
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+
+      setPriceMessage("Live koersen ophalen lukte niet.");
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+        setIsLoadingPrices(false);
+      }
+    }
+  }, [coinIdKey]);
+
+  useEffect(() => {
+    if (!coinIdKey) {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      serializedPricesRef.current = "";
+      setPricesByCoinId((current) =>
+        Object.keys(current).length === 0 ? current : {},
+      );
+      setPriceMessage((current) => (current ? "" : current));
+      setIsLoadingPrices(false);
+      return;
+    }
+
+    void loadPrices();
+
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, [coinIdKey, loadPrices]);
+
+  return { pricesByCoinId, isLoadingPrices, priceMessage };
 }
 
 function AllTransactionsCard({
