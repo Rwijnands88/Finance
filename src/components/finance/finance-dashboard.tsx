@@ -19,6 +19,7 @@ import {
   Plus,
   ReceiptText,
   Save,
+  Settings,
   Trash2,
   WalletCards,
   X,
@@ -4522,7 +4523,7 @@ function MobileBottomNav({
   const items = sectionNavItems();
 
   return (
-    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 items-start border-t border-[var(--border)] lg:hidden">
+    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 items-start border-t border-[var(--border)] lg:hidden">
       {items.map((item) => {
         const isActive = activeSection === item.id;
         const Icon = item.icon;
@@ -4545,6 +4546,14 @@ function MobileBottomNav({
           </button>
         );
       })}
+      <a
+        href="/instellingen"
+        className="flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-[14px] text-[12px] font-semibold leading-none text-[var(--text-muted)]"
+        aria-label="Instellingen"
+      >
+        <Settings className="h-6 w-6 shrink-0" />
+        <span className="max-w-full whitespace-nowrap">Instel</span>
+      </a>
     </nav>
   );
 }
@@ -5207,6 +5216,13 @@ function AccountRail({
               </button>
             );
           })}
+          <a
+            href="/instellingen"
+            className="flex items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/[0.04]"
+          >
+            <Settings className="h-4 w-4" />
+            Instellingen
+          </a>
         </nav>
 
         <div className="mt-auto rounded-[12px] border border-[var(--border)] bg-black/10 p-3">
