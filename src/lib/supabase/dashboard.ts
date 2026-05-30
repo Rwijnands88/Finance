@@ -2,7 +2,9 @@ import type {
   Account,
   AccountBalanceSnapshot,
   ContributionPlan,
+  CryptoPosition,
   DashboardData,
+  InvestmentSettings,
   Transaction,
 } from "@/lib/types";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -52,6 +54,8 @@ export async function getDashboardData(): Promise<DashboardData> {
     membersResult,
     currentProfileResult,
     contributionPlansResult,
+    investmentSettingsResult,
+    cryptoPositionsResult,
     balanceSnapshotsResult,
     recurringResult,
     fixedInstancesResult,
@@ -84,6 +88,16 @@ export async function getDashboardData(): Promise<DashboardData> {
 	      .order("user_id", { ascending: true })
 	      .order("deposit_day", { ascending: true }),
     supabase
+      .from("investment_settings")
+      .select("user_id, degiro_total, investing_enabled")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("crypto_positions")
+      .select("id, user_id, coin_name, coin_id, ticker, amount")
+      .eq("user_id", user.id)
+      .order("coin_name", { ascending: true }),
+    supabase
       .from("account_balance_snapshots")
       .select("*")
       .eq("household_id", membership.household_id)
@@ -107,6 +121,8 @@ export async function getDashboardData(): Promise<DashboardData> {
   throwIfError(membersResult.error);
   throwIfError(currentProfileResult.error);
   throwIfErrorUnlessMissingContributionPlans(contributionPlansResult.error);
+  throwIfErrorUnlessMissingInvestmentSettings(investmentSettingsResult.error);
+  throwIfErrorUnlessMissingCryptoPositions(cryptoPositionsResult.error);
   throwIfErrorUnlessMissingBalanceSnapshots(balanceSnapshotsResult.error);
   throwIfError(recurringResult.error);
   throwIfError(fixedInstancesResult.error);
@@ -182,6 +198,11 @@ export async function getDashboardData(): Promise<DashboardData> {
       contributionPlansResult.data ?? [],
       memberNameByUserId,
     ),
+    investmentSettings: mapInvestmentSettings(
+      investmentSettingsResult.data,
+      user.id,
+    ),
+    cryptoPositions: mapCryptoPositions(cryptoPositionsResult.data ?? []),
     balanceSnapshots: mapBalanceSnapshots(
       balanceSnapshotsResult.data ?? [],
       memberNameByUserId,
@@ -219,6 +240,46 @@ export async function getDashboardData(): Promise<DashboardData> {
     ),
     sixMonthTrend: buildSixMonthTrend(historicalTransactionsResult, monthStart),
   };
+}
+
+function mapCryptoPositions(
+  rows: Array<{
+    id: string;
+    user_id: string;
+    coin_name: string;
+    coin_id: string;
+    ticker: string;
+    amount: number;
+  }>,
+) {
+  return rows.map(
+    (position) =>
+      ({
+        id: position.id,
+        userId: position.user_id,
+        coinName: position.coin_name,
+        coinId: position.coin_id,
+        ticker: position.ticker,
+        amount: Number(position.amount),
+      }) satisfies CryptoPosition,
+  );
+}
+
+function mapInvestmentSettings(
+  row:
+    | {
+        user_id: string;
+        degiro_total: number;
+        investing_enabled: boolean;
+      }
+    | null,
+  currentUserId: string,
+) {
+  return {
+    userId: row?.user_id ?? currentUserId,
+    degiroTotal: Number(row?.degiro_total ?? 0),
+    investingEnabled: Boolean(row?.investing_enabled),
+  } satisfies InvestmentSettings;
 }
 
 function mapBalanceSnapshots(
@@ -333,6 +394,36 @@ function throwIfErrorUnlessMissingContributionPlans(
   error: { code?: string; message: string } | null,
 ) {
   if (!error || error.code === "42P01") return;
+  throw new Error(error.message);
+}
+
+function throwIfErrorUnlessMissingInvestmentSettings(
+  error: { code?: string; message: string } | null,
+) {
+  if (
+    !error ||
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    error.message.includes("investment_settings")
+  ) {
+    return;
+  }
+
+  throw new Error(error.message);
+}
+
+function throwIfErrorUnlessMissingCryptoPositions(
+  error: { code?: string; message: string } | null,
+) {
+  if (
+    !error ||
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    error.message.includes("crypto_positions")
+  ) {
+    return;
+  }
+
   throw new Error(error.message);
 }
 

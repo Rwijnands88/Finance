@@ -44,6 +44,7 @@ import {
   type AccountBalanceSnapshot,
   type ContributionKind,
   type ContributionPlan,
+  type CryptoPosition,
   type DashboardData,
   type FixedExpenseInstance,
   type RecurringExpense,
@@ -375,6 +376,27 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [savingsMessage, setSavingsMessage] = useState("");
   const [isSavingSavingsSnapshot, setIsSavingSavingsSnapshot] = useState(false);
   const [isSavingSavingsDeposit, setIsSavingSavingsDeposit] = useState(false);
+  const [investmentSettings, setInvestmentSettings] = useState(
+    initialData.investmentSettings,
+  );
+  const [cryptoPositions, setCryptoPositions] = useState<CryptoPosition[]>(
+    initialData.cryptoPositions,
+  );
+  const [degiroTotalDraft, setDegiroTotalDraft] = useState(
+    initialData.investmentSettings.degiroTotal > 0
+      ? initialData.investmentSettings.degiroTotal.toFixed(2)
+      : "",
+  );
+  const [cryptoCoinName, setCryptoCoinName] = useState("");
+  const [cryptoCoinId, setCryptoCoinId] = useState("");
+  const [cryptoTicker, setCryptoTicker] = useState("");
+  const [cryptoAmount, setCryptoAmount] = useState("");
+  const [investmentMessage, setInvestmentMessage] = useState("");
+  const [isSavingDegiroTotal, setIsSavingDegiroTotal] = useState(false);
+  const [isSavingCryptoPosition, setIsSavingCryptoPosition] = useState(false);
+  const [deletingCryptoPositionId, setDeletingCryptoPositionId] = useState<
+    string | null
+  >(null);
   const [incomeAmount, setIncomeAmount] = useState("");
   const [incomeDate, setIncomeDate] = useState(
     new Date().toISOString().slice(0, 10),
@@ -1020,6 +1042,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     : null;
   const savingsSuggestionAmount =
     heroBudget.remainingFreeBudget > 0 ? heroBudget.remainingFreeBudget : 0;
+  const showInvestmentSection =
+    !isSharedView && investmentSettings.investingEnabled;
   const displayedExpenseTotal = monthTotals.expenseTotal;
   const displayedNetTotal =
     monthTotals.contributionTotal + monthTotals.incomeTotal - displayedExpenseTotal;
@@ -2035,6 +2059,137 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setSavingsDepositAmount("");
     setSavingsMessage("Spaarstorting toegevoegd.");
     return true;
+  }
+
+  async function saveDegiroTotal() {
+    const amount = parseCurrencyInput(degiroTotalDraft);
+
+    if (Number.isNaN(amount) || amount < 0) {
+      setInvestmentMessage("Vul een geldig DeGiro-bedrag in.");
+      return;
+    }
+
+    setIsSavingDegiroTotal(true);
+    setInvestmentMessage("");
+
+    const response = await fetch("/api/investment-settings", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        degiroTotal: amount,
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingDegiroTotal(false);
+
+    if (!response.ok) {
+      setInvestmentMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "DeGiro-bedrag opslaan lukte niet.",
+      );
+      return;
+    }
+
+    setInvestmentSettings(result.settings);
+    setDegiroTotalDraft(Number(result.settings.degiroTotal).toFixed(2));
+    setInvestmentMessage("DeGiro-bedrag bijgewerkt.");
+  }
+
+  async function addCryptoPosition() {
+    const amount = parseCurrencyInput(cryptoAmount);
+
+    if (
+      !cryptoCoinName.trim() ||
+      !cryptoCoinId.trim() ||
+      !cryptoTicker.trim() ||
+      Number.isNaN(amount) ||
+      amount < 0
+    ) {
+      setInvestmentMessage(
+        "Vul naam, CoinGecko ID, ticker en hoeveelheid in.",
+      );
+      return;
+    }
+
+    setIsSavingCryptoPosition(true);
+    setInvestmentMessage("");
+
+    const response = await fetch("/api/crypto-positions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        coinName: cryptoCoinName,
+        coinId: cryptoCoinId,
+        ticker: cryptoTicker,
+        amount,
+      }),
+    });
+    const result = await response.json();
+
+    setIsSavingCryptoPosition(false);
+
+    if (!response.ok) {
+      setInvestmentMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Crypto-positie opslaan lukte niet.",
+      );
+      return;
+    }
+
+    const nextPosition = result.position as CryptoPosition;
+    setCryptoPositions((items) =>
+      mergeById(items, [nextPosition]).sort((first, second) =>
+        first.coinName.localeCompare(second.coinName, "nl"),
+      ),
+    );
+    setCryptoCoinName("");
+    setCryptoCoinId("");
+    setCryptoTicker("");
+    setCryptoAmount("");
+    setInvestmentMessage("Crypto-positie bijgewerkt.");
+  }
+
+  async function deleteCryptoPosition(position: CryptoPosition) {
+    const confirmed = window.confirm(`${position.coinName} verwijderen?`);
+
+    if (!confirmed) return;
+
+    setDeletingCryptoPositionId(position.id);
+    setInvestmentMessage("");
+
+    const response = await fetch("/api/crypto-positions", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        positionId: position.id,
+      }),
+    });
+    const result = await response.json();
+
+    setDeletingCryptoPositionId(null);
+
+    if (!response.ok) {
+      setInvestmentMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Crypto-positie verwijderen lukte niet.",
+      );
+      return;
+    }
+
+    setCryptoPositions((items) =>
+      items.filter((item) => item.id !== position.id),
+    );
+    setInvestmentMessage("Crypto-positie verwijderd.");
   }
 
   async function addIncome() {
@@ -3770,6 +3925,30 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onSaveStartBalance={saveSavingsSnapshot}
             onAddDeposit={addSavingsDeposit}
           />
+          {showInvestmentSection && (
+            <InvestmentSection
+              degiroTotal={investmentSettings.degiroTotal}
+              savingsBalance={currentSavingsBalance}
+              degiroDraft={degiroTotalDraft}
+              cryptoPositions={cryptoPositions}
+              cryptoCoinName={cryptoCoinName}
+              cryptoCoinId={cryptoCoinId}
+              cryptoTicker={cryptoTicker}
+              cryptoAmount={cryptoAmount}
+              message={investmentMessage}
+              isSavingDegiroTotal={isSavingDegiroTotal}
+              isSavingCryptoPosition={isSavingCryptoPosition}
+              deletingCryptoPositionId={deletingCryptoPositionId}
+              onDegiroDraftChange={setDegiroTotalDraft}
+              onSaveDegiroTotal={saveDegiroTotal}
+              onCryptoCoinNameChange={setCryptoCoinName}
+              onCryptoCoinIdChange={setCryptoCoinId}
+              onCryptoTickerChange={setCryptoTicker}
+              onCryptoAmountChange={setCryptoAmount}
+              onAddCryptoPosition={addCryptoPosition}
+              onDeleteCryptoPosition={deleteCryptoPosition}
+            />
+          )}
           {isMobileFixedManagerVisible && (
             <FixedExpenseManager
               expenses={selectedRecurringExpenses}
@@ -4071,6 +4250,30 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   onSaveStartBalance={saveSavingsSnapshot}
                   onAddDeposit={addSavingsDeposit}
                 />
+                {showInvestmentSection && (
+                  <InvestmentSection
+                    degiroTotal={investmentSettings.degiroTotal}
+                    savingsBalance={currentSavingsBalance}
+                    degiroDraft={degiroTotalDraft}
+                    cryptoPositions={cryptoPositions}
+                    cryptoCoinName={cryptoCoinName}
+                    cryptoCoinId={cryptoCoinId}
+                    cryptoTicker={cryptoTicker}
+                    cryptoAmount={cryptoAmount}
+                    message={investmentMessage}
+                    isSavingDegiroTotal={isSavingDegiroTotal}
+                    isSavingCryptoPosition={isSavingCryptoPosition}
+                    deletingCryptoPositionId={deletingCryptoPositionId}
+                    onDegiroDraftChange={setDegiroTotalDraft}
+                    onSaveDegiroTotal={saveDegiroTotal}
+                    onCryptoCoinNameChange={setCryptoCoinName}
+                    onCryptoCoinIdChange={setCryptoCoinId}
+                    onCryptoTickerChange={setCryptoTicker}
+                    onCryptoAmountChange={setCryptoAmount}
+                    onAddCryptoPosition={addCryptoPosition}
+                    onDeleteCryptoPosition={deleteCryptoPosition}
+                  />
+                )}
                 <FixedExpenseManager
                   expenses={selectedRecurringExpenses}
                   categories={fixedCategories}
@@ -5682,6 +5885,359 @@ function SavingsDepositDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+function InvestmentSection({
+  degiroTotal,
+  savingsBalance,
+  degiroDraft,
+  cryptoPositions,
+  cryptoCoinName,
+  cryptoCoinId,
+  cryptoTicker,
+  cryptoAmount,
+  message,
+  isSavingDegiroTotal,
+  isSavingCryptoPosition,
+  deletingCryptoPositionId,
+  onDegiroDraftChange,
+  onSaveDegiroTotal,
+  onCryptoCoinNameChange,
+  onCryptoCoinIdChange,
+  onCryptoTickerChange,
+  onCryptoAmountChange,
+  onAddCryptoPosition,
+  onDeleteCryptoPosition,
+}: {
+  degiroTotal: number;
+  savingsBalance: number | null;
+  degiroDraft: string;
+  cryptoPositions: CryptoPosition[];
+  cryptoCoinName: string;
+  cryptoCoinId: string;
+  cryptoTicker: string;
+  cryptoAmount: string;
+  message: string;
+  isSavingDegiroTotal: boolean;
+  isSavingCryptoPosition: boolean;
+  deletingCryptoPositionId: string | null;
+  onDegiroDraftChange: (value: string) => void;
+  onSaveDegiroTotal: () => void;
+  onCryptoCoinNameChange: (value: string) => void;
+  onCryptoCoinIdChange: (value: string) => void;
+  onCryptoTickerChange: (value: string) => void;
+  onCryptoAmountChange: (value: string) => void;
+  onAddCryptoPosition: () => void;
+  onDeleteCryptoPosition: (position: CryptoPosition) => void;
+}) {
+  const [pricesByCoinId, setPricesByCoinId] = useState<Record<string, number>>(
+    {},
+  );
+  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+  const [priceMessage, setPriceMessage] = useState("");
+  const coinIds = useMemo(
+    () => Array.from(new Set(cryptoPositions.map((position) => position.coinId))),
+    [cryptoPositions],
+  );
+
+  useEffect(() => {
+    if (coinIds.length === 0) {
+      setPricesByCoinId({});
+      setPriceMessage("");
+      return;
+    }
+
+    let isCancelled = false;
+
+    async function loadPrices() {
+      setIsLoadingPrices(true);
+      setPriceMessage("");
+
+      try {
+        const ids = coinIds.map(encodeURIComponent).join(",");
+        const response = await fetch(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=eur`,
+        );
+
+        if (!response.ok) {
+          throw new Error("Koersen ophalen lukte niet.");
+        }
+
+        const data = (await response.json()) as Record<string, { eur?: number }>;
+        const nextPrices = Object.fromEntries(
+          coinIds.flatMap((coinId) => {
+            const price = data[coinId]?.eur;
+            return typeof price === "number" ? [[coinId, price]] : [];
+          }),
+        );
+
+        if (!isCancelled) {
+          setPricesByCoinId(nextPrices);
+        }
+      } catch {
+        if (!isCancelled) {
+          setPriceMessage("Live koersen ophalen lukte niet.");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingPrices(false);
+        }
+      }
+    }
+
+    void loadPrices();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [coinIds]);
+
+  const cryptoRows = cryptoPositions.map((position) => {
+    const price = pricesByCoinId[position.coinId];
+    const value = typeof price === "number" ? price * position.amount : null;
+
+    return {
+      position,
+      price,
+      value,
+    };
+  });
+  const cryptoTotal = cryptoRows.reduce(
+    (total, row) => total + (row.value ?? 0),
+    0,
+  );
+  const investmentTotal = degiroTotal + cryptoTotal;
+  const totalWealth = (savingsBalance ?? 0) + investmentTotal;
+
+  return (
+    <Card className="finance-card">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle>Investeren</CardTitle>
+            <CardDescription>Handmatig bijgewerkte beleggingen.</CardDescription>
+          </div>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-indigo-400/20 bg-[var(--accent-light)] text-[var(--accent)]">
+            <Globe className="h-5 w-5" />
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+                DeGiro
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-[var(--text-primary)]">
+                {currency(degiroTotal)}
+              </p>
+            </div>
+            <a
+              href="https://app.pdt.nl"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-[12px] border border-[var(--border)] px-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]"
+            >
+              <Globe className="h-4 w-4" />
+              Open PDT
+            </a>
+          </div>
+        </div>
+
+        <div className="grid gap-2 rounded-[14px] border border-[var(--border)] bg-black/10 p-3 sm:grid-cols-[1fr_auto]">
+          <FieldLabel label="Portfolio totaal">
+            <Input
+              inputMode="decimal"
+              placeholder="0,00"
+              value={degiroDraft}
+              className="h-10"
+              onChange={(event) => onDegiroDraftChange(event.target.value)}
+            />
+          </FieldLabel>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-10 self-end justify-center"
+            disabled={isSavingDegiroTotal}
+            onClick={onSaveDegiroTotal}
+          >
+            {isSavingDegiroTotal ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Bewaar
+          </Button>
+        </div>
+
+        <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+                Crypto
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-[var(--positive)]">
+                {currency(cryptoTotal)}
+              </p>
+            </div>
+            <p className="text-right text-xs text-[var(--text-secondary)]">
+              {isLoadingPrices
+                ? "Koersen laden..."
+                : `${cryptoPositions.length} ${cryptoPositions.length === 1 ? "coin" : "coins"}`}
+            </p>
+          </div>
+
+          <div className="mt-3 grid gap-2">
+            {cryptoRows.length === 0 ? (
+              <p className="rounded-[12px] border border-[var(--border)] bg-black/10 p-3 text-sm text-[var(--text-secondary)]">
+                Nog geen crypto-posities toegevoegd.
+              </p>
+            ) : (
+              cryptoRows.map(({ position, price, value }) => (
+                <div
+                  key={position.id}
+                  className="rounded-[12px] border border-[var(--border)] bg-black/10 p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                        {position.coinName}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                        {position.ticker} · {formatCryptoAmount(position.amount)}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0 text-[var(--text-muted)] hover:text-red-300"
+                      disabled={deletingCryptoPositionId === position.id}
+                      onClick={() => onDeleteCryptoPosition(position)}
+                    >
+                      {deletingCryptoPositionId === position.id ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-[var(--text-secondary)]">
+                    <div>
+                      <span className="block text-[var(--text-muted)]">Koers</span>
+                      <span className="font-medium text-[var(--text-primary)]">
+                        {typeof price === "number" ? preciseCurrency(price) : "-"}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="block text-[var(--text-muted)]">Waarde</span>
+                      <span className="font-medium text-[var(--positive)]">
+                        {value === null ? "-" : preciseCurrency(value)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {priceMessage && (
+            <p className="mt-2 text-xs text-[var(--text-secondary)]">
+              {priceMessage}
+            </p>
+          )}
+        </div>
+
+        <div className="grid gap-2 rounded-[14px] border border-[var(--border)] bg-black/10 p-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <FieldLabel label="Naam">
+              <Input
+                placeholder="Bitcoin"
+                value={cryptoCoinName}
+                className="h-10"
+                onChange={(event) => onCryptoCoinNameChange(event.target.value)}
+              />
+            </FieldLabel>
+            <FieldLabel label="CoinGecko ID">
+              <Input
+                placeholder="bitcoin"
+                value={cryptoCoinId}
+                className="h-10"
+                onChange={(event) => onCryptoCoinIdChange(event.target.value)}
+              />
+            </FieldLabel>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[0.75fr_1fr_auto]">
+            <FieldLabel label="Ticker">
+              <Input
+                placeholder="BTC"
+                value={cryptoTicker}
+                className="h-10"
+                onChange={(event) => onCryptoTickerChange(event.target.value)}
+              />
+            </FieldLabel>
+            <FieldLabel label="Hoeveelheid">
+              <Input
+                inputMode="decimal"
+                placeholder="0,00000000"
+                value={cryptoAmount}
+                className="h-10"
+                onChange={(event) => onCryptoAmountChange(event.target.value)}
+              />
+            </FieldLabel>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-10 self-end justify-center"
+              disabled={isSavingCryptoPosition}
+              onClick={onAddCryptoPosition}
+            >
+              {isSavingCryptoPosition ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              Toevoegen
+            </Button>
+          </div>
+        </div>
+
+        {message && (
+          <p className="rounded-[12px] border border-[var(--border)] bg-black/10 p-3 text-sm text-[var(--text-secondary)]">
+            {message}
+          </p>
+        )}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
+            <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+              Investeren totaal
+            </p>
+            <p className="mt-1 text-xl font-semibold text-[var(--text-primary)]">
+              {currency(investmentTotal)}
+            </p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">
+              DeGiro + crypto
+            </p>
+          </div>
+          <div className="rounded-[14px] border border-emerald-400/20 bg-[var(--positive-light)] p-3">
+            <p className="text-[11px] font-medium uppercase tracking-normal text-[var(--text-muted)]">
+              Totaalvermogen
+            </p>
+            <p className="mt-1 text-xl font-semibold text-[var(--positive)]">
+              {currency(totalWealth)}
+            </p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">
+              Sparen + investeren
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -9975,6 +10531,12 @@ const tooltipStyle = {
 
 function parseCurrencyInput(value: string) {
   return Number(value.trim().replace(/\s/g, "").replace(",", "."));
+}
+
+function formatCryptoAmount(value: number) {
+  return new Intl.NumberFormat("nl-NL", {
+    maximumFractionDigits: 10,
+  }).format(value);
 }
 
 function downloadBlob(blob: Blob, filename: string) {

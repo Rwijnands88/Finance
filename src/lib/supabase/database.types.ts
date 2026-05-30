@@ -337,6 +337,56 @@ export type Database = {
         };
         Relationships: [];
       };
+      investment_settings: {
+        Row: {
+          user_id: string;
+          degiro_total: number;
+          investing_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          degiro_total?: number;
+          investing_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          degiro_total?: number;
+          investing_enabled?: boolean;
+        };
+        Relationships: [];
+      };
+      crypto_positions: {
+        Row: {
+          id: string;
+          user_id: string;
+          coin_name: string;
+          coin_id: string;
+          ticker: string;
+          amount: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          coin_name: string;
+          coin_id: string;
+          ticker: string;
+          amount?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          coin_name?: string;
+          coin_id?: string;
+          ticker?: string;
+          amount?: number;
+        };
+        Relationships: [];
+      };
       fuel_details: {
         Row: {
           transaction_id: string;

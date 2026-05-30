@@ -82,6 +82,21 @@ export type ContributionPlan = {
   isActive: boolean;
 };
 
+export type InvestmentSettings = {
+  userId: string;
+  degiroTotal: number;
+  investingEnabled: boolean;
+};
+
+export type CryptoPosition = {
+  id: string;
+  userId: string;
+  coinName: string;
+  coinId: string;
+  ticker: string;
+  amount: number;
+};
+
 export type DashboardData = {
   householdId: string;
   currentUserId: string;
@@ -95,6 +110,8 @@ export type DashboardData = {
   accounts: Account[];
   categories: Category[];
   contributionPlans: ContributionPlan[];
+  investmentSettings: InvestmentSettings;
+  cryptoPositions: CryptoPosition[];
   balanceSnapshots: AccountBalanceSnapshot[];
   recurringExpenses: RecurringExpense[];
   fixedInstances: FixedExpenseInstance[];
