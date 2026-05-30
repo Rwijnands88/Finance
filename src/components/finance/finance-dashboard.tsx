@@ -8474,9 +8474,6 @@ function FixedExpenseManager({
         <CardHeader className="grid gap-2 lg:grid-cols-[1fr_auto] lg:items-start">
           <div>
             <CardTitle>Vaste lasten</CardTitle>
-            <CardDescription>
-              Terugkerende vaste lasten op {accountName}.
-            </CardDescription>
           </div>
           <div className="flex items-center gap-2">
             {editingId && (
@@ -9980,12 +9977,12 @@ function ContributionBookingDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center overflow-y-auto bg-black/75 px-3 pb-[calc(92px+env(safe-area-inset-bottom))] pt-6 backdrop-blur-xl lg:items-center lg:p-6">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center overflow-y-auto bg-black/75 px-3 pb-[calc(92px+env(safe-area-inset-bottom))] pt-6 backdrop-blur-xl md:items-center md:p-6">
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Storting toevoegen"
-        className="max-h-[min(78dvh,640px)] w-full overflow-y-auto rounded-[24px] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-2xl sm:max-w-md sm:p-5"
+        className="max-h-[min(78dvh,640px)] w-full overflow-y-auto rounded-t-[24px] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-2xl sm:max-w-md sm:p-5 md:max-h-[calc(100dvh-3rem)] md:rounded-[24px]"
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
