@@ -6172,23 +6172,25 @@ function InvestmentSection({
       <CardContent className="space-y-0">
         <section className="pb-3">
           <div
-            className="flex cursor-pointer items-center justify-between gap-3"
+            className="grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-center gap-3"
             onClick={() => setIsDegiroOpen((value) => !value)}
           >
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
-                DEGIRO
+              <p className="text-xs font-semibold tracking-wider text-[#A1A1AA]">
+                DeGiro
               </p>
               {isLoadingDegiroPrices && (
                 <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
               )}
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {!isDegiroOpen && degiroPositions.length > 0 && (
-                <span className="text-sm font-semibold text-[#FAFAFA]">
-                  {currency(degiroTotal)}
-                </span>
-              )}
+            {!isDegiroOpen && degiroPositions.length > 0 ? (
+              <span className="justify-self-end text-right text-sm font-semibold tabular-nums text-[#FAFAFA]">
+                {currency(degiroTotal)}
+              </span>
+            ) : (
+              <span aria-hidden="true" />
+            )}
+            <div className="flex w-[4.5rem] shrink-0 items-center justify-end gap-2">
               <ChevronDown
                 className={cn(
                   "h-4 w-4 text-[#A1A1AA] transition-transform duration-200",
@@ -6289,13 +6291,14 @@ function InvestmentSection({
             </div>
 
             {degiroPositions.length > 0 && (
-              <div className="mt-3 border-t border-[#27272A] pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
-                  TOTAAL DEGIRO
+              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-end gap-3 border-t border-[#27272A] pt-3">
+                <p className="text-xs font-semibold tracking-wider text-[#A1A1AA]">
+                  Totaal DeGiro
                 </p>
-                <p className="mt-1 text-xl font-semibold text-[#FAFAFA]">
+                <p className="justify-self-end text-right text-lg font-semibold tabular-nums text-[#FAFAFA]">
                   {currency(degiroTotal)}
                 </p>
+                <span aria-hidden="true" />
               </div>
             )}
           </div>
@@ -6309,23 +6312,25 @@ function InvestmentSection({
 
         <section className="border-t border-[#27272A] py-3">
           <div
-            className="flex cursor-pointer items-center justify-between gap-3"
+            className="grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-center gap-3"
             onClick={() => setIsCryptoOpen((value) => !value)}
           >
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
-                CRYPTO
+              <p className="text-xs font-semibold tracking-wider text-[#A1A1AA]">
+                Crypto
               </p>
               {isLoadingPrices && (
                 <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
               )}
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {!isCryptoOpen && cryptoPositions.length > 0 && (
-                <span className="text-sm font-semibold text-[#FAFAFA]">
-                  {currency(cryptoTotal)}
-                </span>
-              )}
+            {!isCryptoOpen && cryptoPositions.length > 0 ? (
+              <span className="justify-self-end text-right text-sm font-semibold tabular-nums text-[#FAFAFA]">
+                {currency(cryptoTotal)}
+              </span>
+            ) : (
+              <span aria-hidden="true" />
+            )}
+            <div className="flex w-[4.5rem] shrink-0 items-center justify-end gap-2">
               <ChevronDown
                 className={cn(
                   "h-4 w-4 text-[#A1A1AA] transition-transform duration-200",
@@ -6426,13 +6431,14 @@ function InvestmentSection({
             </div>
 
             {cryptoPositions.length > 0 && (
-              <div className="mt-3 border-t border-[#27272A] pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
-                  TOTAAL CRYPTO
+              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-end gap-3 border-t border-[#27272A] pt-3">
+                <p className="text-xs font-semibold tracking-wider text-[#A1A1AA]">
+                  Totaal Crypto
                 </p>
-                <p className="mt-1 text-xl font-semibold text-[#FAFAFA]">
+                <p className="justify-self-end text-right text-lg font-semibold tabular-nums text-[#FAFAFA]">
                   {currency(cryptoTotal)}
                 </p>
+                <span aria-hidden="true" />
               </div>
             )}
           </div>
@@ -6450,11 +6456,14 @@ function InvestmentSection({
           </p>
         )}
 
-        <section className="flex items-center justify-between gap-4 border-t border-[#27272A] pt-3">
-          <p className="text-sm text-[#A1A1AA]">Investeren totaal</p>
-          <p className="text-xl font-semibold text-[#FAFAFA]">
+        <section className="grid grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-end gap-3 border-t border-[#27272A] pt-3">
+          <p className="text-xs font-semibold tracking-wider text-[#A1A1AA]">
+            Investeren totaal
+          </p>
+          <p className="justify-self-end text-right text-xl font-semibold tabular-nums text-[#FAFAFA]">
             {currency(investmentTotal)}
           </p>
+          <span aria-hidden="true" />
         </section>
       </CardContent>
       {isDegiroModalOpen && (
@@ -6462,8 +6471,8 @@ function InvestmentSection({
           <div className="w-full max-w-lg rounded-[18px] border border-[#27272A] bg-[#18181B] p-4 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
-                  DEGIRO
+                <p className="text-xs font-semibold tracking-wider text-[#A1A1AA]">
+                  DeGiro
                 </p>
                 <h3 className="mt-1 text-lg font-semibold text-[#FAFAFA]">
                   Positie toevoegen
