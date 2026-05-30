@@ -6182,7 +6182,7 @@ function InvestmentSection({
                   isDegiroOpen && "rotate-180",
                 )}
               />
-              <p className="text-base font-semibold text-[#FAFAFA]">
+              <p className="text-lg font-semibold text-[#FAFAFA]">
                 DeGiro
               </p>
             </div>
@@ -6317,7 +6317,7 @@ function InvestmentSection({
                   isCryptoOpen && "rotate-180",
                 )}
               />
-              <p className="text-base font-semibold text-[#FAFAFA]">
+              <p className="text-lg font-semibold text-[#FAFAFA]">
                 Crypto
               </p>
             </div>
