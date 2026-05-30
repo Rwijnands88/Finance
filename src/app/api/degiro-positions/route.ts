@@ -11,6 +11,10 @@ type DeleteDegiroPositionBody = {
   positionId?: string;
 };
 
+type UpdateDegiroPositionBody = CreateDegiroPositionBody & {
+  positionId?: string;
+};
+
 export async function POST(request: Request) {
   const body = (await request.json()) as CreateDegiroPositionBody;
   const name = normalizeText(body.name);
@@ -83,6 +87,56 @@ export async function DELETE(request: Request) {
   }
 
   return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(request: Request) {
+  const body = (await request.json()) as UpdateDegiroPositionBody;
+  const name = normalizeText(body.name);
+  const ticker = normalizeTicker(body.ticker);
+  const amount = Number(body.amount);
+
+  if (!body.positionId) {
+    return NextResponse.json({ error: "Positie ontbreekt." }, { status: 400 });
+  }
+
+  if (!name || !ticker || !Number.isFinite(amount) || amount < 0) {
+    return NextResponse.json(
+      { error: "Vul naam, ticker en aantal in." },
+      { status: 400 },
+    );
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
+  }
+
+  const { data, error } = await supabase
+    .from("degiro_positions")
+    .update({
+      naam: name,
+      ticker,
+      aantal: amount,
+    })
+    .eq("id", body.positionId)
+    .eq("user_id", user.id)
+    .select("id, user_id, naam, ticker, aantal")
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  if (!data) {
+    return NextResponse.json({ error: "Positie niet gevonden." }, { status: 404 });
+  }
+
+  return NextResponse.json({ position: mapDegiroPosition(data) });
 }
 
 function mapDegiroPosition(row: {

@@ -400,6 +400,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [degiroName, setDegiroName] = useState("");
   const [degiroTicker, setDegiroTicker] = useState("");
   const [degiroAmount, setDegiroAmount] = useState("");
+  const [editingDegiroPosition, setEditingDegiroPosition] =
+    useState<DegiroPosition | null>(null);
   const [cryptoCoinName, setCryptoCoinName] = useState("");
   const [cryptoCoinId, setCryptoCoinId] = useState("");
   const [cryptoTicker, setCryptoTicker] = useState("");
@@ -2084,7 +2086,22 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     return true;
   }
 
-  async function addDegiroPosition() {
+  function resetDegiroPositionForm() {
+    setEditingDegiroPosition(null);
+    setDegiroName("");
+    setDegiroTicker("");
+    setDegiroAmount("");
+  }
+
+  function editDegiroPosition(position: DegiroPosition) {
+    setEditingDegiroPosition(position);
+    setDegiroName(position.name);
+    setDegiroTicker(position.ticker);
+    setDegiroAmount(formatPositionAmountInput(position.amount));
+    setInvestmentMessage("");
+  }
+
+  async function saveDegiroPosition() {
     const amount = parseCurrencyInput(degiroAmount);
 
     if (
@@ -2101,11 +2118,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setInvestmentMessage("");
 
     const response = await fetch("/api/degiro-positions", {
-      method: "POST",
+      method: editingDegiroPosition ? "PATCH" : "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        positionId: editingDegiroPosition?.id,
         name: degiroName,
         ticker: degiroTicker,
         amount,
@@ -2130,10 +2148,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         first.name.localeCompare(second.name, "nl"),
       ),
     );
-    setDegiroName("");
-    setDegiroTicker("");
-    setDegiroAmount("");
+    resetDegiroPositionForm();
     setInvestmentMessage("DeGiro-positie bijgewerkt.");
+    return true;
   }
 
   async function deleteDegiroPosition(position: DegiroPosition) {
@@ -4045,6 +4062,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               degiroName={degiroName}
               degiroTicker={degiroTicker}
               degiroAmount={degiroAmount}
+              editingDegiroPosition={editingDegiroPosition}
               showPdtLink={showPdtNavLink}
               cryptoPositions={cryptoPositions}
               cryptoCoinName={cryptoCoinName}
@@ -4059,7 +4077,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onDegiroNameChange={setDegiroName}
               onDegiroTickerChange={setDegiroTicker}
               onDegiroAmountChange={setDegiroAmount}
-              onAddDegiroPosition={addDegiroPosition}
+              onCreateDegiroPosition={resetDegiroPositionForm}
+              onEditDegiroPosition={editDegiroPosition}
+              onSaveDegiroPosition={saveDegiroPosition}
               onDeleteDegiroPosition={deleteDegiroPosition}
               onCryptoCoinNameChange={setCryptoCoinName}
               onCryptoCoinIdChange={setCryptoCoinId}
@@ -4377,6 +4397,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                     degiroName={degiroName}
                     degiroTicker={degiroTicker}
                     degiroAmount={degiroAmount}
+                    editingDegiroPosition={editingDegiroPosition}
                     showPdtLink={showPdtNavLink}
                     cryptoPositions={cryptoPositions}
                     cryptoCoinName={cryptoCoinName}
@@ -4391,7 +4412,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                     onDegiroNameChange={setDegiroName}
                     onDegiroTickerChange={setDegiroTicker}
                     onDegiroAmountChange={setDegiroAmount}
-                    onAddDegiroPosition={addDegiroPosition}
+                    onCreateDegiroPosition={resetDegiroPositionForm}
+                    onEditDegiroPosition={editDegiroPosition}
+                    onSaveDegiroPosition={saveDegiroPosition}
                     onDeleteDegiroPosition={deleteDegiroPosition}
                     onCryptoCoinNameChange={setCryptoCoinName}
                     onCryptoCoinIdChange={setCryptoCoinId}
@@ -6034,6 +6057,7 @@ function InvestmentSection({
   degiroName,
   degiroTicker,
   degiroAmount,
+  editingDegiroPosition,
   showPdtLink,
   cryptoPositions,
   cryptoCoinName,
@@ -6048,7 +6072,9 @@ function InvestmentSection({
   onDegiroNameChange,
   onDegiroTickerChange,
   onDegiroAmountChange,
-  onAddDegiroPosition,
+  onCreateDegiroPosition,
+  onEditDegiroPosition,
+  onSaveDegiroPosition,
   onDeleteDegiroPosition,
   onCryptoCoinNameChange,
   onCryptoCoinIdChange,
@@ -6061,6 +6087,7 @@ function InvestmentSection({
   degiroName: string;
   degiroTicker: string;
   degiroAmount: string;
+  editingDegiroPosition: DegiroPosition | null;
   showPdtLink: boolean;
   cryptoPositions: CryptoPosition[];
   cryptoCoinName: string;
@@ -6075,7 +6102,9 @@ function InvestmentSection({
   onDegiroNameChange: (value: string) => void;
   onDegiroTickerChange: (value: string) => void;
   onDegiroAmountChange: (value: string) => void;
-  onAddDegiroPosition: () => void;
+  onCreateDegiroPosition: () => void;
+  onEditDegiroPosition: (position: DegiroPosition) => void;
+  onSaveDegiroPosition: () => Promise<boolean | void>;
   onDeleteDegiroPosition: (position: DegiroPosition) => void;
   onCryptoCoinNameChange: (value: string) => void;
   onCryptoCoinIdChange: (value: string) => void;
@@ -6088,6 +6117,18 @@ function InvestmentSection({
   const [isCryptoOpen, setIsCryptoOpen] = useState(false);
   const [isDegiroModalOpen, setIsDegiroModalOpen] = useState(false);
   const [isCryptoModalOpen, setIsCryptoModalOpen] = useState(false);
+  const openDegiroCreateModal = () => {
+    onCreateDegiroPosition();
+    setIsDegiroModalOpen(true);
+  };
+  const openDegiroEditModal = (position: DegiroPosition) => {
+    onEditDegiroPosition(position);
+    setIsDegiroModalOpen(true);
+  };
+  const closeDegiroModal = () => {
+    setIsDegiroModalOpen(false);
+    onCreateDegiroPosition();
+  };
   const degiroTickers = useMemo(
     () =>
       Array.from(
@@ -6223,6 +6264,15 @@ function InvestmentSection({
                     <div
                       key={position.id}
                       className="grid gap-2 border-b border-[#27272A] py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] md:items-center md:gap-3"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openDegiroEditModal(position)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openDegiroEditModal(position);
+                        }
+                      }}
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-[#FAFAFA]">
@@ -6261,7 +6311,11 @@ function InvestmentSection({
                         variant="ghost"
                         className="h-9 w-9 justify-self-end text-[#A1A1AA] hover:bg-white/[0.04] hover:text-red-300"
                         disabled={deletingDegiroPositionId === position.id}
-                        onClick={() => onDeleteDegiroPosition(position)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDeleteDegiroPosition(position);
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
                       >
                         {deletingDegiroPositionId === position.id ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -6281,7 +6335,7 @@ function InvestmentSection({
               variant="ghost"
               aria-label="DeGiro-positie toevoegen"
               className="mt-3 h-9 w-9 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-              onClick={() => setIsDegiroModalOpen(true)}
+              onClick={openDegiroCreateModal}
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -6464,7 +6518,7 @@ function InvestmentSection({
                   DeGiro
                 </p>
                 <h3 className="mt-1 text-lg font-semibold text-[#FAFAFA]">
-                  Positie toevoegen
+                  {editingDegiroPosition ? "Positie bewerken" : "Positie toevoegen"}
                 </h3>
               </div>
               <Button
@@ -6472,7 +6526,7 @@ function InvestmentSection({
                 size="icon"
                 variant="ghost"
                 className="h-9 w-9 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-                onClick={() => setIsDegiroModalOpen(false)}
+                onClick={closeDegiroModal}
               >
                 <X className="h-4 w-4" />
               </Button>
@@ -6509,7 +6563,7 @@ function InvestmentSection({
                 type="button"
                 variant="ghost"
                 className="h-10 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-                onClick={() => setIsDegiroModalOpen(false)}
+                onClick={closeDegiroModal}
               >
                 Sluiten
               </Button>
@@ -6519,14 +6573,23 @@ function InvestmentSection({
                 variant="secondary"
                 className="h-10 justify-center"
                 disabled={isSavingDegiroPosition}
-                onClick={onAddDegiroPosition}
+                onClick={async () => {
+                  const wasEditing = Boolean(editingDegiroPosition);
+                  const saved = await onSaveDegiroPosition();
+
+                  if (saved && wasEditing) {
+                    setIsDegiroModalOpen(false);
+                  }
+                }}
               >
                 {isSavingDegiroPosition ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : editingDegiroPosition ? (
+                  <Save className="h-4 w-4" />
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}
-                Toevoegen
+                {editingDegiroPosition ? "Opslaan" : "Toevoegen"}
               </Button>
             </div>
           </div>
@@ -11061,6 +11124,10 @@ const tooltipStyle = {
 
 function parseCurrencyInput(value: string) {
   return Number(value.trim().replace(/\s/g, "").replace(",", "."));
+}
+
+function formatPositionAmountInput(value: number) {
+  return String(value).replace(".", ",");
 }
 
 function formatCryptoAmount(value: number) {
