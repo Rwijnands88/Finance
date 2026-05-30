@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import {
   ArrowDownToLine,
@@ -289,6 +290,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     (account) =>
       account.kind === "personal" && account.ownerUserId === initialData.currentUserId,
   );
+  const [isMounted, setIsMounted] = useState(false);
   const [transactions, setTransactions] =
     useState<Transaction[]>(initialData.transactions);
   const [fixedInstances, setFixedInstances] = useState<FixedExpenseInstance[]>(
@@ -490,6 +492,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [isDesktopViewport, setIsDesktopViewport] = useState<boolean | null>(
     null,
   );
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setChartsReady(true), 150);
@@ -4008,6 +4014,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             subtitle={selectedAccount?.name ?? viewCopy.label}
           />
           <SavingsCard
+            isMounted={isMounted}
             accountName={
               isSharedView
                 ? "Gezamenlijke spaarrekening"
@@ -4133,6 +4140,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onAddIncome={addIncome}
           />
           <ContributionCard
+            isMounted={isMounted}
             accountName={selectedAccount?.name ?? viewCopy.label}
             showPlanning={isSharedView}
             amount={contributionAmount}
@@ -4338,6 +4346,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
               <section id="finance-vermogen" className="scroll-mt-4 grid gap-4">
                 <SavingsCard
+                  isMounted={isMounted}
                   accountName={
                     isSharedView
                       ? "Gezamenlijke spaarrekening"
@@ -4467,6 +4476,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             </section>
 
             <ContributionCard
+              isMounted={isMounted}
               accountName={selectedAccount?.name ?? viewCopy.label}
               showPlanning={isSharedView}
               amount={contributionAmount}
@@ -5751,6 +5761,7 @@ function MonthSummaryCard({
 }
 
 function SavingsCard({
+  isMounted,
   accountName,
   snapshot,
   currentBalance,
@@ -5770,6 +5781,7 @@ function SavingsCard({
   onSaveStartBalance,
   onAddDeposit,
 }: {
+  isMounted: boolean;
   accountName: string;
   snapshot?: AccountBalanceSnapshot;
   currentBalance: number | null;
@@ -5878,6 +5890,7 @@ function SavingsCard({
           </p>
         )}
         <SavingsDepositDialog
+          isMounted={isMounted}
           open={isDepositOpen}
           accountName={accountName}
           amount={depositAmount}
@@ -5895,6 +5908,7 @@ function SavingsCard({
 }
 
 function SavingsDepositDialog({
+  isMounted,
   open,
   accountName,
   amount,
@@ -5906,6 +5920,7 @@ function SavingsDepositDialog({
   onClose,
   onSubmit,
 }: {
+  isMounted: boolean;
   open: boolean;
   accountName: string;
   amount: string;
@@ -5917,7 +5932,7 @@ function SavingsDepositDialog({
   onClose: () => void;
   onSubmit: () => boolean | Promise<boolean>;
 }) {
-  if (!open) {
+  if (!open || !isMounted) {
     return null;
   }
 
@@ -5929,7 +5944,7 @@ function SavingsDepositDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[70] grid place-items-end bg-black/75 p-0 backdrop-blur-xl sm:place-items-center sm:p-6">
       <div
         role="dialog"
@@ -6008,7 +6023,8 @@ function SavingsDepositDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -9514,6 +9530,7 @@ function ExportDialog({
 }
 
 function ContributionCard({
+  isMounted,
   accountName,
   showPlanning = true,
   amount,
@@ -9548,6 +9565,7 @@ function ContributionCard({
   onPlanCreate,
   onSubmit,
 }: {
+  isMounted: boolean;
   accountName: string;
   showPlanning?: boolean;
   amount: string;
@@ -9895,6 +9913,7 @@ function ContributionCard({
           </p>
         )}
         <ContributionBookingDialog
+          isMounted={isMounted}
           open={isBookingOpen}
           amount={amount}
           date={date}
@@ -9920,6 +9939,7 @@ function ContributionCard({
 }
 
 function ContributionBookingDialog({
+  isMounted,
   open,
   amount,
   date,
@@ -9939,6 +9959,7 @@ function ContributionBookingDialog({
   onClose,
   onSubmit,
 }: {
+  isMounted: boolean;
   open: boolean;
   amount: string;
   date: string;
@@ -9964,7 +9985,7 @@ function ContributionBookingDialog({
     }
   }, [kind, onKindChange, open]);
 
-  if (!open) {
+  if (!open || !isMounted) {
     return null;
   }
 
@@ -9976,7 +9997,7 @@ function ContributionBookingDialog({
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/75 px-3 pb-[calc(92px+env(safe-area-inset-bottom))] pt-6 backdrop-blur-xl md:items-center md:p-6 md:pb-6">
       <div
         role="dialog"
@@ -10089,7 +10110,8 @@ function ContributionBookingDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
