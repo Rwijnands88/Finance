@@ -6172,42 +6172,32 @@ function InvestmentSection({
       <CardContent className="space-y-0">
         <section className="pb-3">
           <div
-            className="flex cursor-pointer items-center gap-2"
+            className="grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-center gap-3"
             onClick={() => setIsDegiroOpen((value) => !value)}
           >
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 shrink-0 text-[#A1A1AA] transition-transform duration-200",
-                isDegiroOpen && "rotate-180",
-              )}
-            />
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 text-[#A1A1AA] transition-transform duration-200",
+                  isDegiroOpen && "rotate-180",
+                )}
+              />
               <p className="text-base font-semibold text-[#FAFAFA]">
                 DeGiro
               </p>
-              {isLoadingDegiroPrices && (
-                <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
-              )}
             </div>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label="DeGiro-positie toevoegen"
-              className="h-9 w-9 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-              onClick={(event) => {
-                event.stopPropagation();
-                setIsDegiroModalOpen(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            {!isDegiroOpen && degiroPositions.length > 0 && (
-              <span className="ml-auto shrink-0 text-right text-sm font-semibold tabular-nums text-[#FAFAFA]">
+            {!isDegiroOpen && degiroPositions.length > 0 ? (
+              <span className="justify-self-end text-right text-xl font-semibold tabular-nums text-[#FAFAFA]">
                 {currency(degiroTotal)}
               </span>
+            ) : (
+              <span aria-hidden="true" />
             )}
+            <span aria-hidden="true" />
           </div>
+          {isLoadingDegiroPrices && (
+            <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
+          )}
 
           <div
             className={cn(
@@ -6297,6 +6287,15 @@ function InvestmentSection({
                 <span aria-hidden="true" />
               </div>
             )}
+            <Button
+              type="button"
+              variant="ghost"
+              className="mt-3 h-9 px-2 text-sm font-medium text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+              onClick={() => setIsDegiroModalOpen(true)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Positie toevoegen
+            </Button>
           </div>
 
           {degiroPriceMessage && (
@@ -6308,42 +6307,32 @@ function InvestmentSection({
 
         <section className="border-t border-[#27272A] py-3">
           <div
-            className="flex cursor-pointer items-center gap-2"
+            className="grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-center gap-3"
             onClick={() => setIsCryptoOpen((value) => !value)}
           >
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 shrink-0 text-[#A1A1AA] transition-transform duration-200",
-                isCryptoOpen && "rotate-180",
-              )}
-            />
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 text-[#A1A1AA] transition-transform duration-200",
+                  isCryptoOpen && "rotate-180",
+                )}
+              />
               <p className="text-base font-semibold text-[#FAFAFA]">
                 Crypto
               </p>
-              {isLoadingPrices && (
-                <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
-              )}
             </div>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label="Crypto-positie toevoegen"
-              className="h-9 w-9 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-              onClick={(event) => {
-                event.stopPropagation();
-                setIsCryptoModalOpen(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            {!isCryptoOpen && cryptoPositions.length > 0 && (
-              <span className="ml-auto shrink-0 text-right text-sm font-semibold tabular-nums text-[#FAFAFA]">
+            {!isCryptoOpen && cryptoPositions.length > 0 ? (
+              <span className="justify-self-end text-right text-xl font-semibold tabular-nums text-[#FAFAFA]">
                 {currency(cryptoTotal)}
               </span>
+            ) : (
+              <span aria-hidden="true" />
             )}
+            <span aria-hidden="true" />
           </div>
+          {isLoadingPrices && (
+            <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
+          )}
 
           <div
             className={cn(
@@ -6433,6 +6422,15 @@ function InvestmentSection({
                 <span aria-hidden="true" />
               </div>
             )}
+            <Button
+              type="button"
+              variant="ghost"
+              className="mt-3 h-9 px-2 text-sm font-medium text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+              onClick={() => setIsCryptoModalOpen(true)}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Positie toevoegen
+            </Button>
           </div>
 
           {priceMessage && (
