@@ -8487,13 +8487,18 @@ function FixedExpenseManager({
   return (
     <Card className="h-full">
       {!hideHeader && (
-        <CardHeader className="grid gap-2 lg:grid-cols-[1fr_auto] lg:items-start">
-          <div>
+        <CardHeader className="flex flex-row items-center justify-between gap-3 pb-4 pr-4 sm:pr-5">
+          <div className="min-w-0">
             <CardTitle>Vaste lasten</CardTitle>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-2">
             {editingId && (
-              <Button size="sm" variant="secondary" onClick={onCancel}>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-9 whitespace-nowrap"
+                onClick={onCancel}
+              >
                 <X className="h-4 w-4" />
                 Annuleer
               </Button>
@@ -8501,6 +8506,7 @@ function FixedExpenseManager({
             <Button
               size="sm"
               variant="secondary"
+              className="h-9 whitespace-nowrap px-3"
               onClick={() => setIsManagerOpen((open) => !open)}
             >
               <Plus
@@ -8515,7 +8521,7 @@ function FixedExpenseManager({
         </CardHeader>
       )}
       {showManager && (
-      <CardContent className={cn("space-y-5", hideHeader && "pt-4")}>
+        <CardContent className={cn("space-y-5", hideHeader && "pt-4")}>
         {message && (
           <div
             className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300"
