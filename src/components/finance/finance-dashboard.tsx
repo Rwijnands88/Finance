@@ -9977,7 +9977,7 @@ function ContributionBookingDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center overflow-y-auto bg-black/75 px-3 pb-[calc(92px+env(safe-area-inset-bottom))] pt-6 backdrop-blur-xl md:items-center md:p-6">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/75 px-3 pb-[calc(92px+env(safe-area-inset-bottom))] pt-6 backdrop-blur-xl md:items-center md:p-6 md:pb-6">
       <div
         role="dialog"
         aria-modal="true"
