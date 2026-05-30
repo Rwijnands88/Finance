@@ -256,11 +256,14 @@ function scrollToFinanceSection(section: ActiveSection) {
   if (mainPanelVisible && mainPanel.contains(target)) {
     const panelRect = mainPanel.getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
+    const scrollOffset = section === "vermogen" ? 12 : 0;
 
     mainPanel.scrollTo({
       top: Math.max(
         0,
-        Math.round(mainPanel.scrollTop + targetRect.top - panelRect.top),
+        Math.round(
+          mainPanel.scrollTop + targetRect.top - panelRect.top + scrollOffset,
+        ),
       ),
       behavior: "auto",
     });
@@ -268,7 +271,9 @@ function scrollToFinanceSection(section: ActiveSection) {
     return;
   }
 
-  const top = window.scrollY + target.getBoundingClientRect().top - 16;
+  const scrollOffset = section === "vermogen" ? 12 : 0;
+  const top =
+    window.scrollY + target.getBoundingClientRect().top - 16 + scrollOffset;
 
   window.scrollTo({
     top: Math.max(0, Math.round(top)),
@@ -4032,6 +4037,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               degiroName={degiroName}
               degiroTicker={degiroTicker}
               degiroAmount={degiroAmount}
+              showPdtLink={showPdtNavLink}
               cryptoPositions={cryptoPositions}
               cryptoCoinName={cryptoCoinName}
               cryptoCoinId={cryptoCoinId}
@@ -4222,7 +4228,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               selectedAccountId={selectedAccountId}
               currentPerson={initialData.currentPerson}
               activeSection={activeSection}
-              showPdtLink={showPdtNavLink}
               onSelect={(accountId) => {
                 setSelectedAccountId(accountId);
                 setQuickAccount(accountId);
@@ -4362,6 +4367,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                     degiroName={degiroName}
                     degiroTicker={degiroTicker}
                     degiroAmount={degiroAmount}
+                    showPdtLink={showPdtNavLink}
                     cryptoPositions={cryptoPositions}
                     cryptoCoinName={cryptoCoinName}
                     cryptoCoinId={cryptoCoinId}
@@ -4619,7 +4625,7 @@ function MobileBottomNav({
   );
 
   return (
-    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 items-start border-t border-[var(--border)] lg:hidden">
+    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 items-start overflow-visible border-t border-[var(--border)] lg:hidden">
       {items.map((item) => {
         const isActive = activeSection === item.id;
         const isPrimaryAction = item.id === "input";
@@ -4642,7 +4648,7 @@ function MobileBottomNav({
               className={cn(
                 "flex shrink-0 items-center justify-center",
                 isPrimaryAction &&
-                  "rounded-full bg-[#6366F1] p-2 text-white shadow-[0_0_18px_rgba(99,102,241,0.35)]",
+                  "rounded-full bg-[#6366F1] p-1.5 text-white shadow-[0_0_18px_rgba(99,102,241,0.35)]",
               )}
             >
               <Icon
@@ -5238,7 +5244,6 @@ function AccountRail({
   selectedAccountId,
   currentPerson,
   activeSection,
-  showPdtLink,
   onSelect,
   onSectionChange,
 }: {
@@ -5246,11 +5251,10 @@ function AccountRail({
   selectedAccountId: string;
   currentPerson: string;
   activeSection: ActiveSection;
-  showPdtLink: boolean;
   onSelect: (accountId: string) => void;
   onSectionChange: (section: ActiveSection) => void;
 }) {
-  const items = sectionNavItems();
+  const items = sectionNavItems().filter((item) => item.id !== "input");
 
   return (
     <Card className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-surface)]">
@@ -5320,17 +5324,6 @@ function AccountRail({
               </button>
             );
           })}
-          {showPdtLink && (
-            <a
-              href="https://app.portfoliodividendtracker.com/login"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/[0.04]"
-            >
-              <TrendingUp className="h-4 w-4" />
-              PDT
-            </a>
-          )}
           <a
             href="/instellingen"
             className="flex items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-white/[0.04]"
@@ -6024,6 +6017,7 @@ function InvestmentSection({
   degiroName,
   degiroTicker,
   degiroAmount,
+  showPdtLink,
   cryptoPositions,
   cryptoCoinName,
   cryptoCoinId,
@@ -6050,6 +6044,7 @@ function InvestmentSection({
   degiroName: string;
   degiroTicker: string;
   degiroAmount: string;
+  showPdtLink: boolean;
   cryptoPositions: CryptoPosition[];
   cryptoCoinName: string;
   cryptoCoinId: string;
@@ -6141,15 +6136,18 @@ function InvestmentSection({
           <div>
             <CardTitle>Investeren</CardTitle>
           </div>
-          <a
-            href="https://app.portfoliodividendtracker.com/login"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Open PDT"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#27272A] text-[#A1A1AA] transition hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-          >
-            <Globe className="h-5 w-5" />
-          </a>
+          {showPdtLink && (
+            <a
+              href="https://app.portfoliodividendtracker.com/login"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open PDT"
+              className="flex shrink-0 items-center gap-1 rounded-md border border-[#27272A] px-2 py-1 text-xs font-medium text-[#A1A1AA] transition hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+            >
+              <Globe className="h-3.5 w-3.5" />
+              PDT
+            </a>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-0">
@@ -9963,6 +9961,12 @@ function ContributionBookingDialog({
   onClose: () => void;
   onSubmit: () => boolean | Promise<boolean>;
 }) {
+  useEffect(() => {
+    if (open && kind !== "extra") {
+      onKindChange("extra");
+    }
+  }, [kind, onKindChange, open]);
+
   if (!open) {
     return null;
   }
@@ -9976,12 +9980,12 @@ function ContributionBookingDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] grid place-items-end bg-black/75 p-0 backdrop-blur-xl sm:place-items-center sm:p-6">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center overflow-y-auto bg-black/75 px-3 pb-[calc(92px+env(safe-area-inset-bottom))] pt-6 backdrop-blur-xl lg:items-center lg:p-6">
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Storting toevoegen"
-        className="max-h-[92vh] w-full overflow-y-auto rounded-t-[24px] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-2xl sm:max-w-md sm:rounded-[24px] sm:p-5"
+        className="max-h-[min(78dvh,640px)] w-full overflow-y-auto rounded-[24px] border border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-2xl sm:max-w-md sm:p-5"
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
@@ -10047,27 +10051,6 @@ function ContributionBookingDialog({
               onChange={(event) => onDateChange(event.target.value)}
             />
           </FieldLabel>
-
-          <div className="grid gap-2">
-            <p className="text-xs font-medium text-zinc-500">Type</p>
-            <div className="grid grid-cols-2 gap-1 rounded-[16px] bg-[var(--bg-surface)] p-1">
-              {(["extra", "belastingteruggave"] as const).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => onKindChange(item)}
-                  className={cn(
-                    "rounded-[var(--radius-chip)] px-2 py-2 text-[11px] font-medium sm:text-xs",
-                    kind === item
-                      ? "bg-[var(--accent-light)] text-[var(--accent)]"
-                      : "text-[var(--text-secondary)] hover:bg-white/[0.04]",
-                  )}
-                >
-                  {contributionKindLabel(item)}
-                </button>
-              ))}
-            </div>
-          </div>
 
           <FieldLabel label="Notitie">
             <Input
