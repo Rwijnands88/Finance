@@ -358,6 +358,32 @@ export type Database = {
         };
         Relationships: [];
       };
+      degiro_positions: {
+        Row: {
+          id: string;
+          user_id: string;
+          naam: string;
+          ticker: string;
+          aantal: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          naam: string;
+          ticker: string;
+          aantal?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          naam?: string;
+          ticker?: string;
+          aantal?: number;
+        };
+        Relationships: [];
+      };
       crypto_positions: {
         Row: {
           id: string;

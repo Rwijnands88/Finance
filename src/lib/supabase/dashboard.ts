@@ -4,6 +4,7 @@ import type {
   ContributionPlan,
   CryptoPosition,
   DashboardData,
+  DegiroPosition,
   InvestmentSettings,
   Transaction,
 } from "@/lib/types";
@@ -55,6 +56,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     currentProfileResult,
     contributionPlansResult,
     investmentSettingsResult,
+    degiroPositionsResult,
     cryptoPositionsResult,
     balanceSnapshotsResult,
     recurringResult,
@@ -89,9 +91,14 @@ export async function getDashboardData(): Promise<DashboardData> {
 	      .order("deposit_day", { ascending: true }),
     supabase
       .from("investment_settings")
-      .select("user_id, degiro_total, investing_enabled")
+      .select("user_id, investing_enabled")
       .eq("user_id", user.id)
       .maybeSingle(),
+    supabase
+      .from("degiro_positions")
+      .select("id, user_id, naam, ticker, aantal")
+      .eq("user_id", user.id)
+      .order("naam", { ascending: true }),
     supabase
       .from("crypto_positions")
       .select("id, user_id, coin_name, coin_id, ticker, amount")
@@ -122,6 +129,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   throwIfError(currentProfileResult.error);
   throwIfErrorUnlessMissingContributionPlans(contributionPlansResult.error);
   throwIfErrorUnlessMissingInvestmentSettings(investmentSettingsResult.error);
+  throwIfErrorUnlessMissingDegiroPositions(degiroPositionsResult.error);
   throwIfErrorUnlessMissingCryptoPositions(cryptoPositionsResult.error);
   throwIfErrorUnlessMissingBalanceSnapshots(balanceSnapshotsResult.error);
   throwIfError(recurringResult.error);
@@ -203,6 +211,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       investmentSettingsResult.data,
       user.id,
     ),
+    degiroPositions: mapDegiroPositions(degiroPositionsResult.data ?? []),
     cryptoPositions: mapCryptoPositions(cryptoPositionsResult.data ?? []),
     balanceSnapshots: mapBalanceSnapshots(
       balanceSnapshotsResult.data ?? [],
@@ -243,6 +252,27 @@ export async function getDashboardData(): Promise<DashboardData> {
   };
 }
 
+function mapDegiroPositions(
+  rows: Array<{
+    id: string;
+    user_id: string;
+    naam: string;
+    ticker: string;
+    aantal: number;
+  }>,
+) {
+  return rows.map(
+    (position) =>
+      ({
+        id: position.id,
+        userId: position.user_id,
+        name: position.naam,
+        ticker: position.ticker,
+        amount: Number(position.aantal),
+      }) satisfies DegiroPosition,
+  );
+}
+
 function mapCryptoPositions(
   rows: Array<{
     id: string;
@@ -270,7 +300,6 @@ function mapInvestmentSettings(
   row:
     | {
         user_id: string;
-        degiro_total: number;
         investing_enabled: boolean;
       }
     | null,
@@ -278,7 +307,6 @@ function mapInvestmentSettings(
 ) {
   return {
     userId: row?.user_id ?? currentUserId,
-    degiroTotal: Number(row?.degiro_total ?? 0),
     investingEnabled: Boolean(row?.investing_enabled),
   } satisfies InvestmentSettings;
 }
@@ -406,6 +434,21 @@ function throwIfErrorUnlessMissingInvestmentSettings(
     error.code === "42P01" ||
     error.code === "PGRST205" ||
     error.message.includes("investment_settings")
+  ) {
+    return;
+  }
+
+  throw new Error(error.message);
+}
+
+function throwIfErrorUnlessMissingDegiroPositions(
+  error: { code?: string; message: string } | null,
+) {
+  if (
+    !error ||
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    error.message.includes("degiro_positions")
   ) {
     return;
   }
