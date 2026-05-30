@@ -372,7 +372,7 @@ export type Database = {
         Row: {
           household_id: string;
           month: string;
-          entered_by: string;
+          paid_by: string;
           display_name: string;
           total_amount: number;
         };
@@ -400,7 +400,23 @@ export type Database = {
           account_name: string;
           account_kind: "shared" | "personal";
           month: string;
-          entered_by: string;
+          paid_by: string;
+          display_name: string;
+          total_amount: number;
+        };
+        Relationships: [];
+      };
+      monthly_contribution_kind_totals: {
+        Row: {
+          household_id: string;
+          account_id: string | null;
+          month: string;
+          contribution_kind:
+            | "planned"
+            | "extra"
+            | "belastingteruggave"
+            | "unknown";
+          paid_by: string;
           display_name: string;
           total_amount: number;
         };
