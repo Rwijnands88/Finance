@@ -9,6 +9,7 @@ import {
   Camera,
   CalendarDays,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   FileSpreadsheet,
@@ -6083,6 +6084,8 @@ function InvestmentSection({
   onAddCryptoPosition: () => void;
   onDeleteCryptoPosition: (position: CryptoPosition) => void;
 }) {
+  const [isDegiroOpen, setIsDegiroOpen] = useState(false);
+  const [isCryptoOpen, setIsCryptoOpen] = useState(false);
   const [isDegiroModalOpen, setIsDegiroModalOpen] = useState(false);
   const [isCryptoModalOpen, setIsCryptoModalOpen] = useState(false);
   const degiroTickers = useMemo(
@@ -6168,7 +6171,10 @@ function InvestmentSection({
       </CardHeader>
       <CardContent className="space-y-0">
         <section className="pb-3">
-          <div className="flex items-center justify-between gap-3">
+          <div
+            className="flex cursor-pointer items-center justify-between gap-3"
+            onClick={() => setIsDegiroOpen((value) => !value)}
+          >
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
                 DEGIRO
@@ -6177,99 +6183,122 @@ function InvestmentSection({
                 <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
               )}
             </div>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label="DeGiro-positie toevoegen"
-              className="h-10 w-10 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-              onClick={() => setIsDegiroModalOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              {!isDegiroOpen && degiroPositions.length > 0 && (
+                <span className="text-sm font-semibold text-[#FAFAFA]">
+                  {currency(degiroTotal)}
+                </span>
+              )}
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 text-[#A1A1AA] transition-transform duration-200",
+                  isDegiroOpen && "rotate-180",
+                )}
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label="DeGiro-positie toevoegen"
+                className="h-10 w-10 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsDegiroModalOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
-          <div className="mt-3">
-            {degiroRows.length === 0 ? (
-              <p className="text-sm text-[#A1A1AA]">
-                Nog geen posities
-              </p>
-            ) : (
-              <div className="grid">
-                <div className="hidden grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] gap-3 border-b border-[#27272A] pb-2 text-xs font-medium uppercase tracking-wider text-[#A1A1AA] md:grid">
-                  <span>Naam</span>
-                  <span>Ticker</span>
-                  <span className="text-right">Aantal</span>
-                  <span className="text-right">Koers</span>
-                  <span className="text-right">Waarde</span>
-                  <span />
-                </div>
-                {degiroRows.map(({ position, price, value }) => (
-                  <div
-                    key={position.id}
-                    className="grid gap-2 border-b border-[#27272A] py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] md:items-center md:gap-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#FAFAFA]">
-                        {position.name}
-                      </p>
-                      <p className="text-xs text-[#A1A1AA] md:hidden">
+          <div
+            className={cn(
+              "overflow-hidden transition-all duration-200 ease-in-out",
+              isDegiroOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0",
+            )}
+          >
+            <div className="mt-3">
+              {degiroRows.length === 0 ? (
+                <p className="text-sm text-[#A1A1AA]">
+                  Nog geen posities
+                </p>
+              ) : (
+                <div className="grid">
+                  <div className="hidden grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] gap-3 border-b border-[#27272A] pb-2 text-xs font-medium uppercase tracking-wider text-[#A1A1AA] md:grid">
+                    <span>Naam</span>
+                    <span>Ticker</span>
+                    <span className="text-right">Aantal</span>
+                    <span className="text-right">Koers</span>
+                    <span className="text-right">Waarde</span>
+                    <span />
+                  </div>
+                  {degiroRows.map(({ position, price, value }) => (
+                    <div
+                      key={position.id}
+                      className="grid gap-2 border-b border-[#27272A] py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] md:items-center md:gap-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[#FAFAFA]">
+                          {position.name}
+                        </p>
+                        <p className="text-xs text-[#A1A1AA] md:hidden">
+                          {position.ticker}
+                        </p>
+                      </div>
+                      <p className="hidden text-sm text-[#A1A1AA] md:block">
                         {position.ticker}
                       </p>
+                      <div className="grid grid-cols-3 gap-2 text-xs text-[#A1A1AA] md:contents">
+                        <p className="md:text-right md:text-sm">
+                          <span className="block md:hidden">Aantal</span>
+                          <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
+                            {formatCryptoAmount(position.amount)}
+                          </span>
+                        </p>
+                        <p className="text-right md:text-sm">
+                          <span className="block md:hidden">Koers</span>
+                          <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
+                            {typeof price === "number" ? preciseCurrency(price) : "-"}
+                          </span>
+                        </p>
+                        <p className="text-right md:text-sm">
+                          <span className="block md:hidden">Waarde</span>
+                          <span className="font-semibold text-[#FAFAFA]">
+                            {value === null ? "-" : preciseCurrency(value)}
+                          </span>
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-9 w-9 justify-self-end text-[#A1A1AA] hover:bg-white/[0.04] hover:text-red-300"
+                        disabled={deletingDegiroPositionId === position.id}
+                        onClick={() => onDeleteDegiroPosition(position)}
+                      >
+                        {deletingDegiroPositionId === position.id ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
-                    <p className="hidden text-sm text-[#A1A1AA] md:block">
-                      {position.ticker}
-                    </p>
-                    <div className="grid grid-cols-3 gap-2 text-xs text-[#A1A1AA] md:contents">
-                      <p className="md:text-right md:text-sm">
-                        <span className="block md:hidden">Aantal</span>
-                        <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
-                          {formatCryptoAmount(position.amount)}
-                        </span>
-                      </p>
-                      <p className="text-right md:text-sm">
-                        <span className="block md:hidden">Koers</span>
-                        <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
-                          {typeof price === "number" ? preciseCurrency(price) : "-"}
-                        </span>
-                      </p>
-                      <p className="text-right md:text-sm">
-                        <span className="block md:hidden">Waarde</span>
-                        <span className="font-semibold text-[#FAFAFA]">
-                          {value === null ? "-" : preciseCurrency(value)}
-                        </span>
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-9 w-9 justify-self-end text-[#A1A1AA] hover:bg-white/[0.04] hover:text-red-300"
-                      disabled={deletingDegiroPositionId === position.id}
-                      onClick={() => onDeleteDegiroPosition(position)}
-                    >
-                      {deletingDegiroPositionId === position.id ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {degiroPositions.length > 0 && (
+              <div className="mt-3 border-t border-[#27272A] pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
+                  TOTAAL DEGIRO
+                </p>
+                <p className="mt-1 text-xl font-semibold text-[#FAFAFA]">
+                  {currency(degiroTotal)}
+                </p>
               </div>
             )}
           </div>
-
-          {degiroPositions.length > 0 && (
-            <div className="mt-3 border-t border-[#27272A] pt-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
-                TOTAAL DEGIRO
-              </p>
-              <p className="mt-1 text-xl font-semibold text-[#FAFAFA]">
-                {currency(degiroTotal)}
-              </p>
-            </div>
-          )}
 
           {degiroPriceMessage && (
             <p className="mt-2 text-xs text-[#A1A1AA]">
@@ -6279,8 +6308,11 @@ function InvestmentSection({
         </section>
 
         <section className="border-t border-[#27272A] py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
+          <div
+            className="flex cursor-pointer items-center justify-between gap-3"
+            onClick={() => setIsCryptoOpen((value) => !value)}
+          >
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
                 CRYPTO
               </p>
@@ -6288,99 +6320,122 @@ function InvestmentSection({
                 <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
               )}
             </div>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label="Crypto-positie toevoegen"
-              className="h-10 w-10 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-              onClick={() => setIsCryptoModalOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              {!isCryptoOpen && cryptoPositions.length > 0 && (
+                <span className="text-sm font-semibold text-[#FAFAFA]">
+                  {currency(cryptoTotal)}
+                </span>
+              )}
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 text-[#A1A1AA] transition-transform duration-200",
+                  isCryptoOpen && "rotate-180",
+                )}
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label="Crypto-positie toevoegen"
+                className="h-10 w-10 shrink-0 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsCryptoModalOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
-          <div className="mt-3">
-            {cryptoRows.length === 0 ? (
-              <p className="text-sm text-[#A1A1AA]">
-                Nog geen posities
-              </p>
-            ) : (
-              <div className="grid">
-                <div className="hidden grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] gap-3 border-b border-[#27272A] pb-2 text-xs font-medium uppercase tracking-wider text-[#A1A1AA] md:grid">
-                  <span>Naam</span>
-                  <span>Ticker</span>
-                  <span className="text-right">Hoeveelheid</span>
-                  <span className="text-right">Koers</span>
-                  <span className="text-right">Waarde</span>
-                  <span />
-                </div>
-                {cryptoRows.map(({ position, price, value }) => (
-                  <div
-                    key={position.id}
-                    className="grid gap-2 border-b border-[#27272A] py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] md:items-center md:gap-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#FAFAFA]">
-                        {position.coinName}
-                      </p>
-                      <p className="text-xs text-[#A1A1AA] md:hidden">
+          <div
+            className={cn(
+              "overflow-hidden transition-all duration-200 ease-in-out",
+              isCryptoOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0",
+            )}
+          >
+            <div className="mt-3">
+              {cryptoRows.length === 0 ? (
+                <p className="text-sm text-[#A1A1AA]">
+                  Nog geen posities
+                </p>
+              ) : (
+                <div className="grid">
+                  <div className="hidden grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] gap-3 border-b border-[#27272A] pb-2 text-xs font-medium uppercase tracking-wider text-[#A1A1AA] md:grid">
+                    <span>Naam</span>
+                    <span>Ticker</span>
+                    <span className="text-right">Hoeveelheid</span>
+                    <span className="text-right">Koers</span>
+                    <span className="text-right">Waarde</span>
+                    <span />
+                  </div>
+                  {cryptoRows.map(({ position, price, value }) => (
+                    <div
+                      key={position.id}
+                      className="grid gap-2 border-b border-[#27272A] py-3 last:border-b-0 md:grid-cols-[minmax(0,1.3fr)_0.7fr_0.9fr_0.9fr_0.9fr_40px] md:items-center md:gap-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[#FAFAFA]">
+                          {position.coinName}
+                        </p>
+                        <p className="text-xs text-[#A1A1AA] md:hidden">
+                          {position.ticker}
+                        </p>
+                      </div>
+                      <p className="hidden text-sm text-[#A1A1AA] md:block">
                         {position.ticker}
                       </p>
+                      <div className="grid grid-cols-3 gap-2 text-xs text-[#A1A1AA] md:contents">
+                        <p className="md:text-right md:text-sm">
+                          <span className="block md:hidden">Hoeveelheid</span>
+                          <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
+                            {formatCryptoAmount(position.amount)}
+                          </span>
+                        </p>
+                        <p className="text-right md:text-sm">
+                          <span className="block md:hidden">Koers</span>
+                          <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
+                            {typeof price === "number" ? preciseCurrency(price) : "-"}
+                          </span>
+                        </p>
+                        <p className="text-right md:text-sm">
+                          <span className="block md:hidden">Waarde</span>
+                          <span className="font-semibold text-[#FAFAFA]">
+                            {value === null ? "-" : preciseCurrency(value)}
+                          </span>
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-9 w-9 justify-self-end text-[#A1A1AA] hover:bg-white/[0.04] hover:text-red-300"
+                        disabled={deletingCryptoPositionId === position.id}
+                        onClick={() => onDeleteCryptoPosition(position)}
+                      >
+                        {deletingCryptoPositionId === position.id ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
-                    <p className="hidden text-sm text-[#A1A1AA] md:block">
-                      {position.ticker}
-                    </p>
-                    <div className="grid grid-cols-3 gap-2 text-xs text-[#A1A1AA] md:contents">
-                      <p className="md:text-right md:text-sm">
-                        <span className="block md:hidden">Hoeveelheid</span>
-                        <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
-                          {formatCryptoAmount(position.amount)}
-                        </span>
-                      </p>
-                      <p className="text-right md:text-sm">
-                        <span className="block md:hidden">Koers</span>
-                        <span className="font-medium text-[#FAFAFA] md:text-[#A1A1AA]">
-                          {typeof price === "number" ? preciseCurrency(price) : "-"}
-                        </span>
-                      </p>
-                      <p className="text-right md:text-sm">
-                        <span className="block md:hidden">Waarde</span>
-                        <span className="font-semibold text-[#FAFAFA]">
-                          {value === null ? "-" : preciseCurrency(value)}
-                        </span>
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-9 w-9 justify-self-end text-[#A1A1AA] hover:bg-white/[0.04] hover:text-red-300"
-                      disabled={deletingCryptoPositionId === position.id}
-                      onClick={() => onDeleteCryptoPosition(position)}
-                    >
-                      {deletingCryptoPositionId === position.id ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {cryptoPositions.length > 0 && (
+              <div className="mt-3 border-t border-[#27272A] pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
+                  TOTAAL CRYPTO
+                </p>
+                <p className="mt-1 text-xl font-semibold text-[#FAFAFA]">
+                  {currency(cryptoTotal)}
+                </p>
               </div>
             )}
           </div>
-
-          {cryptoPositions.length > 0 && (
-            <div className="mt-3 border-t border-[#27272A] pt-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
-                TOTAAL CRYPTO
-              </p>
-              <p className="mt-1 text-xl font-semibold text-[#FAFAFA]">
-                {currency(cryptoTotal)}
-              </p>
-            </div>
-          )}
 
           {priceMessage && (
             <p className="mt-2 text-xs text-[#A1A1AA]">
