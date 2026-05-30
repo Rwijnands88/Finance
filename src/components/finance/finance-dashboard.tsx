@@ -6172,7 +6172,7 @@ function InvestmentSection({
       <CardContent className="space-y-0">
         <section className="pb-3">
           <div
-            className="grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-center gap-3"
+            className="grid cursor-pointer grid-cols-[minmax(0,1fr)_max-content] items-center gap-3"
             onClick={() => setIsDegiroOpen((value) => !value)}
           >
             <div className="flex min-w-0 items-center gap-2">
@@ -6193,7 +6193,6 @@ function InvestmentSection({
             ) : (
               <span aria-hidden="true" />
             )}
-            <span aria-hidden="true" />
           </div>
           {isLoadingDegiroPrices && (
             <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
@@ -6276,6 +6275,17 @@ function InvestmentSection({
               )}
             </div>
 
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="DeGiro-positie toevoegen"
+              className="mt-3 h-9 w-9 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+              onClick={() => setIsDegiroModalOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+
             {degiroPositions.length > 0 && (
               <div className="mt-3 grid grid-cols-[minmax(0,1fr)_max-content] items-end gap-3 border-t border-[#27272A] pt-3">
                 <p className="text-sm font-semibold text-[#FAFAFA]">
@@ -6286,15 +6296,6 @@ function InvestmentSection({
                 </p>
               </div>
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              className="mt-3 h-9 px-2 text-sm font-medium text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-              onClick={() => setIsDegiroModalOpen(true)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Positie toevoegen
-            </Button>
           </div>
 
           {degiroPriceMessage && (
@@ -6306,7 +6307,7 @@ function InvestmentSection({
 
         <section className="border-t border-[#27272A] py-3">
           <div
-            className="grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(5.5rem,max-content)_4.5rem] items-center gap-3"
+            className="grid cursor-pointer grid-cols-[minmax(0,1fr)_max-content] items-center gap-3"
             onClick={() => setIsCryptoOpen((value) => !value)}
           >
             <div className="flex min-w-0 items-center gap-2">
@@ -6327,7 +6328,6 @@ function InvestmentSection({
             ) : (
               <span aria-hidden="true" />
             )}
-            <span aria-hidden="true" />
           </div>
           {isLoadingPrices && (
             <p className="mt-1 text-xs text-[#A1A1AA]">Koersen laden...</p>
@@ -6410,6 +6410,17 @@ function InvestmentSection({
               )}
             </div>
 
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="Crypto-positie toevoegen"
+              className="mt-3 h-9 w-9 text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
+              onClick={() => setIsCryptoModalOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+
             {cryptoPositions.length > 0 && (
               <div className="mt-3 grid grid-cols-[minmax(0,1fr)_max-content] items-end gap-3 border-t border-[#27272A] pt-3">
                 <p className="text-sm font-semibold text-[#FAFAFA]">
@@ -6420,15 +6431,6 @@ function InvestmentSection({
                 </p>
               </div>
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              className="mt-3 h-9 px-2 text-sm font-medium text-[#A1A1AA] hover:bg-white/[0.04] hover:text-[#FAFAFA]"
-              onClick={() => setIsCryptoModalOpen(true)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Positie toevoegen
-            </Button>
           </div>
 
           {priceMessage && (
