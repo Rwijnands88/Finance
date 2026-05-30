@@ -4628,8 +4628,8 @@ function MobileBottomNav({
     "dashboard",
     "fixed",
     "input",
-    "vermogen",
     "month",
+    "vermogen",
   ];
   const items = mobileOrder.flatMap((section) =>
     navItems.filter((item) => item.id === section),
