@@ -9,9 +9,18 @@ type YahooQuoteResponse = {
   };
 };
 
+type PriceCacheEntry = {
+  prices: Record<string, number | null>;
+  timestamp: number;
+};
+
+const PRICE_CACHE_TTL_MS = 900_000;
+const priceCache = new Map<string, PriceCacheEntry>();
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const tickers = normalizeTickers(searchParams.get("tickers"));
+  const tickerKey = tickers.join(",");
   const prices: Record<string, number | null> = Object.fromEntries(
     tickers.map((ticker) => [ticker, null]),
   );
@@ -20,10 +29,21 @@ export async function GET(request: Request) {
     return NextResponse.json(prices);
   }
 
+  const cachedPrices = readCachedPrices(tickerKey);
+
+  if (cachedPrices) {
+    return NextResponse.json(cachedPrices);
+  }
+
   await fillYahooPrices(tickers, prices);
 
   const unresolvedTickers = tickers.filter((ticker) => prices[ticker] === null);
   await fillFallbackPrices(unresolvedTickers, prices);
+
+  priceCache.set(tickerKey, {
+    prices: { ...prices },
+    timestamp: Date.now(),
+  });
 
   return NextResponse.json(prices);
 }
@@ -70,11 +90,24 @@ function normalizeTickers(value: string | null) {
         .map(normalizeTicker)
         .filter((ticker): ticker is string => Boolean(ticker)),
     ),
-  );
+  ).sort();
 }
 
 function normalizeTicker(value: string | undefined | null) {
   return value?.trim().replace(/\s+/g, "").toUpperCase() ?? "";
+}
+
+function readCachedPrices(tickerKey: string) {
+  const cachedEntry = priceCache.get(tickerKey);
+
+  if (!cachedEntry) return null;
+
+  if (Date.now() - cachedEntry.timestamp > PRICE_CACHE_TTL_MS) {
+    priceCache.delete(tickerKey);
+    return null;
+  }
+
+  return cachedEntry.prices;
 }
 
 async function fillFallbackPrices(
