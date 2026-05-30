@@ -5955,6 +5955,7 @@ function InvestmentSection({
 }) {
   const [isEditingDegiro, setIsEditingDegiro] = useState(false);
   const [isCryptoModalOpen, setIsCryptoModalOpen] = useState(false);
+  const [investmentToastMessage, setInvestmentToastMessage] = useState("");
   const coinIds = useMemo(
     () =>
       Array.from(
@@ -5984,6 +5985,19 @@ function InvestmentSection({
     0,
   );
   const investmentTotal = degiroTotal + cryptoTotal;
+  const degiroSuccessMessage = "DeGiro-bedrag bijgewerkt.";
+  const cardMessage = message === degiroSuccessMessage ? "" : message;
+
+  useEffect(() => {
+    if (message !== degiroSuccessMessage) return;
+
+    setInvestmentToastMessage(message);
+    const timeout = window.setTimeout(() => {
+      setInvestmentToastMessage("");
+    }, 2000);
+
+    return () => window.clearTimeout(timeout);
+  }, [message]);
 
   async function saveDegiroAndClose() {
     await onSaveDegiroTotal();
@@ -5991,7 +6005,12 @@ function InvestmentSection({
   }
 
   return (
-    <Card className="border-[#27272A] bg-[#18181B]">
+    <Card className="relative border-[#27272A] bg-[#18181B]">
+      {investmentToastMessage && (
+        <div className="pointer-events-none absolute right-4 top-14 z-10 rounded-[12px] border border-[#27272A] bg-[#09090B]/95 px-3 py-2 text-sm font-medium text-[#FAFAFA] shadow-xl">
+          {investmentToastMessage}
+        </div>
+      )}
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -6153,11 +6172,13 @@ function InvestmentSection({
           </div>
 
           {cryptoPositions.length > 0 && (
-            <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#27272A] pt-3 text-sm">
-              <span className="text-[#A1A1AA]">Totaal crypto</span>
-              <span className="font-semibold text-[#FAFAFA]">
+            <div className="mt-3 border-t border-[#27272A] pt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#A1A1AA]">
+                TOTAAL CRYPTO
+              </p>
+              <p className="mt-1 text-xl font-semibold text-[#FAFAFA]">
                 {currency(cryptoTotal)}
-              </span>
+              </p>
             </div>
           )}
 
@@ -6168,9 +6189,9 @@ function InvestmentSection({
           )}
         </section>
 
-        {message && (
+        {cardMessage && (
           <p className="mb-4 rounded-[12px] border border-[#27272A] bg-black/10 p-3 text-sm text-[#A1A1AA]">
-            {message}
+            {cardMessage}
           </p>
         )}
 
