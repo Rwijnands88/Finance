@@ -111,7 +111,7 @@ type DashboardMetric = {
   progressTone?: "emerald" | "orange" | "red";
 };
 
-type ActiveSection = "dashboard" | "fixed" | "input" | "month";
+type ActiveSection = "dashboard" | "fixed" | "vermogen" | "input" | "month";
 type TransactionDisplayLimit = 10 | 15 | 20 | "all";
 type ContributionPlanDraft = {
   label: string;
@@ -197,9 +197,10 @@ const cashflowBufferStorageKeyPrefix = "finance-cashflow-buffer";
 
 function sectionNavItems() {
   return [
-    { id: "dashboard", label: "Dashboard", mobileLabel: "Home", icon: WalletCards },
-    { id: "fixed", label: "Vaste lasten", mobileLabel: "Lasten", icon: ListChecks },
+    { id: "dashboard", label: "Overzicht", mobileLabel: "Home", icon: WalletCards },
+    { id: "fixed", label: "Lasten", mobileLabel: "Lasten", icon: ListChecks },
     { id: "input", label: "Invoeren", mobileLabel: "Nieuw", icon: Plus },
+    { id: "vermogen", label: "Vermogen", mobileLabel: "Vermogen", icon: TrendingUp },
     { id: "month", label: "Maand", mobileLabel: "Maand", icon: CalendarDays },
   ] satisfies Array<{
     id: ActiveSection;
@@ -3961,6 +3962,46 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             skippingId={skippingFixedInstanceId}
             onSkip={skipFixedExpense}
           />
+          {isMobileFixedManagerVisible && (
+            <FixedExpenseManager
+              expenses={selectedRecurringExpenses}
+              categories={fixedCategories}
+              labels={labels}
+              accountName={selectedAccount?.name ?? viewCopy.label}
+              name={recurringName}
+              amount={recurringAmount}
+              billingDay={recurringBillingDay}
+              startsOn={recurringStartsOn}
+              category={recurringCategory}
+              editingId={editingRecurringId}
+              highlightedId={highlightedRecurringId}
+              message={manageMessage}
+              isSaving={isSavingRecurring}
+              defaultOpen
+              hideHeader
+              onNameChange={setRecurringName}
+              onAmountChange={setRecurringAmount}
+              onBillingDayChange={setRecurringBillingDay}
+              onStartsOnChange={setRecurringStartsOn}
+              onCategoryChange={setRecurringCategory}
+              onSave={saveRecurringExpense}
+              onEdit={startEditingRecurring}
+              onDelete={deleteRecurringExpense}
+              onCancel={resetRecurringForm}
+            />
+          )}
+        </section>
+
+        <section
+          className={cn(
+            "finance-view gap-4 lg:hidden",
+            activeSection === "vermogen" ? "grid" : "hidden",
+          )}
+        >
+          <MobileSectionHeader
+            title="Vermogen"
+            subtitle={selectedAccount?.name ?? viewCopy.label}
+          />
           <SavingsCard
             accountName={
               isSharedView
@@ -4012,34 +4053,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onCryptoAmountChange={setCryptoAmount}
               onAddCryptoPosition={addCryptoPosition}
               onDeleteCryptoPosition={deleteCryptoPosition}
-            />
-          )}
-          {isMobileFixedManagerVisible && (
-            <FixedExpenseManager
-              expenses={selectedRecurringExpenses}
-              categories={fixedCategories}
-              labels={labels}
-              accountName={selectedAccount?.name ?? viewCopy.label}
-              name={recurringName}
-              amount={recurringAmount}
-              billingDay={recurringBillingDay}
-              startsOn={recurringStartsOn}
-              category={recurringCategory}
-              editingId={editingRecurringId}
-              highlightedId={highlightedRecurringId}
-              message={manageMessage}
-              isSaving={isSavingRecurring}
-              defaultOpen
-              hideHeader
-              onNameChange={setRecurringName}
-              onAmountChange={setRecurringAmount}
-              onBillingDayChange={setRecurringBillingDay}
-              onStartsOnChange={setRecurringStartsOn}
-              onCategoryChange={setRecurringCategory}
-              onSave={saveRecurringExpense}
-              onEdit={startEditingRecurring}
-              onDelete={deleteRecurringExpense}
-              onCancel={resetRecurringForm}
             />
           )}
         </section>
@@ -4292,6 +4305,33 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   skippingId={skippingFixedInstanceId}
                   onSkip={skipFixedExpense}
                 />
+                <FixedExpenseManager
+                  expenses={selectedRecurringExpenses}
+                  categories={fixedCategories}
+                  labels={labels}
+                  accountName={selectedAccount?.name ?? viewCopy.label}
+                  name={recurringName}
+                  amount={recurringAmount}
+                  billingDay={recurringBillingDay}
+                  startsOn={recurringStartsOn}
+                  category={recurringCategory}
+                  editingId={editingRecurringId}
+                  highlightedId={highlightedRecurringId}
+                  message={manageMessage}
+                  isSaving={isSavingRecurring}
+                  onNameChange={setRecurringName}
+                  onAmountChange={setRecurringAmount}
+                  onBillingDayChange={setRecurringBillingDay}
+                  onStartsOnChange={setRecurringStartsOn}
+                  onCategoryChange={setRecurringCategory}
+                  onSave={saveRecurringExpense}
+                  onEdit={startEditingRecurring}
+                  onDelete={deleteRecurringExpense}
+                  onCancel={resetRecurringForm}
+                />
+              </section>
+
+              <section id="finance-vermogen" className="scroll-mt-4 grid gap-4">
                 <SavingsCard
                   accountName={
                     isSharedView
@@ -4345,30 +4385,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                     onDeleteCryptoPosition={deleteCryptoPosition}
                   />
                 )}
-                <FixedExpenseManager
-                  expenses={selectedRecurringExpenses}
-                  categories={fixedCategories}
-                  labels={labels}
-                  accountName={selectedAccount?.name ?? viewCopy.label}
-                  name={recurringName}
-                  amount={recurringAmount}
-                  billingDay={recurringBillingDay}
-                  startsOn={recurringStartsOn}
-                  category={recurringCategory}
-                  editingId={editingRecurringId}
-                  highlightedId={highlightedRecurringId}
-                  message={manageMessage}
-                  isSaving={isSavingRecurring}
-                  onNameChange={setRecurringName}
-                  onAmountChange={setRecurringAmount}
-                  onBillingDayChange={setRecurringBillingDay}
-                  onStartsOnChange={setRecurringStartsOn}
-                  onCategoryChange={setRecurringCategory}
-                  onSave={saveRecurringExpense}
-                  onEdit={startEditingRecurring}
-                  onDelete={deleteRecurringExpense}
-                  onCancel={resetRecurringForm}
-                />
               </section>
             </div>
           </section>
@@ -4590,12 +4606,23 @@ function MobileBottomNav({
   activeSection: ActiveSection;
   onSectionChange: (section: ActiveSection) => void;
 }) {
-  const items = sectionNavItems();
+  const navItems = sectionNavItems();
+  const mobileOrder: ActiveSection[] = [
+    "dashboard",
+    "fixed",
+    "input",
+    "vermogen",
+    "month",
+  ];
+  const items = mobileOrder.flatMap((section) =>
+    navItems.filter((item) => item.id === section),
+  );
 
   return (
-    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 items-start border-t border-[var(--border)] lg:hidden">
+    <nav className="finance-bottom-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 items-start border-t border-[var(--border)] lg:hidden">
       {items.map((item) => {
         const isActive = activeSection === item.id;
+        const isPrimaryAction = item.id === "input";
         const Icon = item.icon;
 
         return (
@@ -4611,7 +4638,20 @@ function MobileBottomNav({
             )}
             aria-label={item.label}
           >
-            <Icon className="h-6 w-6 shrink-0" />
+            <span
+              className={cn(
+                "flex shrink-0 items-center justify-center",
+                isPrimaryAction &&
+                  "rounded-full bg-[#6366F1] p-2 text-white shadow-[0_0_18px_rgba(99,102,241,0.35)]",
+              )}
+            >
+              <Icon
+                className={cn(
+                  "shrink-0",
+                  isPrimaryAction ? "h-6 w-6" : "h-5 w-5",
+                )}
+              />
+            </span>
             <span className="max-w-full whitespace-nowrap">{item.mobileLabel}</span>
           </button>
         );
