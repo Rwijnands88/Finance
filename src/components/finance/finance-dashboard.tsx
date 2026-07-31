@@ -11031,21 +11031,42 @@ function QuickEntryCard({
     : null;
   const showReceiptDateHint =
     typeof receiptDateDay === "number" && receiptDateDay >= 1 && receiptDateDay <= 2;
+  const quickEntryTitle = isPrepaid
+    ? "Voorgeschoten uitgave"
+    : isSettlement
+      ? "Verrekening"
+      : title;
+  const quickEntryDescription = isPrepaid
+    ? "Betaald met een eigen pas. Er gaat niets van de gezamenlijke rekening af."
+    : isSettlement
+      ? "Geld tussen de gezamenlijke rekening en een privérekening."
+      : "Bedrag erin, categorie kiezen, klaar.";
 
   return (
-    <Card className="finance-card max-w-full overflow-hidden lg:max-w-[480px]">
+    <Card className="finance-card quick-entry-card max-w-full overflow-hidden lg:max-w-[480px]">
+      <style>{`
+        .quick-entry-card {
+          container-type: inline-size;
+        }
+
+        @container (max-width: 319px) {
+          .quick-entry-card .quick-entry-type-grid {
+            grid-template-columns: minmax(0, 1fr);
+            border-radius: 14px;
+            padding: 4px;
+          }
+        }
+      `}</style>
       <CardHeader className="space-y-3 pb-2 sm:pb-3">
         <div className="hidden sm:block">
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>
-            Bedrag erin, categorie kiezen, klaar.
-          </CardDescription>
+          <CardTitle>{quickEntryTitle}</CardTitle>
+          <CardDescription>{quickEntryDescription}</CardDescription>
         </div>
         <div className="grid gap-2 sm:hidden">
           <div className="min-w-0">
-            <CardTitle className="text-lg">Uitgave invoeren</CardTitle>
+            <CardTitle className="text-lg">{quickEntryTitle}</CardTitle>
             <CardDescription className="text-xs leading-4">
-              Bedrag, categorie en klaar.
+              {quickEntryDescription}
             </CardDescription>
           </div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
@@ -11056,7 +11077,7 @@ function QuickEntryCard({
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
             Type
           </p>
-          <div className="grid grid-cols-3 gap-1 rounded-full bg-[#27272A] p-0.5">
+          <div className="quick-entry-type-grid grid min-w-0 grid-cols-3 gap-1 rounded-full bg-[#27272A] p-0.5">
             {quickTransactionTypes.map((item) => {
               const isActive = transactionType === item.value;
 
@@ -11066,11 +11087,11 @@ function QuickEntryCard({
                   type="button"
                   onClick={() => onTransactionTypeChange(item.value)}
                   className={cn(
-                    "h-8 min-h-0 rounded-full px-2 text-[11px] font-medium text-[var(--text-secondary)] sm:text-xs",
+                    "flex min-h-8 min-w-0 items-center justify-center rounded-full px-1 py-1 text-center text-[12px] font-medium leading-tight text-[var(--text-secondary)]",
                     isActive && "bg-[#6366F1] text-white",
                   )}
                 >
-                  {item.label}
+                  <span className="min-w-0 whitespace-normal">{item.label}</span>
                 </button>
               );
             })}
@@ -11151,12 +11172,6 @@ function QuickEntryCard({
               })}
             </div>
           </div>
-        )}
-
-        {isPrepaid && (
-          <p className="rounded-[10px] border border-[var(--border)] bg-black/10 px-3 py-2 text-xs text-[var(--text-secondary)]">
-            Er gaat niets van de gezamenlijke rekening af.
-          </p>
         )}
 
         {!isSettlement && (
@@ -11395,12 +11410,6 @@ function QuickEntryCard({
           </FieldLabel>
           )}
         </div>
-
-        {isPrepaid && (
-          <p className="hidden rounded-[10px] border border-[var(--border)] bg-black/10 px-3 py-2 text-xs text-[var(--text-secondary)] sm:block">
-            Er gaat niets van de gezamenlijke rekening af.
-          </p>
-        )}
 
         {!isSettlement && (
         <details className="group hidden rounded-[14px] border border-[var(--border)] bg-black/10 sm:block">
