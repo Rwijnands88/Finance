@@ -10917,7 +10917,7 @@ function ReceiptDraftValue({ label, value }: { label: string; value: string }) {
 
 const quickTransactionTypes = [
   { value: "variable", label: "Variabel" },
-  { value: "prepaid", label: "Voorgeschoten" },
+  { value: "prepaid", label: "Voorschot" },
   { value: "settlement", label: "Verrekening" },
 ] satisfies Array<{ value: QuickTransactionType; label: string }>;
 
@@ -11043,20 +11043,7 @@ function QuickEntryCard({
       : "Bedrag erin, categorie kiezen, klaar.";
 
   return (
-    <Card className="finance-card quick-entry-card max-w-full overflow-hidden lg:max-w-[480px]">
-      <style>{`
-        .quick-entry-card {
-          container-type: inline-size;
-        }
-
-        @container (max-width: 319px) {
-          .quick-entry-card .quick-entry-type-grid {
-            grid-template-columns: minmax(0, 1fr);
-            border-radius: 14px;
-            padding: 4px;
-          }
-        }
-      `}</style>
+    <Card className="finance-card max-w-full overflow-hidden lg:max-w-[480px]">
       <CardHeader className="space-y-3 pb-2 sm:pb-3">
         <div className="hidden sm:block">
           <CardTitle>{quickEntryTitle}</CardTitle>
@@ -11077,7 +11064,7 @@ function QuickEntryCard({
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
             Type
           </p>
-          <div className="quick-entry-type-grid grid min-w-0 grid-cols-3 gap-1 rounded-full bg-[#27272A] p-0.5">
+          <div className="flex min-w-0 flex-wrap gap-x-1 gap-y-1.5 rounded-[18px] bg-[#27272A] p-0.5">
             {quickTransactionTypes.map((item) => {
               const isActive = transactionType === item.value;
 
@@ -11087,11 +11074,11 @@ function QuickEntryCard({
                   type="button"
                   onClick={() => onTransactionTypeChange(item.value)}
                   className={cn(
-                    "flex min-h-8 min-w-0 items-center justify-center rounded-full px-1 py-1 text-center text-[12px] font-medium leading-tight text-[var(--text-secondary)]",
+                    "flex min-h-8 min-w-max flex-[1_1_auto] items-center justify-center rounded-full px-1.5 py-1 text-center text-[12px] font-medium leading-tight text-[var(--text-secondary)]",
                     isActive && "bg-[#6366F1] text-white",
                   )}
                 >
-                  <span className="min-w-0 whitespace-normal">{item.label}</span>
+                  <span className="whitespace-nowrap">{item.label}</span>
                 </button>
               );
             })}
