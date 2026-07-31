@@ -6,7 +6,9 @@ import type {
   DashboardData,
   DegiroPosition,
   InvestmentSettings,
+  MonthReconciliation,
   Transaction,
+  UserSettings,
 } from "@/lib/types";
 import {
   budgetAmount,
@@ -47,7 +49,7 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const selectedMonth = currentIsoMonth();
   const monthStart = `${selectedMonth}-01`;
-  const monthEnd = addMonths(monthStart, 1);
+  const transactionRangeEnd = addMonths(monthStart, 2);
 
   await supabase.rpc("create_fixed_instances_for_month", {
     target_household_id: membership.household_id,
@@ -61,6 +63,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     currentProfileResult,
     contributionPlansResult,
     investmentSettingsResult,
+    userSettingsResult,
     degiroPositionsResult,
     cryptoPositionsResult,
     balanceSnapshotsResult,
@@ -87,16 +90,21 @@ export async function getDashboardData(): Promise<DashboardData> {
       .select("display_name")
       .eq("id", user.id)
       .maybeSingle(),
-	    supabase
-	      .from("contribution_plans")
-	      .select("*")
-	      .eq("household_id", membership.household_id)
-	      .eq("is_active", true)
-	      .order("user_id", { ascending: true })
-	      .order("deposit_day", { ascending: true }),
+    supabase
+      .from("contribution_plans")
+      .select("*")
+      .eq("household_id", membership.household_id)
+      .eq("is_active", true)
+      .order("user_id", { ascending: true })
+      .order("deposit_day", { ascending: true }),
     supabase
       .from("investment_settings")
       .select("user_id, investing_enabled")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("user_settings")
+      .select("user_id, reconciliation_enabled")
       .eq("user_id", user.id)
       .maybeSingle(),
     supabase
@@ -134,6 +142,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   throwIfError(currentProfileResult.error);
   throwIfErrorUnlessMissingContributionPlans(contributionPlansResult.error);
   throwIfErrorUnlessMissingInvestmentSettings(investmentSettingsResult.error);
+  throwIfErrorUnlessMissingUserSettings(userSettingsResult.error);
   throwIfErrorUnlessMissingDegiroPositions(degiroPositionsResult.error);
   throwIfErrorUnlessMissingCryptoPositions(cryptoPositionsResult.error);
   throwIfErrorUnlessMissingBalanceSnapshots(balanceSnapshotsResult.error);
@@ -149,11 +158,24 @@ export async function getDashboardData(): Promise<DashboardData> {
   const fallbackAccount =
     accounts.find((account) => account.kind === "shared") ?? accounts[0];
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
+  const accountIds = accounts.map((account) => account.id);
+  const monthReconciliationsResult = accountIds.length
+    ? await supabase
+        .from("month_reconciliations")
+        .select("*")
+        .in("account_id", accountIds)
+        .order("month", { ascending: false })
+    : { data: [], error: null };
+
+  throwIfErrorUnlessMissingMonthReconciliations(
+    monthReconciliationsResult.error,
+  );
+
   const historicalTransactionsResult = await fetchTransactions(
     supabase,
     membership.household_id,
     addMonths(monthStart, -5),
-    monthEnd,
+    transactionRangeEnd,
     accountMap,
     fallbackAccount,
   );
@@ -216,8 +238,12 @@ export async function getDashboardData(): Promise<DashboardData> {
       investmentSettingsResult.data,
       user.id,
     ),
+    userSettings: mapUserSettings(userSettingsResult.data, user.id),
     degiroPositions: mapDegiroPositions(degiroPositionsResult.data ?? []),
     cryptoPositions: mapCryptoPositions(cryptoPositionsResult.data ?? []),
+    monthReconciliations: mapMonthReconciliations(
+      monthReconciliationsResult.data ?? [],
+    ),
     balanceSnapshots: mapBalanceSnapshots(
       balanceSnapshotsResult.data ?? [],
       memberNameByUserId,
@@ -315,6 +341,46 @@ function mapInvestmentSettings(
     userId: row?.user_id ?? currentUserId,
     investingEnabled: Boolean(row?.investing_enabled),
   } satisfies InvestmentSettings;
+}
+
+function mapUserSettings(
+  row:
+    | {
+        user_id: string;
+        reconciliation_enabled: boolean;
+      }
+    | null,
+  currentUserId: string,
+) {
+  return {
+    userId: row?.user_id ?? currentUserId,
+    reconciliationEnabled: Boolean(row?.reconciliation_enabled),
+  } satisfies UserSettings;
+}
+
+function mapMonthReconciliations(
+  rows: Array<{
+    id: string;
+    account_id: string;
+    month: string;
+    actual_balance: number;
+    checked_at: string;
+    note: string | null;
+    entered_by: string;
+  }>,
+) {
+  return rows.map(
+    (row) =>
+      ({
+        id: row.id,
+        accountId: row.account_id,
+        month: row.month.slice(0, 7),
+        actualBalance: Number(row.actual_balance),
+        checkedAt: row.checked_at,
+        note: row.note ?? undefined,
+        enteredById: row.entered_by,
+      }) satisfies MonthReconciliation,
+  );
 }
 
 function mapBalanceSnapshots(
@@ -441,6 +507,36 @@ function throwIfErrorUnlessMissingInvestmentSettings(
     error.code === "42P01" ||
     error.code === "PGRST205" ||
     error.message.includes("investment_settings")
+  ) {
+    return;
+  }
+
+  throw new Error(error.message);
+}
+
+function throwIfErrorUnlessMissingUserSettings(
+  error: { code?: string; message: string } | null,
+) {
+  if (
+    !error ||
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    error.message.includes("user_settings")
+  ) {
+    return;
+  }
+
+  throw new Error(error.message);
+}
+
+function throwIfErrorUnlessMissingMonthReconciliations(
+  error: { code?: string; message: string } | null,
+) {
+  if (
+    !error ||
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    error.message.includes("month_reconciliations")
   ) {
     return;
   }

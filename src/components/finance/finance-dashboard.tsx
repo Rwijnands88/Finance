@@ -53,6 +53,7 @@ import {
   type DashboardData,
   type DegiroPosition,
   type FixedExpenseInstance,
+  type MonthReconciliation,
   type RecurringExpense,
   type Transaction,
 } from "@/lib/types";
@@ -139,6 +140,7 @@ type MonthDataResponse = {
   transactions?: Transaction[];
   recurringExpenses?: RecurringExpense[];
   fixedInstances?: FixedExpenseInstance[];
+  monthReconciliations?: MonthReconciliation[];
   error?: string;
 };
 type CashflowPoint = {
@@ -176,6 +178,21 @@ type VariableSpendPacingResult = {
   progress: number;
   previousProgress: number;
   tone: "emerald" | "orange" | "red" | "zinc";
+};
+type MonthReconciliationCardModel = {
+  accountName: string;
+  monthEndDate: string;
+  calculatedBalance: number | null;
+  actualBalance: string;
+  parsedActualBalance: number | null;
+  difference: number | null;
+  existing?: MonthReconciliation;
+  note: string;
+  message: string;
+  isSaving: boolean;
+  onActualBalanceChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
+  onSave: () => void;
 };
 
 type ContributionPersonBreakdown = {
@@ -309,6 +326,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   );
   const [balanceSnapshots, setBalanceSnapshots] = useState(
     initialData.balanceSnapshots,
+  );
+  const [monthReconciliations, setMonthReconciliations] = useState(
+    initialData.monthReconciliations,
   );
   const [contributionPlans, setContributionPlans] = useState<ContributionPlan[]>(
     initialData.contributionPlans,
@@ -454,6 +474,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [monthMessage, setMonthMessage] = useState("");
+  const [reconciliationActualBalance, setReconciliationActualBalance] =
+    useState("");
+  const [reconciliationNote, setReconciliationNote] = useState("");
+  const [reconciliationMessage, setReconciliationMessage] = useState("");
+  const [isSavingReconciliation, setIsSavingReconciliation] = useState(false);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(
     null,
   );
@@ -612,19 +637,29 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     [loadedMonthKeys],
   );
   const today = new Date().toISOString().slice(0, 10);
+  const todayMonth = today.slice(0, 7);
 
+  const selectedAccountBalanceSnapshots = useMemo(
+    () =>
+      accountBalanceSnapshots.filter(
+        (snapshot) => snapshot.accountId === selectedAccountId,
+      ),
+    [accountBalanceSnapshots, selectedAccountId],
+  );
   const latestBalanceSnapshot = useMemo(
     () =>
-      accountBalanceSnapshots
-        .filter((snapshot) => snapshot.accountId === selectedAccountId)
+      selectedAccountBalanceSnapshots
         .filter((snapshot) => snapshot.snapshotDate < monthStart(addIsoMonths(currentMonth, 1)))
         .sort(
           (first, second) =>
             second.snapshotDate.localeCompare(first.snapshotDate),
         )[0],
-    [accountBalanceSnapshots, currentMonth, selectedAccountId],
+    [currentMonth, selectedAccountBalanceSnapshots],
   );
-  const cashflowStartSnapshot = latestBalanceSnapshot;
+  const cashflowStartSnapshot = useMemo(
+    () => closestCashflowSnapshot(selectedAccountBalanceSnapshots, currentMonth),
+    [currentMonth, selectedAccountBalanceSnapshots],
+  );
   const showOpeningBalanceReminder =
     today === `${currentMonth}-01` &&
     !accountBalanceSnapshots.some(
@@ -632,6 +667,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         snapshot.accountId === selectedAccountId &&
         snapshot.snapshotDate === today,
     );
+  const previousReconciliationMonth = addIsoMonths(todayMonth, -1);
+  const previousMonthReconciliation = monthReconciliations.find(
+    (item) =>
+      item.accountId === defaultAccount?.id &&
+      item.month === previousReconciliationMonth,
+  );
+  const showReconciliationReminder =
+    Boolean(initialData.userSettings.reconciliationEnabled && defaultAccount) &&
+    !previousMonthReconciliation;
   const viewCopy = isSharedView
     ? {
         label: "Gezamenlijke rekening",
@@ -667,6 +711,50 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       }),
     [cashflowStartSnapshot, currentMonth, selectedTransactions],
   );
+  const cashflowMonthEndBalance = useMemo(
+    () =>
+      buildCashflowMonthEndBalance({
+        startSnapshot: cashflowStartSnapshot,
+        month: currentMonth,
+        transactions: selectedTransactions,
+      }),
+    [cashflowStartSnapshot, currentMonth, selectedTransactions],
+  );
+  const currentMonthReconciliation = useMemo(
+    () =>
+      monthReconciliations.find(
+        (item) =>
+          item.accountId === selectedAccountId && item.month === currentMonth,
+      ),
+    [currentMonth, monthReconciliations, selectedAccountId],
+  );
+  const parsedReconciliationActualBalance = reconciliationActualBalance.trim()
+    ? parseCurrencyInput(reconciliationActualBalance)
+    : Number.NaN;
+  const reconciliationDifference =
+    cashflowMonthEndBalance !== null &&
+    Number.isFinite(parsedReconciliationActualBalance)
+      ? parsedReconciliationActualBalance - cashflowMonthEndBalance
+      : null;
+  useEffect(() => {
+    if (currentMonthReconciliation) {
+      setReconciliationActualBalance(
+        formatCurrencyInputValue(currentMonthReconciliation.actualBalance),
+      );
+      setReconciliationNote(currentMonthReconciliation.note ?? "");
+    } else {
+      setReconciliationActualBalance("");
+      setReconciliationNote("");
+    }
+
+    setReconciliationMessage("");
+  }, [
+    currentMonth,
+    currentMonthReconciliation?.id,
+    currentMonthReconciliation?.actualBalance,
+    currentMonthReconciliation?.note,
+    selectedAccountId,
+  ]);
   const monthTotals = useMemo(
     () => totalsForMonth(selectedTransactions, currentMonth),
     [currentMonth, selectedTransactions],
@@ -1082,6 +1170,26 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     showInvestmentSection &&
     initialData.currentUserEmail === "ralph.wijnands1988@gmail.com";
   const displayedNetTotal = monthTotals.netTotal;
+  const monthReconciliation: MonthReconciliationCardModel | undefined =
+    isSharedView && initialData.userSettings.reconciliationEnabled
+      ? {
+          accountName: selectedAccount?.name ?? viewCopy.label,
+          monthEndDate: monthEndDate(currentMonth),
+          calculatedBalance: cashflowMonthEndBalance,
+          actualBalance: reconciliationActualBalance,
+          parsedActualBalance: Number.isFinite(parsedReconciliationActualBalance)
+            ? parsedReconciliationActualBalance
+            : null,
+          difference: reconciliationDifference,
+          existing: currentMonthReconciliation,
+          note: reconciliationNote,
+          message: reconciliationMessage,
+          isSaving: isSavingReconciliation,
+          onActualBalanceChange: setReconciliationActualBalance,
+          onNoteChange: setReconciliationNote,
+          onSave: saveMonthReconciliation,
+        }
+      : undefined;
   const contributionCoverage = useMemo(
     () =>
       buildContributionCoverage({
@@ -1535,19 +1643,31 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setLoadingMonth(month);
 
     try {
-      const [transactionsResponse, recurringResponse] = await Promise.all([
+      const [
+        transactionsResponse,
+        recurringResponse,
+        reconciliationResponse,
+      ] = await Promise.all([
         fetch(`/api/transactions?month=${encodeURIComponent(month)}`),
         fetch(`/api/recurring-expenses?month=${encodeURIComponent(month)}`),
+        fetch(`/api/month-reconciliations?month=${encodeURIComponent(month)}`),
       ]);
       const transactionsResult =
         (await transactionsResponse.json()) as MonthDataResponse;
       const recurringResult =
         (await recurringResponse.json()) as MonthDataResponse;
+      const reconciliationResult =
+        (await reconciliationResponse.json()) as MonthDataResponse;
 
-      if (!transactionsResponse.ok || !recurringResponse.ok) {
+      if (
+        !transactionsResponse.ok ||
+        !recurringResponse.ok ||
+        !reconciliationResponse.ok
+      ) {
         throw new Error(
           transactionsResult.error ??
             recurringResult.error ??
+            reconciliationResult.error ??
             "Maandgegevens konden niet worden geladen.",
         );
       }
@@ -1555,6 +1675,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       const nextTransactions = transactionsResult.transactions ?? [];
       const nextRecurringExpenses = recurringResult.recurringExpenses ?? [];
       const nextFixedInstances = recurringResult.fixedInstances ?? [];
+      const nextMonthReconciliations =
+        reconciliationResult.monthReconciliations ?? [];
 
       setTransactions((items) => {
         const mergedItems = options.force
@@ -1562,7 +1684,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               ...items.filter(
                 (item) =>
                   item.date < monthStart(addIsoMonths(month, -5)) ||
-                  item.date >= monthStart(addIsoMonths(month, 1)),
+                  item.date >= monthStart(addIsoMonths(month, 2)),
               ),
               ...nextTransactions,
             ]
@@ -1586,6 +1708,16 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           : mergeById(items, nextFixedInstances);
 
         return mergedItems.sort((a, b) => a.name.localeCompare(b.name, "nl"));
+      });
+      setMonthReconciliations((items) => {
+        const mergedItems = options.force
+          ? [
+              ...items.filter((item) => item.month !== month),
+              ...nextMonthReconciliations,
+            ]
+          : mergeById(items, nextMonthReconciliations);
+
+        return mergedItems.sort((a, b) => b.month.localeCompare(a.month));
       });
       setLoadedMonthKeys((keys) =>
         keys.includes(month) ? keys : [...keys, month],
@@ -1974,6 +2106,90 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setBalanceSnapshots((items) => [result.snapshot, ...items]);
     setBalanceAmount("");
     setBalanceMessage("Saldo bijgewerkt.");
+  }
+
+  async function saveMonthReconciliation() {
+    const actualBalance = parseCurrencyInput(reconciliationActualBalance);
+
+    if (!defaultAccount || !selectedAccount || !isSharedView) {
+      setReconciliationMessage("Maandaansluiting is alleen voor de gezamenlijke rekening.");
+      return;
+    }
+
+    if (Number.isNaN(actualBalance)) {
+      setReconciliationMessage("Vul een geldig banksaldo in.");
+      return;
+    }
+
+    if (cashflowMonthEndBalance === null || reconciliationDifference === null) {
+      setReconciliationMessage("Er is een ijkpunt nodig om het berekende saldo te bepalen.");
+      return;
+    }
+
+    const hasDifference = Math.abs(reconciliationDifference) >= 0.005;
+
+    if (hasDifference && !reconciliationNote.trim()) {
+      setReconciliationMessage("Voeg een notitie toe bij een verschil.");
+      return;
+    }
+
+    setIsSavingReconciliation(true);
+    setReconciliationMessage("");
+
+    const response = await fetch("/api/month-reconciliations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        householdId: initialData.householdId,
+        accountId: defaultAccount.id,
+        month: currentMonth,
+        actualBalance,
+        calculatedBalance: cashflowMonthEndBalance,
+        difference: reconciliationDifference,
+        note: reconciliationNote,
+        createSnapshot: !hasDifference,
+      }),
+    });
+    const result = (await response.json()) as {
+      reconciliation?: MonthReconciliation;
+      snapshot?: AccountBalanceSnapshot | null;
+      error?: string;
+    };
+
+    setIsSavingReconciliation(false);
+
+    if (!response.ok || !result.reconciliation) {
+      setReconciliationMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Maandaansluiting opslaan lukte niet.",
+      );
+      return;
+    }
+
+    setMonthReconciliations((items) =>
+      mergeById(items, [result.reconciliation!]).sort((a, b) =>
+        b.month.localeCompare(a.month),
+      ),
+    );
+
+    if (result.snapshot) {
+      setBalanceSnapshots((items) =>
+        [result.snapshot!, ...items].sort(
+          (a, b) =>
+            b.snapshotDate.localeCompare(a.snapshotDate) ||
+            b.id.localeCompare(a.id),
+        ),
+      );
+    }
+
+    setReconciliationMessage(
+      hasDifference
+        ? "Aansluiting vastgelegd met verschil."
+        : "Aansluiting bevestigd en ijkpunt gezet.",
+    );
   }
 
   async function deleteBalanceSnapshot(snapshot: AccountBalanceSnapshot) {
@@ -4027,6 +4243,21 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       scrollToFinanceSection("fixed");
     });
   };
+  const openPreviousMonthReconciliation = () => {
+    if (!defaultAccount) {
+      return;
+    }
+
+    setSelectedAccountId(defaultAccount.id);
+    setQuickAccount(defaultAccount.id);
+    setCurrentMonth(previousReconciliationMonth);
+    setMonthMessage("");
+    setActiveSection("month");
+    void loadMonthData(previousReconciliationMonth);
+    window.requestAnimationFrame(() => {
+      scrollToFinanceSection("month");
+    });
+  };
 
   return (
     <main className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] pb-[calc(84px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
@@ -4072,6 +4303,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             <div className="rounded-[14px] border border-[var(--border)] bg-[var(--accent-light)] px-3 py-2 text-sm text-[var(--text-secondary)]">
               Nieuwe maand — vergeet je openingssaldo niet in te voeren.
             </div>
+          )}
+          {showReconciliationReminder && (
+            <button
+              type="button"
+              onClick={openPreviousMonthReconciliation}
+              className="rounded-[14px] border border-indigo-400/25 bg-indigo-500/10 px-3 py-2 text-left text-sm text-indigo-100 transition hover:border-indigo-300/40"
+            >
+              Vorige maand nog niet aangesloten — open maandaansluiting.
+            </button>
           )}
 
           <DashboardHero
@@ -4401,6 +4641,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             fixedTotal={fixedTotalForCurrentMonth}
             pacing={variableSpendPacing}
             showIncome={!isSharedView}
+            reconciliation={monthReconciliation}
             monthMessage={monthMessage}
             onExportExcel={exportExcel}
             onExportPdf={(month) => void exportPdf(month)}
@@ -4445,6 +4686,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   Nieuwe maand — vergeet je openingssaldo niet in te voeren.
                 </div>
               )}
+              {showReconciliationReminder && (
+                <button
+                  type="button"
+                  onClick={openPreviousMonthReconciliation}
+                  className="rounded-[14px] border border-indigo-400/25 bg-indigo-500/10 px-3 py-2 text-left text-sm text-indigo-100 transition hover:border-indigo-300/40"
+                >
+                  Vorige maand nog niet aangesloten — open maandaansluiting.
+                </button>
+              )}
 
               <section id="finance-dashboard">
                 <DashboardHero
@@ -4488,6 +4738,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 freeSpaceTotal={heroBudget.remainingFreeBudget}
                 fixedTotal={fixedTotalForCurrentMonth}
                 variableSpendPacing={variableSpendPacing}
+                reconciliation={monthReconciliation}
                 monthMessage={monthMessage}
                 categoryRows={categoryRows}
                 selectedSixMonthTrend={selectedSixMonthTrend}
@@ -5083,7 +5334,7 @@ function CashflowTimelineCard({
   const monthStartDate = `${month}-01`;
   const startDescription =
     startSnapshot && monthStartBalance !== null
-      ? startSnapshot.snapshotDate <= monthStartDate
+      ? startSnapshot.snapshotDate < monthStartDate
         ? `Start ${monthLabel(month)}: ${currency(monthStartBalance)} — berekend uit eindsaldo ${formatCashflowStartDate(startSnapshot.snapshotDate)} (${currency(startSnapshot.balance)}) plus mutaties tot ${formatCashflowStartDate(monthStartDate)}`
         : `Start ${monthLabel(month)}: ${currency(monthStartBalance)} — teruggerekend uit eindsaldo ${formatCashflowStartDate(startSnapshot.snapshotDate)} (${currency(startSnapshot.balance)})`
       : "Geen openingssaldo ingevoerd";
@@ -5825,6 +6076,7 @@ function MonthSummaryCard({
   fixedTotal,
   pacing,
   showIncome,
+  reconciliation,
   monthMessage,
   onExportExcel,
   onExportPdf,
@@ -5836,6 +6088,7 @@ function MonthSummaryCard({
   fixedTotal: number;
   pacing: VariableSpendPacingResult;
   showIncome: boolean;
+  reconciliation?: MonthReconciliationCardModel;
   monthMessage: string;
   onExportExcel: (month: string) => void;
   onExportPdf: (month: string) => void;
@@ -5943,6 +6196,8 @@ function MonthSummaryCard({
           ))}
         </div>
 
+        {reconciliation && <MonthReconciliationCard reconciliation={reconciliation} />}
+
         <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] px-3 py-3">
           <div className="mb-2 flex items-end justify-between gap-3">
             <div>
@@ -6020,6 +6275,176 @@ function MonthSummaryCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function MonthReconciliationCard({
+  reconciliation,
+}: {
+  reconciliation: MonthReconciliationCardModel;
+}) {
+  const hasActualBalance = reconciliation.parsedActualBalance !== null;
+  const hasDifference =
+    reconciliation.difference !== null && Math.abs(reconciliation.difference) >= 0.005;
+  const canSave =
+    reconciliation.calculatedBalance !== null &&
+    hasActualBalance &&
+    (!hasDifference || Boolean(reconciliation.note.trim())) &&
+    !reconciliation.isSaving;
+  const differenceValue = reconciliation.difference ?? 0;
+  const statusText = hasDifference
+    ? "Er ontbreekt een transactie of een bedrag is verkeerd ingevoerd"
+    : "Sluit aan";
+  const statusTone = hasDifference ? "text-[#EF4444]" : "text-[#10B981]";
+  const hints = [
+    "een gemiste verrekening naar of van een priverekening",
+    "een vaste last bevestigd met een verkeerd bedrag",
+    "een transactie die net over de maandgrens valt",
+    "een uitgave die met een eigen pas is betaald en niet is verrekend",
+  ];
+
+  return (
+    <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-normal text-[var(--text-muted)]">
+            Aansluiting
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">
+            {reconciliation.accountName} · eindsaldo op{" "}
+            {formatCashflowStartDate(reconciliation.monthEndDate)}.
+          </p>
+        </div>
+        {reconciliation.existing && (
+          <Badge className="border-[var(--border)] bg-[#27272A] text-[var(--text-secondary)]">
+            Vastgelegd
+          </Badge>
+        )}
+      </div>
+
+      <div className="mt-3 grid gap-2">
+        <label className="grid gap-1 text-xs font-medium text-zinc-300">
+          Werkelijk saldo volgens de bank
+          <Input
+            inputMode="decimal"
+            value={reconciliation.actualBalance}
+            placeholder="Eindsaldo na alle boekingen"
+            className="h-10"
+            onChange={(event) =>
+              reconciliation.onActualBalanceChange(event.target.value)
+            }
+          />
+        </label>
+        <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+          Vul het saldo in nadat alle af- en bijschrijvingen op deze dag zijn
+          verwerkt.
+        </p>
+      </div>
+
+      <div className="mt-3 grid gap-2 rounded-[12px] border border-[var(--border)] bg-[#09090B]/50 p-3 text-sm">
+        <ReconciliationAmountRow
+          label="Berekend saldo"
+          value={
+            reconciliation.calculatedBalance === null
+              ? "Geen ijkpunt"
+              : preciseCurrency(reconciliation.calculatedBalance)
+          }
+        />
+        <ReconciliationAmountRow
+          label="Werkelijk saldo"
+          value={
+            hasActualBalance
+              ? preciseCurrency(reconciliation.parsedActualBalance ?? 0)
+              : "Nog niet ingevuld"
+          }
+        />
+        <div className="flex items-start justify-between gap-3 border-t border-[var(--border)] pt-2">
+          <div>
+            <p className="font-medium text-[var(--text-primary)]">Verschil</p>
+            {hasActualBalance && reconciliation.calculatedBalance !== null && (
+              <p className={cn("mt-0.5 text-xs", statusTone)}>{statusText}</p>
+            )}
+          </div>
+          <p className={cn("shrink-0 font-semibold", statusTone)}>
+            {hasActualBalance && reconciliation.calculatedBalance !== null
+              ? formatSignedPreciseCurrency(differenceValue)
+              : "-"}
+          </p>
+        </div>
+      </div>
+
+      {hasDifference && (
+        <div className="mt-3 grid gap-2">
+          <label className="grid gap-1 text-xs font-medium text-zinc-300">
+            Notitie bij verschil
+            <textarea
+              value={reconciliation.note}
+              rows={3}
+              placeholder="Wat is waarschijnlijk de oorzaak?"
+              className="min-h-20 resize-none rounded-[10px] border border-[var(--border)] bg-[#09090B] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[#6366F1]"
+              onChange={(event) => reconciliation.onNoteChange(event.target.value)}
+            />
+          </label>
+        </div>
+      )}
+
+      <div className="mt-3 rounded-[12px] border border-[var(--border)] bg-[#09090B]/35 p-3">
+        <p className="text-xs font-medium text-[var(--text-primary)]">
+          Waarschijnlijkste oorzaken
+        </p>
+        <ol className="mt-2 grid list-decimal gap-1 pl-4 text-xs leading-5 text-[var(--text-secondary)]">
+          {hints.map((hint) => (
+            <li key={hint}>{hint}</li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p
+          className={cn(
+            "min-h-4 text-xs",
+            reconciliation.message.includes("bevestigd") ||
+              reconciliation.message.includes("vastgelegd")
+              ? "text-[#10B981]"
+              : "text-[var(--text-secondary)]",
+          )}
+        >
+          {reconciliation.message ||
+            (hasDifference
+              ? "Leg vast met notitie, zodat het verschil zichtbaar blijft."
+              : "Bij €0,00 verschil wordt automatisch een ijkpunt gezet.")}
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="h-10 justify-center"
+          disabled={!canSave}
+          onClick={reconciliation.onSave}
+        >
+          {reconciliation.isSaving
+            ? "Opslaan..."
+            : hasDifference
+              ? "Vastleggen"
+              : "Bevestigen"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ReconciliationAmountRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-[var(--text-secondary)]">{label}</p>
+      <p className="shrink-0 font-semibold text-[var(--text-primary)]">{value}</p>
+    </div>
   );
 }
 
@@ -7838,6 +8263,7 @@ function MonthInsightsSection({
   freeSpaceTotal,
   fixedTotal,
   variableSpendPacing,
+  reconciliation,
   monthMessage,
   categoryRows,
   selectedSixMonthTrend,
@@ -7859,6 +8285,7 @@ function MonthInsightsSection({
   freeSpaceTotal: number;
   fixedTotal: number;
   variableSpendPacing: VariableSpendPacingResult;
+  reconciliation?: MonthReconciliationCardModel;
   monthMessage: string;
   categoryRows: ReturnType<typeof categoryTotals>;
   selectedSixMonthTrend: ReturnType<typeof sixMonthTrend>;
@@ -7910,6 +8337,7 @@ function MonthInsightsSection({
           fixedTotal={fixedTotal}
           pacing={variableSpendPacing}
           showIncome={showIncome}
+          reconciliation={reconciliation}
           monthMessage={monthMessage}
           onExportExcel={onExportExcel}
           onExportPdf={onExportPdf}
@@ -11758,6 +12186,22 @@ function parseCurrencyInput(value: string) {
   return Number(value.trim().replace(/\s/g, "").replace(",", "."));
 }
 
+function formatCurrencyInputValue(value: number) {
+  return new Intl.NumberFormat("nl-NL", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: false,
+  }).format(value);
+}
+
+function formatSignedPreciseCurrency(value: number) {
+  if (Math.abs(value) < 0.005) {
+    return preciseCurrency(0);
+  }
+
+  return `${value > 0 ? "+" : "-"}${preciseCurrency(Math.abs(value))}`;
+}
+
 function formatPositionAmountInput(value: number) {
   return String(value).replace(".", ",");
 }
@@ -12884,10 +13328,7 @@ function buildCashflowTimeline({
 
     if (isCurrentMonth && date === today && currentBalance !== null) {
       runningBalance = currentBalance;
-    } else if (
-      date > startSnapshot.snapshotDate &&
-      (isCurrentMonth ? date < today : month < currentMonth)
-    ) {
+    } else if (isCurrentMonth ? date < today : month < currentMonth) {
       runningBalance += actualDailyChanges[index];
     } else {
       runningBalance += projectedDailyChanges[index];
@@ -12914,7 +13355,6 @@ function buildCashflowMonthStartBalance({
   }
 
   const monthStartDate = `${month}-01`;
-  const nextMonthStart = monthStart(addIsoMonths(month, 1));
 
   // Een snapshot is het eindsaldo van snapshotDate: alle transacties van
   // die dag zitten er al in. Mutaties na een snapshot starten daarom altijd
@@ -12922,17 +13362,60 @@ function buildCashflowMonthStartBalance({
   const transactionsBetweenSnapshotAndMonthStart = transactions
     .filter((transaction) => transaction.date > startSnapshot.snapshotDate)
     .filter((transaction) => transaction.date < monthStartDate)
-    .filter((transaction) => transaction.date < nextMonthStart)
     .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0);
   const transactionsBetweenMonthStartAndSnapshot = transactions
     .filter((transaction) => transaction.date >= monthStartDate)
     .filter((transaction) => transaction.date <= startSnapshot.snapshotDate)
-    .filter((transaction) => transaction.date < nextMonthStart)
     .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0);
 
-  return startSnapshot.snapshotDate <= monthStartDate
+  return startSnapshot.snapshotDate < monthStartDate
     ? startSnapshot.balance + transactionsBetweenSnapshotAndMonthStart
     : startSnapshot.balance - transactionsBetweenMonthStartAndSnapshot;
+}
+
+function buildCashflowMonthEndBalance({
+  startSnapshot,
+  month,
+  transactions,
+}: {
+  startSnapshot?: CashflowStartSnapshot;
+  month: string;
+  transactions: Transaction[];
+}) {
+  const openingBalance = buildCashflowMonthStartBalance({
+    startSnapshot,
+    month,
+    transactions,
+  });
+
+  if (openingBalance === null) {
+    return null;
+  }
+
+  return transactions
+    .filter((transaction) => transaction.date.startsWith(month))
+    .reduce(
+      (total, transaction) => total + signedTransactionAmount(transaction),
+      openingBalance,
+    );
+}
+
+function closestCashflowSnapshot(
+  snapshots: AccountBalanceSnapshot[],
+  month: string,
+) {
+  const monthStartDate = `${month}-01`;
+
+  return [...snapshots].sort((first, second) => {
+    const firstDistance = Math.abs(daysBetween(first.snapshotDate, monthStartDate));
+    const secondDistance = Math.abs(daysBetween(second.snapshotDate, monthStartDate));
+
+    if (firstDistance !== secondDistance) {
+      return firstDistance - secondDistance;
+    }
+
+    return second.snapshotDate.localeCompare(first.snapshotDate);
+  })[0];
 }
 
 function cashflowLineColor(balance: number, buffer: number) {
@@ -13267,6 +13750,14 @@ function addIsoDays(isoDate: string, delta: number) {
   ].join("-");
 }
 
+function daysBetween(firstDate: string, secondDate: string) {
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const first = new Date(`${firstDate}T00:00:00`).getTime();
+  const second = new Date(`${secondDate}T00:00:00`).getTime();
+
+  return Math.round((first - second) / millisecondsPerDay);
+}
+
 function normalizeMonthRange(fromMonth: string, toMonth: string) {
   return fromMonth <= toMonth
     ? ([fromMonth, toMonth] as const)
@@ -13292,6 +13783,10 @@ function monthsInRange(fromMonth: string, toMonth: string) {
 
 function monthStart(month: string) {
   return `${month}-01`;
+}
+
+function monthEndDate(month: string) {
+  return dateForBillingDay(month, daysInIsoMonth(month));
 }
 
 function mergeById<T extends { id: string }>(currentItems: T[], nextItems: T[]) {

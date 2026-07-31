@@ -81,7 +81,7 @@ export async function GET(request: Request) {
 
   const monthStart = `${month}-01`;
   const from = addMonths(monthStart, -5);
-  const to = addMonths(monthStart, 1);
+  const to = addMonths(monthStart, 2);
   const accountMap = new Map(
     (accounts ?? []).map((account) => [account.id, account]),
   );

@@ -96,6 +96,21 @@ export type InvestmentSettings = {
   investingEnabled: boolean;
 };
 
+export type UserSettings = {
+  userId: string;
+  reconciliationEnabled: boolean;
+};
+
+export type MonthReconciliation = {
+  id: string;
+  accountId: string;
+  month: string;
+  actualBalance: number;
+  checkedAt: string;
+  note?: string;
+  enteredById: string;
+};
+
 export type CryptoPosition = {
   id: string;
   userId: string;
@@ -128,8 +143,10 @@ export type DashboardData = {
   categories: Category[];
   contributionPlans: ContributionPlan[];
   investmentSettings: InvestmentSettings;
+  userSettings: UserSettings;
   cryptoPositions: CryptoPosition[];
   degiroPositions: DegiroPosition[];
+  monthReconciliations: MonthReconciliation[];
   balanceSnapshots: AccountBalanceSnapshot[];
   recurringExpenses: RecurringExpense[];
   fixedInstances: FixedExpenseInstance[];

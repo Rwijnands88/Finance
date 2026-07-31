@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { InvestmentSettingsToggle } from "@/components/finance/investment-settings-toggle";
+import { ReconciliationSettingsToggle } from "@/components/finance/reconciliation-settings-toggle";
 import {
   Card,
   CardContent,
@@ -21,14 +22,20 @@ export default async function SettingsPage() {
     redirect("/login");
   }
 
-  const [{ data: profile }, { data: investmentSettings }] = await Promise.all([
-    supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
-    supabase
-      .from("investment_settings")
-      .select("investing_enabled")
-      .eq("user_id", user.id)
-      .maybeSingle(),
-  ]);
+  const [{ data: profile }, { data: investmentSettings }, { data: userSettings }] =
+    await Promise.all([
+      supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
+      supabase
+        .from("investment_settings")
+        .select("investing_enabled")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("user_settings")
+        .select("reconciliation_enabled")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ]);
 
   return (
     <main className="min-h-dvh bg-[var(--bg-base)] px-4 py-6 text-[var(--text-primary)] sm:px-6 lg:px-8">
@@ -55,9 +62,12 @@ export default async function SettingsPage() {
               Persoonlijke modules die alleen voor jouw account gelden.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="grid gap-3">
             <InvestmentSettingsToggle
               initialEnabled={Boolean(investmentSettings?.investing_enabled)}
+            />
+            <ReconciliationSettingsToggle
+              initialEnabled={Boolean(userSettings?.reconciliation_enabled)}
             />
           </CardContent>
         </Card>
