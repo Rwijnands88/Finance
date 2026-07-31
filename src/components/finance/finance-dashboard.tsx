@@ -194,6 +194,11 @@ type MonthReconciliationCardModel = {
   onNoteChange: (value: string) => void;
   onSave: () => void;
 };
+type BalanceSnapshotWarning = {
+  key: string;
+  transactionCount: number;
+  totalAmount: number;
+};
 
 type ContributionPersonBreakdown = {
   person: string;
@@ -407,6 +412,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     new Date().toISOString().slice(0, 10),
   );
   const [balanceMessage, setBalanceMessage] = useState("");
+  const [balanceSnapshotWarning, setBalanceSnapshotWarning] =
+    useState<BalanceSnapshotWarning | null>(null);
   const [isSavingBalance, setIsSavingBalance] = useState(false);
   const [savingsStartAmount, setSavingsStartAmount] = useState("");
   const [savingsStartDate, setSavingsStartDate] = useState(
@@ -2066,11 +2073,44 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
   }
 
+  function updateBalanceAmount(value: string) {
+    setBalanceAmount(value);
+    setBalanceSnapshotWarning(null);
+  }
+
+  function updateBalanceDate(value: string) {
+    setBalanceDate(value);
+    setBalanceSnapshotWarning(null);
+  }
+
   async function saveBalanceSnapshot() {
     const amount = parseCurrencyInput(balanceAmount);
 
     if (!selectedAccount || Number.isNaN(amount)) {
+      setBalanceSnapshotWarning(null);
       setBalanceMessage("Vul een geldig saldo in.");
+      return;
+    }
+
+    const warningKey = `${selectedAccount.id}:${balanceDate}:${amount.toFixed(2)}`;
+    const transactionsOnSnapshotDate = selectedTransactions.filter(
+      (transaction) =>
+        transaction.date === balanceDate && Math.abs(cashAmount(transaction)) > 0,
+    );
+
+    if (
+      transactionsOnSnapshotDate.length > 0 &&
+      balanceSnapshotWarning?.key !== warningKey
+    ) {
+      setBalanceMessage("");
+      setBalanceSnapshotWarning({
+        key: warningKey,
+        transactionCount: transactionsOnSnapshotDate.length,
+        totalAmount: transactionsOnSnapshotDate.reduce(
+          (total, transaction) => total + Math.abs(cashAmount(transaction)),
+          0,
+        ),
+      });
       return;
     }
 
@@ -2105,6 +2145,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
     setBalanceSnapshots((items) => [result.snapshot, ...items]);
     setBalanceAmount("");
+    setBalanceSnapshotWarning(null);
     setBalanceMessage("Saldo bijgewerkt.");
   }
 
@@ -4547,6 +4588,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             balanceAmount={balanceAmount}
             balanceDate={balanceDate}
             balanceMessage={balanceMessage}
+            balanceWarning={balanceSnapshotWarning}
             isSavingBalance={isSavingBalance}
             incomeTransactions={incomeTransactionsForCurrentMonth}
             incomeAmount={incomeAmount}
@@ -4558,8 +4600,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             deletingTransactionId={deletingTransactionId}
             showIncomeForm={!isSharedView}
             coverage={!isSharedView ? personalContributionCoverage : undefined}
-            onBalanceAmountChange={setBalanceAmount}
-            onBalanceDateChange={setBalanceDate}
+            onBalanceAmountChange={updateBalanceAmount}
+            onBalanceDateChange={updateBalanceDate}
             onSaveBalance={saveBalanceSnapshot}
             onDeleteBalance={deleteBalanceSnapshot}
             onEditIncome={startEditingTransaction}
@@ -4876,6 +4918,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               balanceAmount={balanceAmount}
               balanceDate={balanceDate}
               balanceMessage={balanceMessage}
+              balanceWarning={balanceSnapshotWarning}
               isSavingBalance={isSavingBalance}
               incomeTransactions={incomeTransactionsForCurrentMonth}
               incomeAmount={incomeAmount}
@@ -4887,8 +4930,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               deletingTransactionId={deletingTransactionId}
               showIncomeForm={!isSharedView}
               coverage={!isSharedView ? personalContributionCoverage : undefined}
-              onBalanceAmountChange={setBalanceAmount}
-              onBalanceDateChange={setBalanceDate}
+              onBalanceAmountChange={updateBalanceAmount}
+              onBalanceDateChange={updateBalanceDate}
               onSaveBalance={saveBalanceSnapshot}
               onDeleteBalance={deleteBalanceSnapshot}
               onEditIncome={startEditingTransaction}
@@ -9981,6 +10024,7 @@ function AccountBalanceCard({
   balanceAmount,
   balanceDate,
   balanceMessage,
+  balanceWarning,
   isSavingBalance,
   incomeTransactions,
   incomeAmount,
@@ -10010,6 +10054,7 @@ function AccountBalanceCard({
   balanceAmount: string;
   balanceDate: string;
   balanceMessage: string;
+  balanceWarning: BalanceSnapshotWarning | null;
   isSavingBalance: boolean;
   incomeTransactions: Transaction[];
   incomeAmount: string;
@@ -10108,8 +10153,22 @@ function AccountBalanceCard({
             </label>
             <p className="text-[11px] leading-relaxed text-zinc-500">
               Gebruik het saldo nadat alle af- en bijschrijvingen op die datum
-              zijn verwerkt.
+              zijn verwerkt. Kies bij voorkeur de laatste dag van de maand als
+              snapshotdatum.
             </p>
+            {balanceWarning && (
+              <div className="rounded-[12px] border border-amber-400/25 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-100">
+                <p>
+                  Op deze datum staan {balanceWarning.transactionCount}{" "}
+                  transacties voor in totaal{" "}
+                  {currency(balanceWarning.totalAmount)}. Die worden geacht al
+                  in dit saldo verwerkt te zijn.
+                </p>
+                <p className="mt-1 text-amber-200/80">
+                  Klik nogmaals op bewaren om door te gaan.
+                </p>
+              </div>
+            )}
             <div className="flex justify-end">
               <Button
                 size="sm"
@@ -10122,7 +10181,7 @@ function AccountBalanceCard({
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                Bewaar
+                {balanceWarning ? "Toch bewaren" : "Bewaar"}
               </Button>
             </div>
           </div>
