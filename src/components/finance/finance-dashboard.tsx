@@ -46,6 +46,7 @@ import {
 } from "recharts";
 import {
   type AccountBalanceSnapshot,
+  type Account,
   type ContributionKind,
   type ContributionPlan,
   type CryptoPosition,
@@ -56,13 +57,16 @@ import {
   type Transaction,
 } from "@/lib/types";
 import {
+  budgetAmount,
   cashAmount,
   categoryById,
   categoryTotalsByPerson,
   categoryTotals,
+  isVariableBudgetTransaction,
   sixMonthTrend,
   totalsByPerson,
   totalsForMonth,
+  transactionTypeLabel,
 } from "@/lib/finance";
 import { cn, currency, monthLabel, preciseCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -115,6 +119,8 @@ type DashboardMetric = {
 };
 
 type ActiveSection = "dashboard" | "fixed" | "vermogen" | "input" | "month";
+type QuickTransactionType = "variable" | "prepaid" | "settlement";
+type SettlementDirection = "in" | "out";
 type TransactionDisplayLimit = 10 | 15 | 20 | "all";
 type ContributionPlanDraft = {
   label: string;
@@ -345,6 +351,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [quickPaidById, setQuickPaidById] = useState(
     initialData.currentUserId,
   );
+  const [quickTransactionType, setQuickTransactionType] =
+    useState<QuickTransactionType>("variable");
+  const [quickSettlementDirection, setQuickSettlementDirection] =
+    useState<SettlementDirection>("out");
   const [selectedAccountId, setSelectedAccountId] = useState(
     defaultAccount?.id ?? personalAccount?.id ?? "all",
   );
@@ -461,6 +471,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [editPaidById, setEditPaidById] = useState("");
   const [editContributionKind, setEditContributionKind] =
     useState<ContributionKind>("extra");
+  const [editSettlementDirection, setEditSettlementDirection] =
+    useState<SettlementDirection>("out");
   const [editMessage, setEditMessage] = useState("");
   const [isSavingTransactionEdit, setIsSavingTransactionEdit] = useState(false);
   const [fixedMessage, setFixedMessage] = useState("");
@@ -655,13 +667,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     [categories, currentMonth, selectedTransactions],
   );
   const personTotals = useMemo(
-    () =>
-      totalsByPerson(
-        selectedTransactions.filter(
-          (transaction) => transaction.type === "variable",
-        ),
-        currentMonth,
-      ),
+    () => totalsByPerson(selectedTransactions, currentMonth),
     [currentMonth, selectedTransactions],
   );
   const categoryPersonRows = useMemo(
@@ -738,7 +744,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       )
       .forEach((transaction) => {
         const key = transaction.paidById ?? transaction.enteredById ?? transaction.enteredBy;
-        totals.set(key, (totals.get(key) ?? 0) + transaction.amount);
+        totals.set(key, (totals.get(key) ?? 0) + cashAmount(transaction));
       });
 
     return totals;
@@ -753,7 +759,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             transaction.date.startsWith(currentMonth) &&
             (transaction.accountId ?? defaultAccount?.id) === defaultAccount?.id,
         )
-        .reduce((total, transaction) => total + transaction.amount, 0),
+        .reduce((total, transaction) => total + cashAmount(transaction), 0),
     [currentMonth, defaultAccount?.id, transactions],
   );
   const taxReturnContributionTotal = useMemo(
@@ -766,7 +772,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             transaction.date.startsWith(currentMonth) &&
             (transaction.accountId ?? defaultAccount?.id) === defaultAccount?.id,
         )
-        .reduce((total, transaction) => total + transaction.amount, 0),
+        .reduce((total, transaction) => total + cashAmount(transaction), 0),
     [currentMonth, defaultAccount?.id, transactions],
   );
   const selectedExtraContributionTotal = useMemo(
@@ -778,7 +784,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             transaction.contributionKind === "extra" &&
             transaction.date.startsWith(currentMonth),
         )
-        .reduce((total, transaction) => total + transaction.amount, 0),
+        .reduce((total, transaction) => total + cashAmount(transaction), 0),
     [currentMonth, selectedTransactions],
   );
   const selectedTaxReturnContributionTotal = useMemo(
@@ -790,7 +796,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             transaction.contributionKind === "belastingteruggave" &&
             transaction.date.startsWith(currentMonth),
         )
-        .reduce((total, transaction) => total + transaction.amount, 0),
+        .reduce((total, transaction) => total + cashAmount(transaction), 0),
     [currentMonth, selectedTransactions],
   );
   const contributionBreakdown = useMemo(
@@ -937,30 +943,33 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         fixedAgendaItems,
         labels,
         today,
+        currentMonth,
       ),
     [
       fixedAgendaItems,
       labels,
       monthTransactions,
       today,
+      currentMonth,
     ],
   );
   const fixedTotalForCurrentMonth = useMemo(
     () =>
-      expectedFixedTotalForMonth(
+      fixedBudgetTotalForMonth(
         selectedRecurringExpenses,
         selectedFixedInstances,
         currentMonth,
+        selectedTransactions,
       ),
-    [currentMonth, selectedFixedInstances, selectedRecurringExpenses],
+    [currentMonth, selectedFixedInstances, selectedRecurringExpenses, selectedTransactions],
   );
   const variableExpenseTotalToDate = useMemo(
     () =>
       selectedTransactions
-        .filter((transaction) => transaction.type === "variable")
+        .filter(isVariableBudgetTransaction)
         .filter((transaction) => transaction.date.startsWith(currentMonth))
         .filter((transaction) => transaction.date <= today)
-        .reduce((total, transaction) => total + transaction.amount, 0),
+        .reduce((total, transaction) => total + budgetAmount(transaction), 0),
     [currentMonth, selectedTransactions, today],
   );
   const variableSpendPacing = useMemo(
@@ -978,7 +987,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         .filter((transaction) => transaction.type === "income")
         .filter((transaction) => transaction.date.startsWith(currentMonth))
         .filter((transaction) => transaction.date <= today)
-        .reduce((total, transaction) => total + transaction.amount, 0),
+        .reduce((total, transaction) => total + cashAmount(transaction), 0),
     [currentMonth, selectedTransactions, today],
   );
   const expectedIncomeTotalForMonth = useMemo(
@@ -986,7 +995,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       selectedTransactions
         .filter((transaction) => transaction.type === "income")
         .filter((transaction) => transaction.date.startsWith(currentMonth))
-        .reduce((total, transaction) => total + transaction.amount, 0),
+        .reduce((total, transaction) => total + cashAmount(transaction), 0),
     [currentMonth, selectedTransactions],
   );
   const incomeTransactionsForCurrentMonth = useMemo(
@@ -1050,7 +1059,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     [selectedTransactions, today],
   );
   const savingsDepositTotalToDate = savingsTransactionsToDate.reduce(
-    (total, transaction) => total + transaction.amount,
+    (total, transaction) => total + budgetAmount(transaction),
     0,
   );
   const currentSavingsBalance = latestSavingsSnapshot
@@ -1063,9 +1072,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const showPdtNavLink =
     showInvestmentSection &&
     initialData.currentUserEmail === "ralph.wijnands1988@gmail.com";
-  const displayedExpenseTotal = monthTotals.expenseTotal;
-  const displayedNetTotal =
-    monthTotals.contributionTotal + monthTotals.incomeTotal - displayedExpenseTotal;
+  const displayedNetTotal = monthTotals.netTotal;
   const contributionCoverage = useMemo(
     () =>
       buildContributionCoverage({
@@ -1130,13 +1137,23 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       .map((transaction) => ({
         date: transaction.date,
         day: Number(transaction.date.slice(8, 10)),
-        amount: -transaction.amount,
+        amount: cashAmount(transaction),
+      }));
+    const futureSettlementEvents = selectedTransactions
+      .filter((transaction) => transaction.type === "settlement")
+      .filter((transaction) => transaction.date.startsWith(currentMonth))
+      .filter((transaction) => transaction.date > today)
+      .map((transaction) => ({
+        date: transaction.date,
+        day: Number(transaction.date.slice(8, 10)),
+        amount: cashAmount(transaction),
       }));
 
     if (isSharedView) {
       return [
         ...futureFixedEvents,
         ...futureSavingsEvents,
+        ...futureSettlementEvents,
         ...contributionPlanRows
           .filter((plan) => plan.remaining > 0)
           .map((plan) => {
@@ -1170,12 +1187,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       .map((transaction) => ({
         date: transaction.date,
         day: Number(transaction.date.slice(8, 10)),
-        amount: transaction.amount,
+        amount: cashAmount(transaction),
       }));
 
     return [
       ...futureFixedEvents,
       ...futureSavingsEvents,
+      ...futureSettlementEvents,
       ...ownContributionPlanEvents,
       ...incomeEvents,
     ] satisfies CashflowEvent[];
@@ -1605,7 +1623,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     };
   }, [currentMonth]);
 
-  async function addVariableExpense() {
+  async function addQuickTransaction() {
     const amount = parseCurrencyInput(quickAmount);
     const selectedAccount = accountsById.get(quickAccount) ?? defaultAccount;
     const paidByMember =
@@ -1613,13 +1631,14 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       initialData.householdMembers.find(
         (member) => member.userId === initialData.currentUserId,
       );
+    const requiresCategory = quickTransactionType !== "settlement";
 
     if (!amount || amount <= 0) {
       setScanMessage("Vul een geldig bedrag in.");
       return;
     }
 
-    if (!activeQuickCategory) {
+    if (requiresCategory && !activeQuickCategory) {
       setScanMessage("Kies een categorie.");
       return;
     }
@@ -1637,10 +1656,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       body: JSON.stringify({
         householdId: initialData.householdId,
         accountId: selectedAccount.id,
-        categoryId: activeQuickCategory,
+        categoryId: requiresCategory ? activeQuickCategory : undefined,
         amount,
         date: quickDate,
         note: quickNote || null,
+        type: quickTransactionType,
+        settlementDirection:
+          quickTransactionType === "settlement"
+            ? quickSettlementDirection
+            : undefined,
         paidById: paidByMember?.userId ?? initialData.currentUserId,
       }),
     });
@@ -1657,14 +1681,20 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
     const transaction: Transaction = {
       id: result.transaction.id,
-      type: "variable",
+      type: quickTransactionType,
       accountId: result.transaction.accountId ?? selectedAccount.id,
       accountName: selectedAccount.name,
       accountKind: selectedAccount.kind,
-      categoryId: activeQuickCategory,
+      categoryId:
+        result.transaction.categoryId ??
+        (requiresCategory ? activeQuickCategory : ""),
       amount,
       date: quickDate,
       note: quickNote || undefined,
+      settlementDirection:
+        quickTransactionType === "settlement"
+          ? quickSettlementDirection
+          : undefined,
       enteredById: initialData.currentUserId,
       enteredBy: initialData.currentPerson,
       paidById:
@@ -1677,8 +1707,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setTransactions((items) => [transaction, ...items]);
 
     let receiptUrl: string | null = null;
-    if (receiptFile) {
-      setScanMessage("Uitgave toegevoegd. Bon wordt opgeslagen...");
+    if (receiptFile && quickTransactionType !== "settlement") {
+      setScanMessage(`${transactionTypeLabel(transaction)} toegevoegd. Bon wordt opgeslagen...`);
 
       try {
         receiptUrl = await saveReceiptForTransaction({
@@ -1695,7 +1725,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         );
       } catch {
         setScanMessage(
-          "Uitgave toegevoegd, maar bon opslaan lukte niet. Je kunt verder werken.",
+          `${transactionTypeLabel(transaction)} toegevoegd, maar bon opslaan lukte niet. Je kunt verder werken.`,
         );
       }
     }
@@ -1703,9 +1733,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setSelectedAccountId(selectedAccount.id);
     setQuickAmount("");
     setQuickNote("");
-    if (!receiptFile || receiptUrl) {
+    if (quickTransactionType === "settlement" || !receiptFile || receiptUrl) {
       setScanMessage(
-        receiptUrl ? "Uitgave en bon opgeslagen." : "Uitgave toegevoegd.",
+        receiptUrl
+          ? `${transactionTypeLabel(transaction)} en bon opgeslagen.`
+          : `${transactionTypeLabel(transaction)} toegevoegd.`,
       );
     }
     setReceiptDraft(null);
@@ -2818,6 +2850,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           ? "Definitief verwijderen?\n\nDeze inkomensregel wordt permanent uit het overzicht verwijderd."
           : transaction.type === "sparen"
             ? "Definitief verwijderen?\n\nDeze spaarstorting wordt permanent uit het overzicht verwijderd."
+            : transaction.type === "prepaid"
+              ? "Definitief verwijderen?\n\nDeze voorgeschoten uitgave wordt permanent uit het maandoverzicht verwijderd."
+            : transaction.type === "settlement"
+              ? "Definitief verwijderen?\n\nDeze verrekening wordt permanent uit het maandoverzicht verwijderd."
             : "Definitief verwijderen?\n\nDeze ingevoerde uitgave wordt permanent uit het maandoverzicht verwijderd.",
     );
 
@@ -2868,6 +2904,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           ? "Inkomen verwijderd."
           : transaction.type === "sparen"
             ? "Spaarstorting verwijderd."
+          : transaction.type === "prepaid"
+            ? "Voorgeschoten uitgave verwijderd."
+          : transaction.type === "settlement"
+            ? "Verrekening verwijderd."
         : "Uitgave verwijderd.",
     );
   }
@@ -2890,6 +2930,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setEditNote(transaction.note ?? "");
     setEditCategory(safeCategoryId);
     setEditContributionKind(transaction.contributionKind ?? "extra");
+    setEditSettlementDirection(transaction.settlementDirection ?? "out");
     setEditPaidById(
       transaction.paidById ??
         transaction.enteredById ??
@@ -2920,7 +2961,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       return;
     }
 
-    if (!editCategory) {
+    if (editingTransaction.type !== "settlement" && !editCategory) {
       setEditMessage("Kies een categorie.");
       return;
     }
@@ -2948,6 +2989,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           editingTransaction.type === "contribution"
             ? editContributionKind
             : undefined,
+        settlementDirection:
+          editingTransaction.type === "settlement"
+            ? editSettlementDirection
+            : undefined,
         paidById: paidByMember?.userId ?? initialData.currentUserId,
       }),
     });
@@ -2971,6 +3016,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       note?: string;
       paidById?: string;
       contributionKind?: ContributionKind;
+      settlementDirection?: SettlementDirection;
     };
 
     setTransactions((items) =>
@@ -2987,6 +3033,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   editingTransaction.type === "contribution"
                     ? updatedTransaction.contributionKind ?? editContributionKind
                     : item.contributionKind,
+                settlementDirection:
+                  editingTransaction.type === "settlement"
+                    ? updatedTransaction.settlementDirection ?? editSettlementDirection
+                    : item.settlementDirection,
                 paidById:
                   updatedTransaction.paidById ??
                   paidByMember?.userId ??
@@ -3012,6 +3062,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setMonthMessage(
       editingTransaction.type === "sparen"
         ? "Spaarstorting bijgewerkt."
+        : editingTransaction.type === "settlement"
+          ? "Verrekening bijgewerkt."
+        : editingTransaction.type === "prepaid"
+          ? "Voorgeschoten uitgave bijgewerkt."
         : "Uitgave bijgewerkt.",
     );
   }
@@ -3218,6 +3272,53 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     );
   }
 
+  function visibleFixedItemsForMonth(targetMonth: string) {
+    const agendaItems = fixedAgendaItemsForMonth(targetMonth).filter((item) =>
+      item.date.startsWith(targetMonth),
+    );
+    const representedFixedInstanceIds = new Set(
+      agendaItems.map((item) => item.id),
+    );
+    const transactionItems = selectedTransactions
+      .filter((transaction) => transaction.type === "fixed")
+      .filter((transaction) => transaction.date.startsWith(targetMonth))
+      .filter(
+        (transaction) =>
+          !transaction.fixedInstanceId ||
+          !representedFixedInstanceIds.has(transaction.fixedInstanceId),
+      )
+      .map((transaction) => {
+        const category = labels.get(transaction.categoryId);
+
+        return {
+          id: `transaction-${transaction.id}`,
+          recurringExpenseId:
+            transaction.fixedInstanceId ?? `transaction-${transaction.id}`,
+          name: category?.name ?? "Vaste last",
+          categoryName: category?.name ?? "Onbekend",
+          categoryId: transaction.categoryId,
+          categoryColor: category?.color ?? "#6366F1",
+          amount: budgetAmount(transaction),
+          expectedAmount: budgetAmount(transaction),
+          date: transaction.date,
+          expectedDate: transaction.date,
+          actualDate: transaction.date,
+          billingDay: Number(transaction.date.slice(8, 10)),
+          day: Number(transaction.date.slice(8, 10)),
+          state: "processed",
+          canConfirm: false,
+          canSkip: false,
+          note: transaction.note,
+        } satisfies FixedAgendaItem;
+      });
+
+    return [...agendaItems, ...transactionItems].sort(
+      (first, second) =>
+        first.date.localeCompare(second.date) ||
+        first.name.localeCompare(second.name, "nl"),
+    );
+  }
+
   function fixedItemsTotal(items: FixedAgendaItem[]) {
     return items.reduce(
       (total, item) => (item.state === "skipped" ? total : total + item.amount),
@@ -3236,14 +3337,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   async function exportExcel(targetMonth = currentMonth) {
     const exportTransactions = transactionsForMonth(targetMonth);
     const exportTotals = totalsForMonth(selectedTransactions, targetMonth);
-    const exportFixedItems = fixedAgendaItemsForMonth(targetMonth);
+    const exportFixedItems = visibleFixedItemsForMonth(targetMonth);
     const exportFixedTotal = fixedItemsTotal(exportFixedItems);
-    const exportNetTotal =
-      exportTotals.contributionTotal +
-      exportTotals.incomeTotal -
-      exportFixedTotal -
-      exportTotals.variableTotal -
-      exportTotals.savingsTotal;
+    const exportHouseholdExpenseTotal =
+      exportFixedTotal + exportTotals.variableTotal + exportTotals.savingsTotal;
     const summaryRows = [
       {
         Rekening: selectedAccount?.name ?? viewCopy.label,
@@ -3253,7 +3350,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         "Vaste lasten": exportFixedTotal,
         Variabel: exportTotals.variableTotal,
         Sparen: exportTotals.savingsTotal,
-        "Over/tekort": exportNetTotal,
+        "Uitgaven huishouden": exportHouseholdExpenseTotal,
+        "Mutaties rekening": exportTotals.netTotal,
         Uitgaven: exportTransactions.length,
         "Bonnen aanwezig": exportTransactions.filter(
           (transaction) => transaction.receiptUrl,
@@ -3263,16 +3361,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const rows = exportTransactions.map((transaction) => ({
       Datum: transaction.date,
       Rekening: transaction.accountName ?? "",
-      Type:
-        transaction.type === "fixed"
-          ? "Vaste last"
-          : transaction.type === "income"
-            ? "Inkomen"
-          : transaction.type === "contribution"
-            ? "Storting"
-          : transaction.type === "sparen"
-            ? "Sparen"
-            : "Variabel",
+      Type: transactionTypeLabel(transaction),
       Categorie:
         transaction.type === "contribution"
           ? contributionDisplayName(transaction)
@@ -3280,6 +3369,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
           : transaction.type === "sparen"
             ? SAVINGS_CATEGORY_NAME
+          : transaction.type === "settlement"
+            ? settlementDirectionLabel(
+                transaction.settlementDirection,
+                transaction.accountKind,
+              )
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
       BetaaldDoor: transaction.paidBy ?? transaction.enteredBy,
@@ -3306,7 +3400,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         "Vaste lasten",
         "Variabel",
         "Sparen",
-        "Over/tekort",
+        "Uitgaven huishouden",
+        "Mutaties rekening",
       ],
       widths: {
         Rekening: 26,
@@ -3316,7 +3411,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         "Vaste lasten": 15,
         Variabel: 15,
         Sparen: 15,
-        "Over/tekort": 15,
+        "Uitgaven huishouden": 20,
+        "Mutaties rekening": 18,
       },
     });
     appendFinanceSheet(workbook, "Alle transacties", rows, {
@@ -3357,13 +3453,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         (transaction) => transaction.date.startsWith(month),
       );
       const totals = totalsForMonth(selectedTransactions, month);
-      const fixedTotal = fixedItemsTotal(fixedAgendaItemsForMonth(month));
-      const netTotal =
-        totals.contributionTotal +
-        totals.incomeTotal -
-        fixedTotal -
-        totals.variableTotal -
-        totals.savingsTotal;
+      const fixedTotal = fixedItemsTotal(visibleFixedItemsForMonth(month));
+      const householdExpenseTotal =
+        fixedTotal + totals.variableTotal + totals.savingsTotal;
 
       return {
         Rekening: selectedAccount?.name ?? viewCopy.label,
@@ -3373,7 +3465,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         "Vaste lasten": fixedTotal,
         Variabel: totals.variableTotal,
         Sparen: totals.savingsTotal,
-        "Over/tekort": netTotal,
+        "Uitgaven huishouden": householdExpenseTotal,
+        "Mutaties rekening": totals.netTotal,
         Uitgaven: monthTransactionsForExport.length,
         "Bonnen aanwezig": monthTransactionsForExport.filter(
           (transaction) => transaction.receiptUrl,
@@ -3384,16 +3477,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       Datum: transaction.date,
       Maand: monthLabel(transaction.date.slice(0, 7)),
       Rekening: transaction.accountName ?? "",
-      Type:
-        transaction.type === "fixed"
-          ? "Vaste last"
-          : transaction.type === "income"
-            ? "Inkomen"
-          : transaction.type === "contribution"
-            ? "Storting"
-          : transaction.type === "sparen"
-            ? "Sparen"
-            : "Variabel",
+      Type: transactionTypeLabel(transaction),
       Categorie:
         transaction.type === "contribution"
           ? contributionDisplayName(transaction)
@@ -3401,6 +3485,11 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
           : transaction.type === "sparen"
             ? SAVINGS_CATEGORY_NAME
+          : transaction.type === "settlement"
+            ? settlementDirectionLabel(
+                transaction.settlementDirection,
+                transaction.accountKind,
+              )
           : labels.get(transaction.categoryId)?.name ?? "Onbekend",
       Bedrag: transaction.amount,
       BetaaldDoor: transaction.paidBy ?? transaction.enteredBy,
@@ -3409,7 +3498,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       Notitie: transaction.note ?? "",
     }));
     const fixedRows = rangeMonths.flatMap((month) =>
-      fixedAgendaItemsForMonth(month).map((item) => ({
+      visibleFixedItemsForMonth(month).map((item) => ({
         Maand: monthLabel(month),
         Datum: item.date,
         Dag: item.day,
@@ -3430,7 +3519,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         "Vaste lasten",
         "Variabel",
         "Sparen",
-        "Over/tekort",
+        "Uitgaven huishouden",
+        "Mutaties rekening",
       ],
       widths: {
         Rekening: 26,
@@ -3440,7 +3530,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         "Vaste lasten": 15,
         Variabel: 15,
         Sparen: 15,
-        "Over/tekort": 15,
+        "Uitgaven huishouden": 20,
+        "Mutaties rekening": 18,
       },
     });
     appendFinanceSheet(workbook, "Alle transacties", rows, {
@@ -3762,7 +3853,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     const { pdf } = await import("@react-pdf/renderer");
     const exportTransactions = transactionsForMonth(targetMonth);
     const receiptImages = await loadReceiptImagesForPdf(exportTransactions);
-    const fixedItems = fixedAgendaItemsForMonth(targetMonth).map(
+    const fixedItems = visibleFixedItemsForMonth(targetMonth).map(
       (item) =>
         ({
           id: item.id,
@@ -3826,6 +3917,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             ? contributionDisplayName(transaction)
             : transaction.type === "income"
               ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
+            : transaction.type === "sparen"
+              ? SAVINGS_CATEGORY_NAME
+            : transaction.type === "settlement"
+              ? settlementDirectionLabel(
+                  transaction.settlementDirection,
+                  transaction.accountKind,
+                )
               : labels.get(transaction.categoryId)?.name ?? "Onbekend";
         const baseName = [
           transaction.date,
@@ -3881,6 +3979,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             ? contributionDisplayName(transaction)
             : transaction.type === "income"
               ? labels.get(transaction.categoryId)?.name ?? "Inkomen"
+            : transaction.type === "sparen"
+              ? SAVINGS_CATEGORY_NAME
+            : transaction.type === "settlement"
+              ? settlementDirectionLabel(
+                  transaction.settlementDirection,
+                  transaction.accountKind,
+                )
               : labels.get(transaction.categoryId)?.name ?? "Onbekend";
         const month = transaction.date.slice(0, 7);
         const baseName = [
@@ -4155,6 +4260,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             note={quickNote}
             category={activeQuickCategory}
             paidById={quickPaidById}
+            transactionType={quickTransactionType}
+            settlementDirection={quickSettlementDirection}
+            selectedAccountKind={selectedAccount?.kind}
             householdMembers={initialData.householdMembers}
             onAmountChange={setQuickAmount}
             onAccountChange={setQuickAccount}
@@ -4162,6 +4270,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onNoteChange={setQuickNote}
             onCategoryChange={setQuickCategory}
             onPaidByChange={setQuickPaidById}
+            onTransactionTypeChange={setQuickTransactionType}
+            onSettlementDirectionChange={setQuickSettlementDirection}
             isScanningReceipt={isScanningReceipt}
             scanMessage={scanMessage}
             receiptDraft={receiptDraft}
@@ -4178,7 +4288,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onAddCategory={addVariableCategory}
             onRenameCategory={renameVariableCategory}
             onDeleteCategory={deleteVariableCategory}
-            onSubmit={addVariableExpense}
+            onSubmit={addQuickTransaction}
           />
           <AccountBalanceCard
             accountName={selectedAccount?.name ?? viewCopy.label}
@@ -4537,6 +4647,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 note={quickNote}
                 category={activeQuickCategory}
                 paidById={quickPaidById}
+                transactionType={quickTransactionType}
+                settlementDirection={quickSettlementDirection}
+                selectedAccountKind={selectedAccount?.kind}
                 householdMembers={initialData.householdMembers}
                 onAmountChange={setQuickAmount}
                 onAccountChange={setQuickAccount}
@@ -4544,6 +4657,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 onNoteChange={setQuickNote}
                 onCategoryChange={setQuickCategory}
                 onPaidByChange={setQuickPaidById}
+                onTransactionTypeChange={setQuickTransactionType}
+                onSettlementDirectionChange={setQuickSettlementDirection}
                 isScanningReceipt={isScanningReceipt}
                 scanMessage={scanMessage}
                 receiptDraft={receiptDraft}
@@ -4560,7 +4675,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 onAddCategory={addVariableCategory}
                 onRenameCategory={renameVariableCategory}
                 onDeleteCategory={deleteVariableCategory}
-                onSubmit={addVariableExpense}
+                onSubmit={addQuickTransaction}
               />
             </section>
 
@@ -4622,6 +4737,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           category={editCategory}
           paidById={editPaidById}
           contributionKind={editContributionKind}
+          settlementDirection={editSettlementDirection}
           message={editMessage}
           isSaving={isSavingTransactionEdit}
           onAmountChange={setEditAmount}
@@ -4630,6 +4746,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           onCategoryChange={setEditCategory}
           onPaidByChange={setEditPaidById}
           onContributionKindChange={setEditContributionKind}
+          onSettlementDirectionChange={setEditSettlementDirection}
           onCreateCategory={createVariableCategory}
           onClose={closeTransactionEditor}
           onSave={saveEditedTransaction}
@@ -4719,7 +4836,14 @@ type OutgoingTransactionRow = {
   subtitle: string;
   amount: number;
   signedAmount: number;
-  kind: "fixed" | "variable" | "contribution" | "income" | "sparen";
+  kind:
+    | "fixed"
+    | "variable"
+    | "prepaid"
+    | "settlement"
+    | "contribution"
+    | "income"
+    | "sparen";
   color: string;
   receiptUrl?: string;
   state?: FixedAgendaState;
@@ -7239,6 +7363,7 @@ function TransactionEditDialog({
   category,
   paidById,
   contributionKind,
+  settlementDirection,
   message,
   isSaving,
   onAmountChange,
@@ -7247,6 +7372,7 @@ function TransactionEditDialog({
   onCategoryChange,
   onPaidByChange,
   onContributionKindChange,
+  onSettlementDirectionChange,
   onCreateCategory,
   onClose,
   onSave,
@@ -7262,6 +7388,7 @@ function TransactionEditDialog({
   category: string;
   paidById: string;
   contributionKind: ContributionKind;
+  settlementDirection: SettlementDirection;
   message: string;
   isSaving: boolean;
   onAmountChange: (value: string) => void;
@@ -7270,6 +7397,7 @@ function TransactionEditDialog({
   onCategoryChange: (value: string) => void;
   onPaidByChange: (value: string) => void;
   onContributionKindChange: (value: ContributionKind) => void;
+  onSettlementDirectionChange: (value: SettlementDirection) => void;
   onCreateCategory: (name: string) => Promise<{
     category?: DashboardData["categories"][number];
     error?: string;
@@ -7281,19 +7409,24 @@ function TransactionEditDialog({
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryMessage, setNewCategoryMessage] = useState("");
   const [isSavingNewCategory, setIsSavingNewCategory] = useState(false);
+  const isSettlement = transaction.type === "settlement";
+  const personLabel = isSettlement ? "Betrokken persoon" : "Betaald door";
+  const settlementOptions = settlementDirectionOptions(transaction.accountKind);
   const categoryOptions = transactionCategoryOptions(
     transaction,
     categories,
     variableCategories,
   );
-  const selectedCategory = categoryOptions.some((item) => item.id === category)
+  const selectedCategory = isSettlement
+    ? ""
+    : categoryOptions.some((item) => item.id === category)
     ? category
     : categoryOptions[0]?.id ?? "";
   useEffect(() => {
-    if (selectedCategory && selectedCategory !== category) {
+    if (!isSettlement && selectedCategory && selectedCategory !== category) {
       onCategoryChange(selectedCategory);
     }
-  }, [category, onCategoryChange, selectedCategory]);
+  }, [category, isSettlement, onCategoryChange, selectedCategory]);
 
   async function saveNewCategory() {
     const cleanName = newCategoryName.trim().replace(/\s+/g, " ");
@@ -7330,6 +7463,10 @@ function TransactionEditDialog({
         ? contributionDisplayName(transaction, true)
         : transaction.type === "sparen"
           ? SAVINGS_CATEGORY_NAME
+          : transaction.type === "prepaid"
+            ? labels.get(transaction.categoryId)?.name ?? "Voorgeschoten"
+          : transaction.type === "settlement"
+            ? "Verrekening"
           : labels.get(transaction.categoryId)?.name ?? "Uitgave";
   const dialogTitle =
     transaction.type === "income"
@@ -7338,6 +7475,10 @@ function TransactionEditDialog({
         ? "Storting wijzigen"
         : transaction.type === "sparen"
           ? "Spaarstorting wijzigen"
+          : transaction.type === "prepaid"
+            ? "Voorgeschoten wijzigen"
+          : transaction.type === "settlement"
+            ? "Verrekening wijzigen"
           : transaction.type === "fixed"
             ? "Vaste last wijzigen"
             : "Uitgave wijzigen";
@@ -7374,6 +7515,7 @@ function TransactionEditDialog({
         </div>
 
         <div className="grid gap-3 px-5 py-4">
+          {!isSettlement && (
           <FieldLabel label="Categorie">
             <Select
               value={selectedCategory}
@@ -7447,6 +7589,7 @@ function TransactionEditDialog({
               )}
             </div>
           </FieldLabel>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <FieldLabel label="Bedrag">
@@ -7457,7 +7600,7 @@ function TransactionEditDialog({
                 onChange={(event) => onAmountChange(event.target.value)}
               />
             </FieldLabel>
-            <FieldLabel label="Datum">
+            <FieldLabel label="Datum afschrijving">
               <Input
                 type="date"
                 value={date}
@@ -7468,7 +7611,7 @@ function TransactionEditDialog({
           </div>
 
           {householdMembers.length > 0 && (
-            <FieldLabel label="Betaald door">
+            <FieldLabel label={personLabel}>
               <Select
                 value={paidById}
                 className="h-11"
@@ -7477,6 +7620,24 @@ function TransactionEditDialog({
                 {householdMembers.map((member) => (
                   <option key={member.userId} value={member.userId}>
                     {member.displayName}
+                  </option>
+                ))}
+              </Select>
+            </FieldLabel>
+          )}
+
+          {isSettlement && (
+            <FieldLabel label="Richting">
+              <Select
+                value={settlementDirection}
+                className="h-11"
+                onChange={(event) =>
+                  onSettlementDirectionChange(event.target.value as SettlementDirection)
+                }
+              >
+                {settlementOptions.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
                   </option>
                 ))}
               </Select>
@@ -10754,6 +10915,30 @@ function ReceiptDraftValue({ label, value }: { label: string; value: string }) {
   );
 }
 
+const quickTransactionTypes = [
+  { value: "variable", label: "Variabel" },
+  { value: "prepaid", label: "Voorgeschoten" },
+  { value: "settlement", label: "Verrekening" },
+] satisfies Array<{ value: QuickTransactionType; label: string }>;
+
+function settlementDirectionOptions(accountKind?: Account["kind"]) {
+  return accountKind === "personal"
+    ? ([
+        { value: "in", label: "Naar privé" },
+        { value: "out", label: "Naar gezamenlijk" },
+      ] satisfies Array<{ value: SettlementDirection; label: string }>)
+    : ([
+        { value: "out", label: "Naar privé" },
+        { value: "in", label: "Naar gezamenlijk" },
+      ] satisfies Array<{ value: SettlementDirection; label: string }>);
+}
+
+function quickSubmitLabel(transactionType: QuickTransactionType) {
+  if (transactionType === "prepaid") return "Voorgeschoten toevoegen";
+  if (transactionType === "settlement") return "Verrekening toevoegen";
+  return "Uitgave toevoegen";
+}
+
 function QuickEntryCard({
   title,
   amount,
@@ -10762,6 +10947,9 @@ function QuickEntryCard({
   note,
   category,
   paidById,
+  transactionType,
+  settlementDirection,
+  selectedAccountKind,
   variableCategories,
   accounts,
   householdMembers,
@@ -10776,6 +10964,8 @@ function QuickEntryCard({
   onNoteChange,
   onCategoryChange,
   onPaidByChange,
+  onTransactionTypeChange,
+  onSettlementDirectionChange,
   onCustomCategoryNameChange,
   onAddCategory,
   onRenameCategory,
@@ -10794,6 +10984,9 @@ function QuickEntryCard({
   note: string;
   category: string;
   paidById: string;
+  transactionType: QuickTransactionType;
+  settlementDirection: SettlementDirection;
+  selectedAccountKind?: Account["kind"];
   variableCategories: DashboardData["categories"];
   accounts: DashboardData["accounts"];
   householdMembers: DashboardData["householdMembers"];
@@ -10808,6 +11001,8 @@ function QuickEntryCard({
   onNoteChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onPaidByChange: (value: string) => void;
+  onTransactionTypeChange: (value: QuickTransactionType) => void;
+  onSettlementDirectionChange: (value: SettlementDirection) => void;
   onCustomCategoryNameChange: (value: string) => void;
   onAddCategory: () => void;
   onRenameCategory: (categoryId: string, name: string) => void;
@@ -10825,6 +11020,17 @@ function QuickEntryCard({
   const customVariableCategories = variableCategories.filter(
     (item) => (item.sortOrder ?? 0) >= 200,
   );
+  const isSettlement = transactionType === "settlement";
+  const isPrepaid = transactionType === "prepaid";
+  const personLabel = isSettlement ? "Betrokken persoon" : "Betaald door";
+  const selectedQuickAccountKind =
+    accounts.find((item) => item.id === account)?.kind ?? selectedAccountKind;
+  const settlementOptions = settlementDirectionOptions(selectedQuickAccountKind);
+  const receiptDateDay = receiptDraft?.date
+    ? Number(receiptDraft.date.slice(8, 10))
+    : null;
+  const showReceiptDateHint =
+    typeof receiptDateDay === "number" && receiptDateDay >= 1 && receiptDateDay <= 2;
 
   return (
     <Card className="finance-card max-w-full overflow-hidden lg:max-w-[480px]">
@@ -10845,6 +11051,30 @@ function QuickEntryCard({
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
             Rekening
           </p>
+        </div>
+        <div className="grid gap-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
+            Type
+          </p>
+          <div className="grid grid-cols-3 gap-1 rounded-full bg-[#27272A] p-0.5">
+            {quickTransactionTypes.map((item) => {
+              const isActive = transactionType === item.value;
+
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => onTransactionTypeChange(item.value)}
+                  className={cn(
+                    "h-8 min-h-0 rounded-full px-2 text-[11px] font-medium text-[var(--text-secondary)] sm:text-xs",
+                    isActive && "bg-[#6366F1] text-white",
+                  )}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="scrollbar-hidden flex h-9 max-w-full gap-1 overflow-x-auto overscroll-x-contain rounded-full bg-[#27272A] p-0.5 sm:hidden">
           {accounts.map((item) => {
@@ -10871,7 +11101,7 @@ function QuickEntryCard({
         {householdMembers.length > 0 && (
           <div className="grid gap-1.5 sm:hidden">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
-              Betaald door
+              {personLabel}
             </p>
             <div className="grid h-9 grid-cols-2 gap-1 rounded-full bg-[#27272A] p-0.5">
               {householdMembers.map((member) => {
@@ -10896,7 +11126,41 @@ function QuickEntryCard({
           </div>
         )}
 
-        <div className="grid gap-1.5 sm:hidden">
+        {isSettlement && (
+          <div className="grid gap-1.5 sm:hidden">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
+              Richting
+            </p>
+            <div className="grid h-9 grid-cols-2 gap-1 rounded-full bg-[#27272A] p-0.5">
+              {settlementOptions.map((item) => {
+                const isActive = settlementDirection === item.value;
+
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => onSettlementDirectionChange(item.value)}
+                    className={cn(
+                      "h-8 min-h-0 rounded-full px-3 text-sm font-medium text-[var(--text-secondary)]",
+                      isActive && "bg-[#6366F1] text-white",
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {isPrepaid && (
+          <p className="rounded-[10px] border border-[var(--border)] bg-black/10 px-3 py-2 text-xs text-[var(--text-secondary)]">
+            Er gaat niets van de gezamenlijke rekening af.
+          </p>
+        )}
+
+        {!isSettlement && (
+          <div className="grid gap-1.5 sm:hidden">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
             Categorie
           </p>
@@ -10924,8 +11188,9 @@ function QuickEntryCard({
             </button>
           </div>
         </div>
+        )}
 
-        {isCategoryPanelOpen && (
+        {isCategoryPanelOpen && !isSettlement && (
           <div className="grid gap-2 rounded-[14px] border border-[var(--border)] bg-black/10 p-3 sm:hidden">
             <Input
               placeholder="Bijv. Uit eten"
@@ -11081,7 +11346,7 @@ function QuickEntryCard({
           </FieldLabel>
 
           {householdMembers.length > 0 && (
-            <FieldLabel label="Betaald door">
+            <FieldLabel label={personLabel}>
               <Select
                 value={paidById}
                 className="h-10"
@@ -11096,6 +11361,25 @@ function QuickEntryCard({
             </FieldLabel>
           )}
 
+          {isSettlement && (
+            <FieldLabel label="Richting">
+              <Select
+                value={settlementDirection}
+                className="h-10"
+                onChange={(event) =>
+                  onSettlementDirectionChange(event.target.value as SettlementDirection)
+                }
+              >
+                {settlementOptions.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </Select>
+            </FieldLabel>
+          )}
+
+          {!isSettlement && (
           <FieldLabel label="Categorie">
             <Select
               value={category}
@@ -11109,8 +11393,16 @@ function QuickEntryCard({
               ))}
             </Select>
           </FieldLabel>
+          )}
         </div>
 
+        {isPrepaid && (
+          <p className="hidden rounded-[10px] border border-[var(--border)] bg-black/10 px-3 py-2 text-xs text-[var(--text-secondary)] sm:block">
+            Er gaat niets van de gezamenlijke rekening af.
+          </p>
+        )}
+
+        {!isSettlement && (
         <details className="group hidden rounded-[14px] border border-[var(--border)] bg-black/10 sm:block">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-[var(--text-primary)]">
             Categorie toevoegen
@@ -11264,6 +11556,7 @@ function QuickEntryCard({
             )}
           </div>
         </details>
+        )}
 
         <div className="grid gap-1.5 sm:block">
           <p className="text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)] sm:hidden">
@@ -11285,6 +11578,7 @@ function QuickEntryCard({
           />
         </div>
 
+        {!isSettlement && (
         <label className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[var(--border)] bg-black/10 px-3 text-sm font-medium text-[var(--text-secondary)] transition active:scale-[0.99] sm:hidden">
           {isScanningReceipt ? (
             <LoaderCircle className="h-4 w-4 animate-spin text-[var(--accent)]" />
@@ -11308,6 +11602,7 @@ function QuickEntryCard({
             }}
           />
         </label>
+        )}
 
         {scanMessage && (
           <p
@@ -11322,7 +11617,7 @@ function QuickEntryCard({
           </p>
         )}
 
-        {receiptDraft && (
+        {receiptDraft && !isSettlement && (
           <div className="grid gap-2 rounded-[14px] border border-indigo-400/25 bg-indigo-500/10 p-2.5 sm:hidden">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -11347,7 +11642,7 @@ function QuickEntryCard({
                 }
               />
               <ReceiptDraftValue
-                label="Datum"
+                label="Datum afschrijving"
                 value={receiptDraft.date ?? "onduidelijk"}
               />
               <ReceiptDraftValue
@@ -11355,6 +11650,11 @@ function QuickEntryCard({
                 value={receiptDraft.merchant ?? "onduidelijk"}
               />
             </div>
+            {showReceiptDateHint && (
+              <p className="rounded-[10px] border border-amber-400/20 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-100">
+                Controleer of de afschrijving niet in de vorige maand viel.
+              </p>
+            )}
             <div className="flex justify-end">
               <Button
                 size="sm"
@@ -11372,7 +11672,7 @@ function QuickEntryCard({
         <div className="grid grid-cols-[0.95fr_1.05fr] gap-2 sm:hidden">
           <label className="grid gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)]">
-              Datum
+              Datum afschrijving
             </span>
             <Input
               type="date"
@@ -11395,12 +11695,14 @@ function QuickEntryCard({
         </div>
 
         <div className="hidden gap-3 sm:grid">
-          <Input
-            type="date"
-            value={date}
-            className="h-10"
-            onChange={(event) => onDateChange(event.target.value)}
-          />
+          <FieldLabel label="Datum afschrijving">
+            <Input
+              type="date"
+              value={date}
+              className="h-10"
+              onChange={(event) => onDateChange(event.target.value)}
+            />
+          </FieldLabel>
           <Textarea
             placeholder="Notitie optioneel"
             value={note}
@@ -11412,7 +11714,7 @@ function QuickEntryCard({
         <div className="sticky bottom-3 z-10 flex justify-end pt-1.5 sm:static sm:pt-2">
           <Button className="accent-glow-hover h-12 w-full text-sm font-semibold sm:h-11 sm:w-auto sm:text-sm" onClick={onSubmit}>
             <Plus className="h-5 w-5" />
-            Uitgave toevoegen
+            {quickSubmitLabel(transactionType)}
           </Button>
         </div>
       </CardContent>
@@ -11903,10 +12205,31 @@ function buildOutgoingTransactionRows(
   fixedItems: FixedAgendaItem[],
   labels: Map<string, DashboardData["categories"][number]>,
   today: string,
+  currentMonth: string,
 ) {
+  const fixedTransactionsByInstanceId = new Map(
+    monthTransactions
+      .filter((transaction) => transaction.type === "fixed")
+      .filter(
+        (transaction): transaction is Transaction & { fixedInstanceId: string } =>
+          Boolean(transaction.fixedInstanceId),
+      )
+      .map((transaction) => [transaction.fixedInstanceId, transaction]),
+  );
+  const representedFixedTransactionIds = new Set<string>();
   const fixedRows: OutgoingTransactionRow[] = fixedItems
-    .filter((item) => item.state !== "skipped" && item.date <= today)
+    .filter(
+      (item) =>
+        item.state !== "skipped" &&
+        item.date.startsWith(currentMonth) &&
+        item.date <= today,
+    )
     .map((item) => {
+      const transaction = fixedTransactionsByInstanceId.get(item.id);
+      if (transaction) {
+        representedFixedTransactionIds.add(transaction.id);
+      }
+
       const varianceAmount =
         item.state === "processed" &&
         Math.abs(item.amount - item.expectedAmount) > 0.004
@@ -11915,38 +12238,87 @@ function buildOutgoingTransactionRows(
 
       return {
         id: `fixed-${item.recurringExpenseId}-${item.date}`,
-        date: item.date,
+        date: transaction?.date ?? item.date,
         title: item.name,
         subtitle: `${item.categoryName} · ${agendaStateLabel(item.state)}`,
-        amount: item.amount,
-        signedAmount: -item.amount,
+        amount: transaction?.amount ?? item.amount,
+        signedAmount: transaction ? cashAmount(transaction) : -item.amount,
         kind: "fixed",
         color: item.categoryColor,
         state: item.state,
         isExpected: item.canConfirm,
         varianceAmount,
+        transaction,
       };
     });
-  const variableRows: OutgoingTransactionRow[] = monthTransactions
-    .filter((transaction) => transaction.type === "variable")
+  const confirmedFixedRows: OutgoingTransactionRow[] = monthTransactions
+    .filter((transaction) => transaction.type === "fixed")
+    .filter((transaction) => transaction.date <= today)
+    .filter((transaction) => !representedFixedTransactionIds.has(transaction.id))
     .map((transaction) => {
       const category = labels.get(transaction.categoryId);
 
       return {
-        id: `variable-${transaction.id}`,
+        id: `fixed-transaction-${transaction.id}`,
         date: transaction.date,
-        title: category?.name ?? "Uitgave",
-        subtitle: [transaction.note, transaction.paidBy ?? transaction.enteredBy]
+        title: category?.name ?? "Vaste last",
+        subtitle: [transaction.note, "bevestigd"].filter(Boolean).join(" · "),
+        amount: transaction.amount,
+        signedAmount: cashAmount(transaction),
+        kind: "fixed",
+        color: category?.color ?? "#6366F1",
+        state: "processed",
+        transaction,
+      };
+    });
+  const variableRows: OutgoingTransactionRow[] = monthTransactions
+    .filter(isVariableBudgetTransaction)
+    .map((transaction) => {
+      const category = labels.get(transaction.categoryId);
+      const isPrepaid = transaction.type === "prepaid";
+
+      return {
+        id: `${transaction.type}-${transaction.id}`,
+        date: transaction.date,
+        title: category?.name ?? (isPrepaid ? "Voorgeschoten" : "Uitgave"),
+        subtitle: [
+          isPrepaid ? "Voorgeschoten · geen afschrijving" : undefined,
+          transaction.note,
+          transaction.paidBy ?? transaction.enteredBy,
+        ]
           .filter(Boolean)
           .join(" · "),
         amount: transaction.amount,
-        signedAmount: -transaction.amount,
-        kind: "variable",
+        signedAmount: -budgetAmount(transaction),
+        kind: isPrepaid ? "prepaid" : "variable",
         color: category?.color ?? "#6366F1",
         receiptUrl: transaction.receiptUrl,
         transaction,
       };
     });
+  const settlementRows: OutgoingTransactionRow[] = monthTransactions
+    .filter((transaction) => transaction.type === "settlement")
+    .filter((transaction) => transaction.date <= today)
+    .map((transaction) => ({
+      id: `settlement-${transaction.id}`,
+      date: transaction.date,
+      title: "Verrekening",
+      subtitle: [
+        settlementDirectionLabel(
+          transaction.settlementDirection,
+          transaction.accountKind,
+        ),
+        transaction.paidBy ?? transaction.enteredBy,
+        transaction.note,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      amount: transaction.amount,
+      signedAmount: cashAmount(transaction),
+      kind: "settlement",
+      color: "#64748B",
+      transaction,
+    }));
   const savingsRows: OutgoingTransactionRow[] = monthTransactions
     .filter((transaction) => transaction.type === "sparen")
     .filter((transaction) => transaction.date <= today)
@@ -11958,7 +12330,7 @@ function buildOutgoingTransactionRows(
         .filter(Boolean)
         .join(" · "),
       amount: transaction.amount,
-      signedAmount: -transaction.amount,
+        signedAmount: cashAmount(transaction),
       kind: "sparen",
       color: SAVINGS_COLOR,
       transaction,
@@ -11993,21 +12365,48 @@ function buildOutgoingTransactionRows(
         title,
         subtitle,
         amount: transaction.amount,
-        signedAmount: transaction.amount,
+        signedAmount: cashAmount(transaction),
         kind: positiveKind,
         color: transaction.type === "contribution" ? "#10B981" : "#22C55E",
         receiptUrl: transaction.receiptUrl,
         transaction,
       };
     });
-  return [...fixedRows, ...variableRows, ...savingsRows, ...positiveRows].sort(
+  return [
+    ...fixedRows,
+    ...confirmedFixedRows,
+    ...variableRows,
+    ...settlementRows,
+    ...savingsRows,
+    ...positiveRows,
+  ].sort(
     (first, second) =>
       second.date.localeCompare(first.date) ||
       first.title.localeCompare(second.title, "nl"),
     );
 }
 
-function expectedFixedTotalForMonth(
+function fixedBudgetTotalForMonth(
+  recurringExpenses: RecurringExpense[],
+  fixedInstances: FixedExpenseInstance[],
+  currentMonth: string,
+  transactions: Transaction[] = [],
+) {
+  const recurringTotal = activeRecurringFixedTotalForMonth(
+    recurringExpenses,
+    fixedInstances,
+    currentMonth,
+  );
+  const confirmedTransactionTotal = confirmedFixedTransactionTotalOutsideRecurring(
+    transactions,
+    currentMonth,
+    recurringTotal.representedFixedInstanceIds,
+  );
+
+  return recurringTotal.total + confirmedTransactionTotal;
+}
+
+function activeRecurringFixedTotalForMonth(
   recurringExpenses: RecurringExpense[],
   fixedInstances: FixedExpenseInstance[],
   currentMonth: string,
@@ -12017,18 +12416,50 @@ function expectedFixedTotalForMonth(
       .filter((instance) => instance.month === currentMonth)
       .map((instance) => [instance.recurringExpenseId, instance]),
   );
+  const representedFixedInstanceIds = new Set<string>();
 
-  return recurringExpenses
+  const total = recurringExpenses
     .filter((expense) => expense.isActive)
     .reduce((total, expense) => {
       const instance = currentMonthInstances.get(expense.id);
+      const expectedDate = dateForBillingDay(currentMonth, expense.billingDay);
+      const effectiveDate = instance?.actualDate ?? expectedDate;
 
       if (instance?.status === "skipped") {
         return total;
       }
 
+      if (!effectiveDate.startsWith(currentMonth)) {
+        return total;
+      }
+
+      if (instance) {
+        representedFixedInstanceIds.add(instance.id);
+      }
+
       return total + (instance?.amount ?? expense.currentAmount);
-	    }, 0);
+    }, 0);
+
+  return {
+    total,
+    representedFixedInstanceIds,
+  };
+}
+
+function confirmedFixedTransactionTotalOutsideRecurring(
+  transactions: Transaction[],
+  currentMonth: string,
+  representedFixedInstanceIds: Set<string>,
+) {
+  return transactions
+    .filter((transaction) => transaction.type === "fixed")
+    .filter((transaction) => transaction.date.startsWith(currentMonth))
+    .filter(
+      (transaction) =>
+        !transaction.fixedInstanceId ||
+        !representedFixedInstanceIds.has(transaction.fixedInstanceId),
+    )
+    .reduce((total, transaction) => total + budgetAmount(transaction), 0);
 }
 
 function expectedOpenFixedExpensesForMonth(
@@ -12074,6 +12505,21 @@ function defaultContributionNote(kind: ContributionKind) {
   return "Extra storting";
 }
 
+function settlementDirectionLabel(
+  direction?: Transaction["settlementDirection"],
+  accountKind?: Account["kind"],
+) {
+  if (direction === "in") {
+    return accountKind === "personal" ? "Naar privé" : "Naar gezamenlijk";
+  }
+
+  if (direction === "out") {
+    return accountKind === "personal" ? "Naar gezamenlijk" : "Naar privé";
+  }
+
+  return "Verrekening";
+}
+
 function contributionDisplayName(
   transaction: Pick<Transaction, "contributionKind" | "enteredBy" | "paidBy">,
   includePerson = false,
@@ -12106,6 +12552,13 @@ function transactionSortLabel(
     return SAVINGS_CATEGORY_NAME;
   }
 
+  if (transaction.type === "settlement") {
+    return settlementDirectionLabel(
+      transaction.settlementDirection,
+      transaction.accountKind,
+    );
+  }
+
   return labels.get(transaction.categoryId)?.name ?? transaction.type;
 }
 
@@ -12125,6 +12578,8 @@ function transactionRowMetaLabel(
   if (row.kind === "contribution") return "Storting";
   if (row.kind === "income") return "Inkomen";
   if (row.kind === "sparen") return "Sparen";
+  if (row.kind === "prepaid") return "Voorgeschoten";
+  if (row.kind === "settlement") return "Verrekening";
   return "Uitgave";
 }
 
@@ -12256,7 +12711,7 @@ function buildContributionBreakdown({
       target.push({
         id: transaction.id,
         date: transaction.date,
-        amount: transaction.amount,
+        amount: cashAmount(transaction),
       });
     });
 
@@ -12299,10 +12754,10 @@ function variableTotalForMonth(
       : null;
 
   return transactions
-    .filter((transaction) => transaction.type === "variable")
+    .filter(isVariableBudgetTransaction)
     .filter((transaction) => transaction.date.startsWith(month))
     .filter((transaction) => !throughDate || transaction.date <= throughDate)
-    .reduce((total, transaction) => total + transaction.amount, 0);
+    .reduce((total, transaction) => total + budgetAmount(transaction), 0);
 }
 
 function dataDaysForMonth(
@@ -12811,7 +13266,7 @@ function categoryUsageByCurrentUser(
   const counts = new Map<string, number>();
 
   transactions
-    .filter((transaction) => transaction.type === "variable")
+    .filter(isVariableBudgetTransaction)
     .filter(
       (transaction) =>
         !transaction.enteredById || transaction.enteredById === currentUserId,
@@ -12850,6 +13305,7 @@ function variableCategoryOptions(
           "Salaris",
           "Extra inkomsten",
           SAVINGS_CATEGORY_NAME,
+          "Verrekening",
         ].includes(category.name),
     )
     .sort((first, second) => {
@@ -12899,7 +13355,7 @@ function transactionCategoryOptions(
   });
 
   const categoryOptions =
-    transaction.type === "variable"
+    isVariableBudgetTransaction(transaction)
       ? variableCategories
       : options;
 

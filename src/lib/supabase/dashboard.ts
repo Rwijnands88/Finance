@@ -8,6 +8,11 @@ import type {
   InvestmentSettings,
   Transaction,
 } from "@/lib/types";
+import {
+  budgetAmount,
+  isCategoryBudgetTransaction,
+  isVariableBudgetTransaction,
+} from "@/lib/finance";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type SupabaseClient = Awaited<ReturnType<typeof getSupabaseServerClient>>;
@@ -496,9 +501,13 @@ function averageForCategory(
 
   transactions
     .filter((transaction) => transaction.categoryId === categoryId)
+    .filter(isCategoryBudgetTransaction)
     .forEach((transaction) => {
       const month = transaction.date.slice(0, 7);
-      monthTotals.set(month, (monthTotals.get(month) ?? 0) + transaction.amount);
+      monthTotals.set(
+        month,
+        (monthTotals.get(month) ?? 0) + budgetAmount(transaction),
+      );
     });
 
   const historicalTotals = Array.from(monthTotals.entries())
@@ -528,12 +537,12 @@ function buildSixMonthTrend(transactions: Transaction[], currentMonthStart: stri
       fixed: sum(
         monthTransactions
           .filter((transaction) => transaction.type === "fixed")
-          .map((transaction) => transaction.amount),
+          .map(budgetAmount),
       ),
       variable: sum(
         monthTransactions
-          .filter((transaction) => transaction.type === "variable")
-          .map((transaction) => transaction.amount),
+          .filter(isVariableBudgetTransaction)
+          .map(budgetAmount),
       ),
     };
   });

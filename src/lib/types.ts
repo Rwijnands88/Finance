@@ -149,6 +149,8 @@ export type MonthSummary = {
   fixedTotal: number;
   variableTotal: number;
   savingsTotal: number;
+  householdExpenseTotal: number;
+  accountMutationTotal: number;
   expenseTotal: number;
   netTotal: number;
   total: number;

@@ -10,8 +10,15 @@ type CreateTransactionBody = {
   date?: string;
   note?: string | null;
   receiptUrl?: string | null;
-  type?: "variable" | "contribution" | "income" | "sparen";
+  type?:
+    | "variable"
+    | "contribution"
+    | "income"
+    | "sparen"
+    | "prepaid"
+    | "settlement";
   contributionKind?: ContributionKind | null;
+  settlementDirection?: "in" | "out" | null;
   paidById?: string | null;
   incomeKind?: "salary" | "extra";
 };
@@ -27,6 +34,7 @@ type UpdateTransactionBody = {
   date?: string;
   note?: string | null;
   contributionKind?: ContributionKind | null;
+  settlementDirection?: "in" | "out" | null;
   paidById?: string | null;
 };
 
@@ -140,7 +148,8 @@ export async function POST(request: Request) {
     !body.date ||
     !amount ||
     amount <= 0 ||
-    (transactionType === "variable" && !body.categoryId)
+    ((transactionType === "variable" || transactionType === "prepaid") &&
+      !body.categoryId)
   ) {
     return NextResponse.json(
       { error: "Vul bedrag, categorie en datum in." },
@@ -148,7 +157,16 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!["variable", "contribution", "income", "sparen"].includes(transactionType)) {
+  if (
+    ![
+      "variable",
+      "contribution",
+      "income",
+      "sparen",
+      "prepaid",
+      "settlement",
+    ].includes(transactionType)
+  ) {
     return NextResponse.json(
       { error: "Transactietype is ongeldig." },
       { status: 400 },
@@ -177,6 +195,19 @@ export async function POST(request: Request) {
   if (transactionType === "contribution" && !contributionKind) {
     return NextResponse.json(
       { error: "Stortingstype is ongeldig." },
+      { status: 400 },
+    );
+  }
+  const settlementDirection =
+    transactionType === "settlement" ? body.settlementDirection : null;
+
+  if (
+    transactionType === "settlement" &&
+    settlementDirection !== "in" &&
+    settlementDirection !== "out"
+  ) {
+    return NextResponse.json(
+      { error: "Richting van de verrekening is ongeldig." },
       { status: 400 },
     );
   }
@@ -260,6 +291,25 @@ export async function POST(request: Request) {
     }
   }
 
+  if (transactionType === "settlement") {
+    try {
+      categoryId = await getOrCreateSettlementCategory(
+        supabase,
+        body.householdId,
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Verrekeningscategorie kon niet worden gemaakt.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   const { data: transaction, error: transactionError } = await supabase
     .from("transactions")
     .insert({
@@ -270,6 +320,7 @@ export async function POST(request: Request) {
       transaction_date: body.date,
       type: transactionType,
       contribution_kind: contributionKind,
+      settlement_direction: settlementDirection,
       note: body.note || null,
       receipt_url:
         typeof body.receiptUrl === "string" && body.receiptUrl.trim()
@@ -278,7 +329,7 @@ export async function POST(request: Request) {
       entered_by: user.id,
       paid_by: paidById,
     })
-    .select("id, account_id, category_id, type, contribution_kind, receipt_url, paid_by")
+    .select("id, account_id, category_id, type, contribution_kind, settlement_direction, receipt_url, paid_by")
     .single();
 
   if (transactionError) {
@@ -295,6 +346,7 @@ export async function POST(request: Request) {
       categoryId: transaction.category_id,
       type: transaction.type,
       contributionKind: transaction.contribution_kind,
+      settlementDirection: transaction.settlement_direction,
       receiptUrl: transaction.receipt_url,
       enteredBy: user.id,
       paidById: transaction.paid_by,
@@ -308,7 +360,6 @@ export async function PATCH(request: Request) {
 
   if (
     typeof body.transactionId !== "string" ||
-    typeof body.categoryId !== "string" ||
     !body.date ||
     !amount ||
     amount <= 0
@@ -335,7 +386,7 @@ export async function PATCH(request: Request) {
 
   const { data: existingTransaction, error: existingError } = await supabase
     .from("transactions")
-    .select("id, household_id, type, fixed_expense_instance_id")
+    .select("id, household_id, type, category_id, fixed_expense_instance_id")
     .eq("id", body.transactionId)
     .single();
 
@@ -348,12 +399,37 @@ export async function PATCH(request: Request) {
       ? body.paidById
       : user.id;
 
+  let categoryId = body.categoryId ?? existingTransaction.category_id;
+
+  if (existingTransaction.type === "settlement") {
+    try {
+      categoryId = await getOrCreateSettlementCategory(
+        supabase,
+        existingTransaction.household_id,
+      );
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Verrekeningscategorie kon niet worden gemaakt.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (!categoryId) {
+    return NextResponse.json({ error: "Categorie is ongeldig." }, { status: 400 });
+  }
+
   const [{ data: category }, { data: paidByMembership, error: paidByError }] =
     await Promise.all([
       supabase
         .from("categories")
         .select("id")
-        .eq("id", body.categoryId)
+        .eq("id", categoryId)
         .eq("household_id", existingTransaction.household_id)
         .maybeSingle(),
       supabase
@@ -391,19 +467,35 @@ export async function PATCH(request: Request) {
       { status: 400 },
     );
   }
+  const settlementDirection =
+    existingTransaction.type === "settlement"
+      ? body.settlementDirection
+      : null;
+
+  if (
+    existingTransaction.type === "settlement" &&
+    settlementDirection !== "in" &&
+    settlementDirection !== "out"
+  ) {
+    return NextResponse.json(
+      { error: "Richting van de verrekening is ongeldig." },
+      { status: 400 },
+    );
+  }
 
   const { data: transaction, error: updateError } = await supabase
     .from("transactions")
     .update({
-      category_id: body.categoryId,
+      category_id: categoryId,
       amount,
       transaction_date: body.date,
       note,
       paid_by: paidById,
       contribution_kind: contributionKind,
+      settlement_direction: settlementDirection,
     })
     .eq("id", body.transactionId)
-    .select("id, category_id, amount, transaction_date, note, paid_by, contribution_kind")
+    .select("id, category_id, amount, transaction_date, note, paid_by, contribution_kind, settlement_direction")
     .single();
 
   if (updateError) {
@@ -445,6 +537,7 @@ export async function PATCH(request: Request) {
       note: transaction.note ?? undefined,
       paidById: transaction.paid_by,
       contributionKind: transaction.contribution_kind,
+      settlementDirection: transaction.settlement_direction,
     },
     fixedInstance,
   });
@@ -554,6 +647,44 @@ async function getOrCreateSavingsCategory(
       kind: "variable",
       color: "#10B981",
       sort_order: 118,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return category.id;
+}
+
+async function getOrCreateSettlementCategory(
+  supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>,
+  householdId: string,
+) {
+  const { data: existingCategory, error: existingError } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("household_id", householdId)
+    .eq("name", "Verrekening")
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  if (existingCategory) {
+    return existingCategory.id;
+  }
+
+  const { data: category, error } = await supabase
+    .from("categories")
+    .insert({
+      household_id: householdId,
+      name: "Verrekening",
+      kind: "variable",
+      color: "#64748B",
+      sort_order: 119,
     })
     .select("id")
     .single();

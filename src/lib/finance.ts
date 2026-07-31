@@ -46,6 +46,25 @@ export function cashAmount(transaction: Transaction) {
   }
 }
 
+export function isVariableBudgetTransaction(transaction: Transaction) {
+  return transaction.type === "variable" || transaction.type === "prepaid";
+}
+
+export function isCategoryBudgetTransaction(transaction: Transaction) {
+  return budgetAmount(transaction) > 0;
+}
+
+export function transactionTypeLabel(transaction: Transaction) {
+  if (transaction.type === "fixed") return "Vaste last";
+  if (transaction.type === "variable") return "Variabel";
+  if (transaction.type === "prepaid") return "Voorgeschoten";
+  if (transaction.type === "settlement") return "Verrekening";
+  if (transaction.type === "income") return "Inkomen";
+  if (transaction.type === "contribution") return "Storting";
+  if (transaction.type === "sparen") return "Sparen";
+  return "Transactie";
+}
+
 export function totalsForMonth(transactions: Transaction[], month: string) {
   const monthTransactions = transactions.filter((transaction) =>
     transaction.date.startsWith(month),
@@ -54,29 +73,35 @@ export function totalsForMonth(transactions: Transaction[], month: string) {
   const fixedTotal = sum(
     monthTransactions
       .filter((transaction) => transaction.type === "fixed")
-      .map((transaction) => transaction.amount),
+      .map(budgetAmount),
   );
   const variableTotal = sum(
     monthTransactions
-      .filter((transaction) => transaction.type === "variable")
-      .map((transaction) => transaction.amount),
+      .filter(isVariableBudgetTransaction)
+      .map(budgetAmount),
   );
   const contributionTotal = sum(
     monthTransactions
       .filter((transaction) => transaction.type === "contribution")
-      .map((transaction) => transaction.amount),
+      .map(cashAmount),
   );
   const incomeTotal = sum(
     monthTransactions
       .filter((transaction) => transaction.type === "income")
-      .map((transaction) => transaction.amount),
+      .map(cashAmount),
   );
   const savingsTotal = sum(
     monthTransactions
       .filter((transaction) => transaction.type === "sparen")
-      .map((transaction) => transaction.amount),
+      .map(budgetAmount),
   );
-  const expenseTotal = fixedTotal + variableTotal + savingsTotal;
+  const expenseTotal = sum(monthTransactions.map(budgetAmount));
+  const accountMutationTotal = sum(
+    monthTransactions
+      .filter((transaction) => transaction.type === "settlement")
+      .map(cashAmount),
+  );
+  const cashTotal = sum(monthTransactions.map(cashAmount));
 
   return {
     month,
@@ -85,8 +110,10 @@ export function totalsForMonth(transactions: Transaction[], month: string) {
     fixedTotal,
     variableTotal,
     savingsTotal,
+    householdExpenseTotal: expenseTotal,
+    accountMutationTotal,
     expenseTotal,
-    netTotal: contributionTotal + incomeTotal - expenseTotal,
+    netTotal: cashTotal,
     total: expenseTotal,
   };
 }
@@ -103,14 +130,14 @@ export function categoryTotals(
     .filter(
       (transaction) =>
         transaction.date.startsWith(month) &&
-        transaction.type !== "contribution" &&
-        transaction.type !== "income" &&
-        transaction.type !== "sparen",
+        isCategoryBudgetTransaction(transaction),
     )
     .forEach((transaction) => {
+      const amount = budgetAmount(transaction);
+
       grouped.set(
         transaction.categoryId,
-        (grouped.get(transaction.categoryId) ?? 0) + transaction.amount,
+        (grouped.get(transaction.categoryId) ?? 0) + amount,
       );
     });
 
@@ -133,15 +160,12 @@ export function totalsByPerson(transactions: Transaction[], month: string) {
   return transactions
     .filter(
       (transaction) =>
-        transaction.date.startsWith(month) &&
-        transaction.type !== "contribution" &&
-        transaction.type !== "income" &&
-        transaction.type !== "sparen",
+        transaction.date.startsWith(month) && isVariableBudgetTransaction(transaction),
     )
     .reduce(
       (result, transaction) => {
         const person = personForTransaction(transaction);
-        result[person] = (result[person] ?? 0) + transaction.amount;
+        result[person] = (result[person] ?? 0) + budgetAmount(transaction);
         return result;
       },
       {} as Record<string, number>,
@@ -163,7 +187,7 @@ export function categoryTotalsByPerson(
   transactions
     .filter(
       (transaction) =>
-        transaction.date.startsWith(month) && transaction.type === "variable",
+        transaction.date.startsWith(month) && isVariableBudgetTransaction(transaction),
     )
     .forEach((transaction) => {
       const person = personForTransaction(transaction);
@@ -171,7 +195,7 @@ export function categoryTotalsByPerson(
         grouped.get(transaction.categoryId) ?? new Map<string, number>();
       personTotals.set(
         person,
-        (personTotals.get(person) ?? 0) + transaction.amount,
+        (personTotals.get(person) ?? 0) + budgetAmount(transaction),
       );
       grouped.set(transaction.categoryId, personTotals);
     });
@@ -211,22 +235,22 @@ export function sixMonthTrend(transactions: Transaction[], currentMonth: string)
       fixed: sum(
         monthTransactions
           .filter((transaction) => transaction.type === "fixed")
-          .map((transaction) => transaction.amount),
+          .map(budgetAmount),
       ),
       variable: sum(
         monthTransactions
-          .filter((transaction) => transaction.type === "variable")
-          .map((transaction) => transaction.amount),
+          .filter(isVariableBudgetTransaction)
+          .map(budgetAmount),
       ),
       contribution: sum(
         monthTransactions
           .filter((transaction) => transaction.type === "contribution")
-          .map((transaction) => transaction.amount),
+          .map(cashAmount),
       ),
       income: sum(
         monthTransactions
           .filter((transaction) => transaction.type === "income")
-          .map((transaction) => transaction.amount),
+          .map(cashAmount),
       ),
     };
   });

@@ -13,7 +13,13 @@ import {
 } from "@react-pdf/renderer";
 import React from "react";
 import type { Category, Transaction } from "@/lib/types";
-import { categoryById } from "@/lib/finance";
+import {
+  budgetAmount,
+  cashAmount,
+  categoryById,
+  isCategoryBudgetTransaction,
+  isVariableBudgetTransaction,
+} from "@/lib/finance";
 import { monthLabel, preciseCurrency } from "@/lib/utils";
 
 const ACCENT = "#6366F1";
@@ -102,22 +108,22 @@ export function MonthReportDocument({
 
         <View style={styles.summaryGrid}>
           <SummaryBox
-            label="Stortingen"
+            label="Bijschrijvingen"
             value={preciseCurrency(reportTotals.inflow)}
             tone="positive"
           />
           <SummaryBox
-            label="Vaste lasten"
-            value={preciseCurrency(reportTotals.fixed)}
+            label="Uitgaven huishouden"
+            value={preciseCurrency(reportTotals.householdExpense)}
             tone="negative"
           />
           <SummaryBox
-            label="Variabele kosten"
-            value={preciseCurrency(reportTotals.variable)}
-            tone="negative"
+            label="Mutaties rekening"
+            value={preciseCurrency(reportTotals.accountMutations)}
+            tone={reportTotals.accountMutations >= 0 ? "positive" : "negative"}
           />
           <SummaryBox
-            label="Eindsaldo"
+            label="Netto kas"
             value={preciseCurrency(reportTotals.net)}
             tone={reportTotals.net >= 0 ? "positive" : "negative"}
           />
@@ -185,13 +191,13 @@ export function MonthReportDocument({
           <View style={styles.subtotalGrid}>
             <SubtotalBox label="Bij" value={reportTotals.inflow} positive />
             <SubtotalBox
-              label="Af"
-              value={reportTotals.fixed + reportTotals.variable + reportTotals.savings}
+              label="Uitgaven huishouden"
+              value={reportTotals.householdExpense}
             />
             <SubtotalBox
-              label="Netto"
-              value={reportTotals.net}
-              positive={reportTotals.net >= 0}
+              label="Mutaties rekening"
+              value={reportTotals.accountMutations}
+              positive={reportTotals.accountMutations >= 0}
             />
           </View>
 
@@ -541,20 +547,25 @@ function buildReportTotals(
 ) {
   const contribution = transactions
     .filter((transaction) => transaction.type === "contribution")
-    .reduce((total, transaction) => total + transaction.amount, 0);
+    .reduce((total, transaction) => total + cashAmount(transaction), 0);
   const income = transactions
     .filter((transaction) => transaction.type === "income")
-    .reduce((total, transaction) => total + transaction.amount, 0);
+    .reduce((total, transaction) => total + cashAmount(transaction), 0);
   const variable = transactions
-    .filter((transaction) => transaction.type === "variable")
-    .reduce((total, transaction) => total + transaction.amount, 0);
+    .filter(isVariableBudgetTransaction)
+    .reduce((total, transaction) => total + budgetAmount(transaction), 0);
   const savings = transactions
     .filter((transaction) => transaction.type === "sparen")
-    .reduce((total, transaction) => total + transaction.amount, 0);
+    .reduce((total, transaction) => total + budgetAmount(transaction), 0);
   const fixed = fixedItems
     .filter((item) => item.status !== "overgeslagen")
     .reduce((total, item) => total + item.amount, 0);
   const inflow = contribution + income;
+  const householdExpense = fixed + variable + savings;
+  const accountMutations = transactions.reduce(
+    (total, transaction) => total + cashAmount(transaction),
+    0,
+  );
 
   return {
     contribution,
@@ -563,7 +574,9 @@ function buildReportTotals(
     fixed,
     variable,
     savings,
-    net: inflow - fixed - variable - savings,
+    householdExpense,
+    accountMutations,
+    net: accountMutations,
   };
 }
 
@@ -575,7 +588,8 @@ function buildCategoryRows(
   const grouped = new Map<string, { name: string; amount: number; color: string }>();
 
   transactions
-    .filter((transaction) => transaction.type === "variable")
+    .filter((transaction) => transaction.type !== "fixed")
+    .filter(isCategoryBudgetTransaction)
     .forEach((transaction) => {
       const category = labels.get(transaction.categoryId);
       const name = category?.name ?? "Onbekend";
@@ -585,7 +599,7 @@ function buildCategoryRows(
         color: category?.color ?? CATEGORY_COLORS[grouped.size % CATEGORY_COLORS.length],
       };
 
-      current.amount += transaction.amount;
+      current.amount += budgetAmount(transaction);
       grouped.set(name, current);
     });
 
@@ -633,9 +647,13 @@ function buildTransactionGroups(
         ? "Bijschrijvingen"
         : transaction.type === "sparen"
           ? "Sparen"
+        : transaction.type === "prepaid"
+          ? "Voorgeschoten"
+        : transaction.type === "settlement"
+          ? "Verrekening"
         : transaction.type === "fixed"
           ? "Vaste lasten transacties"
-          : labels.get(transaction.categoryId)?.name ?? "Uitgaven";
+        : labels.get(transaction.categoryId)?.name ?? "Uitgaven";
     const current = groups.get(name) ?? { name, total: 0, transactions: [] };
 
     current.total += signedTransactionAmount(transaction);
@@ -668,6 +686,17 @@ function transactionTitle(
     return "Sparen";
   }
 
+  if (transaction.type === "prepaid") {
+    return labels.get(transaction.categoryId)?.name ?? "Voorgeschoten";
+  }
+
+  if (transaction.type === "settlement") {
+    return settlementDirectionLabel(
+      transaction.settlementDirection,
+      transaction.accountKind,
+    );
+  }
+
   return labels.get(transaction.categoryId)?.name ?? "Uitgave";
 }
 
@@ -687,9 +716,26 @@ function contributionDisplayName(
 }
 
 function signedTransactionAmount(transaction: Transaction) {
-  return transaction.type === "contribution" || transaction.type === "income"
-    ? transaction.amount
-    : -transaction.amount;
+  if (transaction.type === "prepaid") {
+    return -budgetAmount(transaction);
+  }
+
+  return cashAmount(transaction);
+}
+
+function settlementDirectionLabel(
+  direction?: Transaction["settlementDirection"],
+  accountKind?: Transaction["accountKind"],
+) {
+  if (direction === "in") {
+    return accountKind === "personal" ? "Naar privé" : "Naar gezamenlijk";
+  }
+
+  if (direction === "out") {
+    return accountKind === "personal" ? "Naar gezamenlijk" : "Naar privé";
+  }
+
+  return "Verrekening";
 }
 
 function describeArc(
