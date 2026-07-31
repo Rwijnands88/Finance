@@ -658,6 +658,15 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           ),
     [defaultAccount?.id, selectedAccountId, transactions],
   );
+  const cashflowMonthStartBalance = useMemo(
+    () =>
+      buildCashflowMonthStartBalance({
+        startSnapshot: cashflowStartSnapshot,
+        month: currentMonth,
+        transactions: selectedTransactions,
+      }),
+    [cashflowStartSnapshot, currentMonth, selectedTransactions],
+  );
   const monthTotals = useMemo(
     () => totalsForMonth(selectedTransactions, currentMonth),
     [currentMonth, selectedTransactions],
@@ -835,7 +844,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const calculatedBalance = latestBalanceSnapshot
     ? latestBalanceSnapshot.balance +
       selectedTransactions
-        .filter((transaction) => transaction.date >= latestBalanceSnapshot.snapshotDate)
+        .filter((transaction) => transaction.date > latestBalanceSnapshot.snapshotDate)
         .filter((transaction) => transaction.date <= today)
         .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
         .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0)
@@ -870,7 +879,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
 
     const includedTransactions = selectedTransactions
-      .filter((transaction) => transaction.date >= latestBalanceSnapshot.snapshotDate)
+      .filter((transaction) => transaction.date > latestBalanceSnapshot.snapshotDate)
       .filter((transaction) => transaction.date <= today)
       .filter((transaction) => transaction.date < monthStart(addIsoMonths(currentMonth, 1)))
       .map((transaction) => ({
@@ -897,7 +906,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         date: latestBalanceSnapshot.snapshotDate,
       },
       formula:
-        "huidig saldo = snapshot + som(income/contribution positief, fixed/variable negatief) voor transacties vanaf snapshotdatum t/m vandaag en voor einde geselecteerde maand",
+        "huidig saldo = eindsaldo snapshotdag + som(cashAmount) voor transacties na snapshotdatum t/m vandaag en voor einde geselecteerde maand",
       includedTransactions,
       fixedTransactionsIncluded: includedTransactions.filter(
         (transaction) => transaction.type === "fixed",
@@ -4089,6 +4098,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             month={currentMonth}
             buffer={cashflowBuffer}
             startSnapshot={cashflowStartSnapshot}
+            monthStartBalance={cashflowMonthStartBalance}
             chartReady={mobileChartsReady}
             onBufferChange={(value) =>
               updateCashflowBuffer(selectedAccountId, value)
@@ -4462,6 +4472,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                 month={currentMonth}
                 buffer={cashflowBuffer}
                 startSnapshot={cashflowStartSnapshot}
+                monthStartBalance={cashflowMonthStartBalance}
                 chartReady={chartsReady && isDesktopViewport === true}
                 onBufferChange={(value) =>
                   updateCashflowBuffer(selectedAccountId, value)
@@ -5053,6 +5064,7 @@ function CashflowTimelineCard({
   month,
   buffer,
   startSnapshot,
+  monthStartBalance,
   chartReady = true,
   onBufferChange,
   compact = false,
@@ -5061,12 +5073,20 @@ function CashflowTimelineCard({
   month: string;
   buffer: number;
   startSnapshot?: CashflowStartSnapshot;
+  monthStartBalance: number | null;
   chartReady?: boolean;
   onBufferChange: (value: number) => void;
   compact?: boolean;
 }) {
   const insight = cashflowInsight(points, buffer);
   const hasCashflowPoints = points.length > 0;
+  const monthStartDate = `${month}-01`;
+  const startDescription =
+    startSnapshot && monthStartBalance !== null
+      ? startSnapshot.snapshotDate <= monthStartDate
+        ? `Start ${monthLabel(month)}: ${currency(monthStartBalance)} — berekend uit eindsaldo ${formatCashflowStartDate(startSnapshot.snapshotDate)} (${currency(startSnapshot.balance)}) plus mutaties tot ${formatCashflowStartDate(monthStartDate)}`
+        : `Start ${monthLabel(month)}: ${currency(monthStartBalance)} — teruggerekend uit eindsaldo ${formatCashflowStartDate(startSnapshot.snapshotDate)} (${currency(startSnapshot.balance)})`
+      : "Geen openingssaldo ingevoerd";
 
   return (
     <Card className="finance-card">
@@ -5081,10 +5101,8 @@ function CashflowTimelineCard({
             <CardTitle>Cashflow</CardTitle>
             <CardDescription className={cn(compact && "leading-4")}>
               Lopend saldo deze maand
-              <span className="mt-1 block text-[11px] text-[var(--text-muted)]">
-                {startSnapshot
-                  ? `Saldo op ${formatCashflowStartDate(startSnapshot.snapshotDate)}: ${currency(startSnapshot.balance)}`
-                  : "Geen openingssaldo ingevoerd"}
+              <span className="mt-1 block max-w-[28rem] text-[11px] leading-relaxed text-[var(--text-muted)]">
+                {startDescription}
               </span>
             </CardDescription>
           </div>
@@ -9602,8 +9620,8 @@ function AccountBalanceCard({
               </p>
               <p className="mt-1 text-xs text-zinc-500">
                 {snapshot
-                  ? `Ingevuld op ${snapshot.snapshotDate}`
-                  : "Vul het huidige saldo in als startpunt."}
+                  ? `Eindsaldo ingevuld op ${snapshot.snapshotDate}`
+                  : "Vul het eindsaldo van een dag in als startpunt."}
               </p>
             </div>
             {snapshot && (
@@ -9641,19 +9659,29 @@ function AccountBalanceCard({
             <Plus className="h-4 w-4 text-zinc-500 transition group-open:rotate-45" />
           </summary>
           <div className="grid gap-2 border-t border-zinc-900 p-3">
-            <Input
-              inputMode="decimal"
-              placeholder="Huidig saldo"
-              value={balanceAmount}
-              className="h-10"
-              onChange={(event) => onBalanceAmountChange(event.target.value)}
-            />
-            <Input
-              type="date"
-              value={balanceDate}
-              className="h-10"
-              onChange={(event) => onBalanceDateChange(event.target.value)}
-            />
+            <label className="grid gap-1 text-xs font-medium text-zinc-300">
+              Eindsaldo van deze dag
+              <Input
+                inputMode="decimal"
+                placeholder="Saldo na alle boekingen"
+                value={balanceAmount}
+                className="h-10"
+                onChange={(event) => onBalanceAmountChange(event.target.value)}
+              />
+            </label>
+            <label className="grid gap-1 text-xs font-medium text-zinc-300">
+              Datum eindsaldo
+              <Input
+                type="date"
+                value={balanceDate}
+                className="h-10"
+                onChange={(event) => onBalanceDateChange(event.target.value)}
+              />
+            </label>
+            <p className="text-[11px] leading-relaxed text-zinc-500">
+              Gebruik het saldo nadat alle af- en bijschrijvingen op die datum
+              zijn verwerkt.
+            </p>
             <div className="flex justify-end">
               <Button
                 size="sm"
@@ -12812,6 +12840,16 @@ function buildCashflowTimeline({
     return [];
   }
 
+  const openingBalance = buildCashflowMonthStartBalance({
+    startSnapshot,
+    month,
+    transactions,
+  });
+
+  if (openingBalance === null) {
+    return [];
+  }
+
   const [, monthNumber] = month.split("-").map(Number);
   const daysInMonth = new Date(Number(month.slice(0, 4)), monthNumber, 0).getDate();
   const actualDailyChanges = Array.from({ length: daysInMonth }, () => 0);
@@ -12819,8 +12857,6 @@ function buildCashflowTimeline({
   const today = new Date().toISOString().slice(0, 10);
   const currentMonth = today.slice(0, 7);
   const isCurrentMonth = today.startsWith(month);
-  const monthStartDate = `${month}-01`;
-  const nextMonthStart = monthStart(addIsoMonths(month, 1));
   const dayIndex = (day: number) => {
     const safeDay = Math.min(Math.max(day, 1), daysInMonth);
     return safeDay - 1;
@@ -12839,21 +12875,6 @@ function buildCashflowTimeline({
     .forEach((event) => {
       projectedDailyChanges[dayIndex(event.day)] += event.amount;
     });
-
-  const transactionsBetweenSnapshotAndMonthStart = transactions
-    .filter((transaction) => transaction.date >= startSnapshot.snapshotDate)
-    .filter((transaction) => transaction.date < monthStartDate)
-    .filter((transaction) => transaction.date < nextMonthStart)
-    .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0);
-  const transactionsBetweenMonthStartAndSnapshot = transactions
-    .filter((transaction) => transaction.date >= monthStartDate)
-    .filter((transaction) => transaction.date < startSnapshot.snapshotDate)
-    .filter((transaction) => transaction.date < nextMonthStart)
-    .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0);
-  const openingBalance =
-    startSnapshot.snapshotDate <= monthStartDate
-      ? startSnapshot.balance + transactionsBetweenSnapshotAndMonthStart
-      : startSnapshot.balance - transactionsBetweenMonthStartAndSnapshot;
 
   let runningBalance = openingBalance;
 
@@ -12877,6 +12898,41 @@ function buildCashflowTimeline({
       balance: runningBalance,
     } satisfies CashflowPoint;
   });
+}
+
+function buildCashflowMonthStartBalance({
+  startSnapshot,
+  month,
+  transactions,
+}: {
+  startSnapshot?: CashflowStartSnapshot;
+  month: string;
+  transactions: Transaction[];
+}) {
+  if (!startSnapshot) {
+    return null;
+  }
+
+  const monthStartDate = `${month}-01`;
+  const nextMonthStart = monthStart(addIsoMonths(month, 1));
+
+  // Een snapshot is het eindsaldo van snapshotDate: alle transacties van
+  // die dag zitten er al in. Mutaties na een snapshot starten daarom altijd
+  // met `>` op snapshotDate; zo kan de snapshotdag niet dubbel meetellen.
+  const transactionsBetweenSnapshotAndMonthStart = transactions
+    .filter((transaction) => transaction.date > startSnapshot.snapshotDate)
+    .filter((transaction) => transaction.date < monthStartDate)
+    .filter((transaction) => transaction.date < nextMonthStart)
+    .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0);
+  const transactionsBetweenMonthStartAndSnapshot = transactions
+    .filter((transaction) => transaction.date >= monthStartDate)
+    .filter((transaction) => transaction.date <= startSnapshot.snapshotDate)
+    .filter((transaction) => transaction.date < nextMonthStart)
+    .reduce((total, transaction) => total + signedTransactionAmount(transaction), 0);
+
+  return startSnapshot.snapshotDate <= monthStartDate
+    ? startSnapshot.balance + transactionsBetweenSnapshotAndMonthStart
+    : startSnapshot.balance - transactionsBetweenMonthStartAndSnapshot;
 }
 
 function cashflowLineColor(balance: number, buffer: number) {
