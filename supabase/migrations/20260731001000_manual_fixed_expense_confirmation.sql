@@ -1,5 +1,7 @@
 -- Aanvulling op budget/kas-migratie: bevestigen werkt alleen nog met open instances.
 
+drop function if exists public.confirm_fixed_expense_instance(uuid, numeric, text);
+
 create unique index if not exists transactions_fixed_instance_unique_idx
 on public.transactions(fixed_expense_instance_id)
 where fixed_expense_instance_id is not null;
@@ -67,7 +69,7 @@ begin
     status = 'confirmed',
     confirmed_by = auth.uid(),
     confirmed_at = now(),
-    note = target_note
+    note = coalesce(target_note, note)
   where id = target_instance_id
   returning * into instance_record;
 
