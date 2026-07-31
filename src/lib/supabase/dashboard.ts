@@ -240,6 +240,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         name: expense.name_snapshot,
         categoryId: expense.category_id,
         amount: Number(expense.amount_snapshot),
+        actualDate: expense.actual_date ?? undefined,
         status: expense.status,
         confirmedBy: profile?.display_name,
         note: expense.note ?? undefined,

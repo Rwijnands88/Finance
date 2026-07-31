@@ -37,7 +37,8 @@ export type FixedExpenseInstance = {
   name: string;
   categoryId: string;
   amount: number;
-  status: "pending" | "confirmed" | "adjusted" | "skipped";
+  actualDate?: string;
+  status: "open" | "confirmed" | "skipped";
   confirmedBy?: Person;
   note?: string;
 };

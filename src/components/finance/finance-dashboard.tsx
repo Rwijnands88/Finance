@@ -447,7 +447,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(
     null,
   );
-  const autoConfirmingFixedInstanceIds = useRef(new Set<string>());
   const autoBookingContributionPlanIds = useRef(new Set<string>());
   const lastForegroundRefreshAt = useRef(0);
   const [skippingFixedInstanceId, setSkippingFixedInstanceId] = useState<
@@ -465,6 +464,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const [editMessage, setEditMessage] = useState("");
   const [isSavingTransactionEdit, setIsSavingTransactionEdit] = useState(false);
   const [fixedMessage, setFixedMessage] = useState("");
+  const [bookingFixedItem, setBookingFixedItem] =
+    useState<FixedAgendaItem | null>(null);
+  const [fixedBookingAmount, setFixedBookingAmount] = useState("");
+  const [fixedBookingDate, setFixedBookingDate] = useState("");
+  const [fixedBookingUpdateDefault, setFixedBookingUpdateDefault] =
+    useState(false);
+  const [isSavingFixedBooking, setIsSavingFixedBooking] = useState(false);
   const [manageMessage, setManageMessage] = useState("");
   const [isSavingRecurring, setIsSavingRecurring] = useState(false);
   const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
@@ -712,25 +718,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [fixedInstances, selectedRecurringExpenseIds],
   );
-  const openFixedTotalForCurrentMonth = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    const currentMonthInstances = new Map(
-      selectedFixedInstances
-        .filter((instance) => instance.month === currentMonth)
-        .map((instance) => [instance.recurringExpenseId, instance]),
-    );
-
-    return selectedRecurringExpenses.reduce((total, expense) => {
-      const instance = currentMonthInstances.get(expense.id);
-      const billingDate = dateForBillingDay(currentMonth, expense.billingDay);
-
-      if (instance?.status !== "pending" || billingDate < today) {
-        return total;
-      }
-
-      return total + instance.amount;
-    }, 0);
-  }, [currentMonth, selectedFixedInstances, selectedRecurringExpenses]);
   const sharedContributionPlans = useMemo(
     () =>
       contributionPlans.filter(
@@ -857,6 +844,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ),
     [currentMonth, labels, selectedFixedInstances, selectedRecurringExpenses],
   );
+  const expectedOpenFixedExpensesForCurrentMonth = useMemo(
+    () => expectedOpenFixedExpensesForMonth(fixedAgendaItems, today),
+    [fixedAgendaItems, today],
+  );
+  const overdueOpenFixedItems = expectedOpenFixedExpensesForCurrentMonth.items.filter(
+    (item) => item.date < today,
+  );
   useEffect(() => {
     if (!latestBalanceSnapshot) {
       console.log("[finance:balance-diagnose]", {
@@ -922,9 +916,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     selectedTransactions,
     today,
   ]);
-  useEffect(() => {
-    void autoConfirmDueFixedExpenses(currentMonth);
-  }, [currentMonth, fixedInstances, recurringExpenses, today]);
   useEffect(() => {
     if (!defaultAccount || !isSharedView) {
       return;
@@ -1113,13 +1104,25 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     ],
   );
   const cashflowEvents = useMemo(() => {
-    const futureFixedEvents = fixedAgendaItems
-      .filter((item) => item.canSkip && item.date > today)
-      .map((item) => ({
-        date: item.date,
-        day: item.day,
-        amount: -item.amount,
-      }));
+    const futureFixedEvents = expectedOpenFixedExpensesForCurrentMonth.items
+      .map((item) => {
+        const projectedDate = projectedOpenFixedExpenseDate(
+          item.date,
+          today,
+          currentMonth,
+        );
+
+        if (!projectedDate) {
+          return null;
+        }
+
+        return {
+          date: projectedDate,
+          day: Number(projectedDate.slice(8, 10)),
+          amount: -item.amount,
+        };
+      })
+      .filter((event): event is CashflowEvent => Boolean(event));
     const futureSavingsEvents = selectedTransactions
       .filter((transaction) => transaction.type === "sparen")
       .filter((transaction) => transaction.date.startsWith(currentMonth))
@@ -1176,10 +1179,10 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       ...ownContributionPlanEvents,
       ...incomeEvents,
     ] satisfies CashflowEvent[];
-  }, [
-    contributionPlanRows,
-    currentMonth,
-    fixedAgendaItems,
+	  }, [
+	    contributionPlanRows,
+	    currentMonth,
+	    expectedOpenFixedExpensesForCurrentMonth,
     initialData.currentUserId,
     isSharedView,
     selectedTransactions,
@@ -1203,136 +1206,136 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     ],
   );
 
-  async function autoConfirmDueFixedExpenses(month: string) {
-    const recurringById = new Map(
-      recurringExpenses.map((expense) => [expense.id, expense]),
-    );
-    const dueInstances = fixedInstances.filter((instance) => {
-      if (instance.month !== month || instance.status !== "pending") {
-        return false;
-      }
+  function startFixedExpenseBooking(item: FixedAgendaItem) {
+    if (!item.canConfirm) return;
 
-      const recurringExpense = recurringById.get(instance.recurringExpenseId);
+    setBookingFixedItem(item);
+    setFixedBookingAmount(item.amount.toFixed(2));
+    setFixedBookingDate(item.expectedDate);
+    setFixedBookingUpdateDefault(false);
+    setFixedMessage("");
+  }
 
-      if (!recurringExpense?.isActive) {
-        return false;
-      }
+  function closeFixedExpenseBooking() {
+    if (isSavingFixedBooking) return;
 
-      const billingDate = dateForBillingDay(month, recurringExpense.billingDay);
+    setBookingFixedItem(null);
+    setFixedBookingAmount("");
+    setFixedBookingDate("");
+    setFixedBookingUpdateDefault(false);
+  }
 
-      return (
-        billingDate <= today &&
-        !autoConfirmingFixedInstanceIds.current.has(instance.id)
-      );
-    });
+  async function confirmFixedExpense() {
+    if (!bookingFixedItem) return;
 
-    if (dueInstances.length === 0) {
+    const amount = parseCurrencyInput(fixedBookingAmount);
+
+    if (!amount || amount <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(fixedBookingDate)) {
+      setFixedMessage("Vul een geldig bedrag en een geldige afschrijfdatum in.");
       return;
     }
 
-    dueInstances.forEach((instance) =>
-      autoConfirmingFixedInstanceIds.current.add(instance.id),
-    );
+    setIsSavingFixedBooking(true);
+    setFixedMessage("");
 
-    const results = await Promise.allSettled(
-      dueInstances.map(async (instance) => {
-        const response = await fetch("/api/fixed-expenses/confirm", {
-          method: "POST",
+    const response = await fetch("/api/fixed-expenses/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        instanceId: bookingFixedItem.id,
+        action: "confirm",
+        amount,
+        actualDate: fixedBookingDate,
+      }),
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setIsSavingFixedBooking(false);
+      setFixedMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Vaste last bevestigen lukte niet.",
+      );
+      return;
+    }
+
+    if (result.fixedInstance) {
+      const fixedInstance = result.fixedInstance as FixedExpenseInstance;
+      setFixedInstances((items) =>
+        mergeById(items, [fixedInstance]).sort((first, second) =>
+          first.name.localeCompare(second.name, "nl"),
+        ),
+      );
+      setHighlightedFixedInstanceId(fixedInstance.id);
+    }
+
+    if (
+      fixedBookingUpdateDefault &&
+      Math.abs(amount - bookingFixedItem.expectedAmount) > 0.004
+    ) {
+      const recurringExpense = selectedRecurringExpenses.find(
+        (expense) => expense.id === bookingFixedItem.recurringExpenseId,
+      );
+
+      if (selectedAccount && recurringExpense) {
+        const recurringResponse = await fetch("/api/recurring-expenses", {
+          method: "PATCH",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            instanceId: instance.id,
-            action: "confirm",
+            id: recurringExpense.id,
+            householdId: initialData.householdId,
+            accountId: selectedAccount.id,
+            name: recurringExpense.name,
+            categoryId: recurringExpense.categoryId,
+            currentAmount: amount,
+            billingDay: recurringExpense.billingDay,
+            startsOn: recurringExpense.startsOn,
           }),
         });
-        const result = await response.json();
+        const recurringResult = await recurringResponse.json();
 
-        if (response.status === 409) {
-          return {
-            fixedInstance: null,
-            shouldRefreshMonthData: true,
-          };
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            typeof result.error === "string"
-              ? result.error
-              : "Vaste last automatisch verwerken lukte niet.",
+        if (recurringResponse.ok && recurringResult.recurringExpense) {
+          const nextRecurringExpense =
+            recurringResult.recurringExpense as RecurringExpense;
+          setRecurringExpenses((items) =>
+            items.map((item) =>
+              item.id === nextRecurringExpense.id ? nextRecurringExpense : item,
+            ),
+          );
+        } else if (!recurringResponse.ok) {
+          setFixedMessage(
+            typeof recurringResult.error === "string"
+              ? recurringResult.error
+              : "Standaardbedrag bijwerken lukte niet.",
           );
         }
-
-        return {
-          fixedInstance: result.fixedInstance as FixedExpenseInstance | null,
-          shouldRefreshMonthData: true,
-        };
-      }),
-    );
-
-    dueInstances.forEach((instance) =>
-      autoConfirmingFixedInstanceIds.current.delete(instance.id),
-    );
-
-    const confirmedInstances = results.flatMap((result) =>
-      result.status === "fulfilled" && result.value.fixedInstance
-        ? [result.value.fixedInstance]
-        : [],
-    );
-    const shouldRefreshMonthData = results.some(
-      (result) =>
-        result.status === "fulfilled" && result.value.shouldRefreshMonthData,
-    );
-
-    if (confirmedInstances.length > 0) {
-      setFixedInstances((items) =>
-        mergeById(items, confirmedInstances).sort((first, second) =>
-          first.name.localeCompare(second.name, "nl"),
-        ),
-      );
+      }
     }
 
-    if (!shouldRefreshMonthData) {
-      return;
-    }
+    await loadMonthData(currentMonth, { force: true });
 
-    const [transactionsResponse, recurringResponse] = await Promise.all([
-      fetch(`/api/transactions?month=${encodeURIComponent(month)}`),
-      fetch(`/api/recurring-expenses?month=${encodeURIComponent(month)}`),
-    ]);
-    const transactionsResult =
-      (await transactionsResponse.json()) as MonthDataResponse;
-    const recurringResult =
-      (await recurringResponse.json()) as MonthDataResponse;
-
-    if (transactionsResponse.ok) {
-      setTransactions((items) =>
-        mergeById(items, transactionsResult.transactions ?? []).sort((a, b) =>
-          b.date.localeCompare(a.date),
-        ),
-      );
-    }
-
-    if (recurringResponse.ok) {
-      setRecurringExpenses((items) =>
-        mergeById(items, recurringResult.recurringExpenses ?? []).sort((a, b) =>
-          a.name.localeCompare(b.name, "nl"),
-        ),
-      );
-      setFixedInstances((items) =>
-        mergeById(items, recurringResult.fixedInstances ?? []).sort((a, b) =>
-          a.name.localeCompare(b.name, "nl"),
-        ),
-      );
-    }
+    setIsSavingFixedBooking(false);
+    setBookingFixedItem(null);
+    setFixedBookingAmount("");
+    setFixedBookingDate("");
+    setFixedBookingUpdateDefault(false);
+    setFixedMessage(`${bookingFixedItem.name} is bevestigd.`);
   }
 
-  async function skipFixedExpense(item: FixedAgendaItem) {
+  async function skipFixedExpense(
+    item: FixedAgendaItem,
+    options: { skipPrompt?: boolean } = {},
+  ) {
     if (!item.canSkip || skippingFixedInstanceId) return;
 
-    const confirmed = window.confirm(
-      `${item.name} overslaan voor ${monthLabel(currentMonth)}?`,
-    );
+    const confirmed =
+      options.skipPrompt ??
+      window.confirm(`${item.name} overslaan voor ${monthLabel(currentMonth)}?`);
 
     if (!confirmed) return;
 
@@ -1370,6 +1373,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
         ),
       );
       setHighlightedFixedInstanceId(fixedInstance.id);
+    }
+
+    if (bookingFixedItem?.id === item.id) {
+      setBookingFixedItem(null);
+      setFixedBookingAmount("");
+      setFixedBookingDate("");
+      setFixedBookingUpdateDefault(false);
     }
 
     setFixedMessage(`${item.name} is overgeslagen.`);
@@ -3897,6 +3907,12 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 
   const isMobileFixedManagerVisible =
     isMobileFixedManagerOpen || Boolean(editingRecurringId);
+  const openFixedSectionFromReminder = () => {
+    setActiveSection("fixed");
+    window.requestAnimationFrame(() => {
+      scrollToFinanceSection("fixed");
+    });
+  };
 
   return (
     <main className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] pb-[calc(84px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
@@ -3951,6 +3967,18 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             metrics={dashboardMetrics.slice(0, 3)}
             mobile
           />
+          {overdueOpenFixedItems.length > 0 && (
+            <button
+              type="button"
+              onClick={openFixedSectionFromReminder}
+              className="rounded-[14px] border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-left text-sm text-amber-100 transition hover:border-amber-300/40"
+            >
+              {overdueOpenFixedItems.length}{" "}
+              {overdueOpenFixedItems.length === 1
+                ? "vaste last te bevestigen"
+                : "vaste lasten te bevestigen"}
+            </button>
+          )}
           <CashflowTimelineCard
             points={cashflowTimeline}
             month={currentMonth}
@@ -4008,7 +4036,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             message={fixedMessage}
             highlightedId={highlightedFixedInstanceId}
             skippingId={skippingFixedInstanceId}
-            onSkip={skipFixedExpense}
+            onConfirm={startFixedExpenseBooking}
           />
           {isMobileFixedManagerVisible && (
             <FixedExpenseManager
@@ -4306,6 +4334,18 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   metrics={dashboardMetrics.slice(0, 3)}
                 />
               </section>
+              {overdueOpenFixedItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={openFixedSectionFromReminder}
+                  className="rounded-[14px] border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-left text-sm text-amber-100 transition hover:border-amber-300/40"
+                >
+                  {overdueOpenFixedItems.length}{" "}
+                  {overdueOpenFixedItems.length === 1
+                    ? "vaste last te bevestigen"
+                    : "vaste lasten te bevestigen"}
+                </button>
+              )}
 
               <CashflowTimelineCard
                 points={cashflowTimeline}
@@ -4359,7 +4399,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   message={fixedMessage}
                   highlightedId={highlightedFixedInstanceId}
                   skippingId={skippingFixedInstanceId}
-                  onSkip={skipFixedExpense}
+                  onConfirm={startFixedExpenseBooking}
                 />
                 <FixedExpenseManager
                   expenses={selectedRecurringExpenses}
@@ -4601,8 +4641,8 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           onClose={() => setReceiptViewer(null)}
         />
       )}
-      {isExportDialogOpen && (
-        <ExportDialog
+	      {isExportDialogOpen && (
+	        <ExportDialog
           currentMonth={currentMonth}
           monthOptions={monthOptions}
           transactions={selectedTransactions}
@@ -4611,17 +4651,33 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           onExportPdf={exportPdf}
           onDownloadReceipts={downloadReceiptZip}
           onExportExcelRange={exportExcelRange}
-          onDownloadReceiptRange={downloadReceiptZipRange}
-        />
-      )}
-    </main>
-  );
-}
+	          onDownloadReceiptRange={downloadReceiptZipRange}
+	        />
+	      )}
+	      <FixedExpenseBookingDialog
+	        item={bookingFixedItem}
+	        amount={fixedBookingAmount}
+	        actualDate={fixedBookingDate}
+	        updateDefault={fixedBookingUpdateDefault}
+	        isSaving={isSavingFixedBooking}
+	        isMounted={isMounted}
+	        onAmountChange={setFixedBookingAmount}
+	        onActualDateChange={setFixedBookingDate}
+	        onUpdateDefaultChange={setFixedBookingUpdateDefault}
+	        onConfirm={confirmFixedExpense}
+	        onSkip={() => {
+	          if (bookingFixedItem) {
+	            void skipFixedExpense(bookingFixedItem, { skipPrompt: true });
+	          }
+	        }}
+	        onClose={closeFixedExpenseBooking}
+	      />
+	    </main>
+	  );
+	}
 
 type FixedAgendaState =
   | "processed"
-  | "autoProcessed"
-  | "changed"
   | "skipped"
   | "overdue"
   | "today"
@@ -4632,11 +4688,17 @@ type FixedAgendaItem = {
   recurringExpenseId: string;
   name: string;
   categoryName: string;
+  categoryId: string;
   categoryColor: string;
   amount: number;
+  expectedAmount: number;
   date: string;
+  expectedDate: string;
+  actualDate?: string;
+  billingDay: number;
   day: number;
   state: FixedAgendaState;
+  canConfirm: boolean;
   canSkip: boolean;
   note?: string;
 };
@@ -4647,6 +4709,7 @@ type CalendarTooltipItem = {
   amount: number;
   color: string;
   kind: "fixed" | "contribution";
+  fixedItem?: FixedAgendaItem;
 };
 
 type OutgoingTransactionRow = {
@@ -4662,6 +4725,7 @@ type OutgoingTransactionRow = {
   state?: FixedAgendaState;
   transaction?: Transaction;
   isExpected?: boolean;
+  varianceAmount?: number;
 };
 
 function MobileBottomNav({
@@ -5524,6 +5588,14 @@ function MonthTransactionsCard({
                       <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
                         {row.subtitle}
                       </p>
+                      {typeof row.varianceAmount === "number" && (
+                        <Badge
+                          title={`Verschil met standaardbedrag: ${currency(row.varianceAmount)}`}
+                          className="mt-1 w-fit border-amber-400/25 bg-amber-500/10 text-[11px] text-amber-200"
+                        >
+                          wijkt af
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
@@ -6969,8 +7041,7 @@ function AllTransactionsCard({
         {currentRows.length > 0 ? (
           <div className="divide-y divide-[var(--border)]">
             {visibleRows.map((row) => {
-              const isUpcoming =
-                row.state === "today" || row.state === "upcoming";
+              const isUpcoming = row.state ? isOpenAgendaState(row.state) : false;
               const isDeleting =
                 !!row.transaction && deletingTransactionId === row.transaction.id;
               const hasActions =
@@ -7019,9 +7090,17 @@ function AllTransactionsCard({
                       <p className="truncate text-sm font-medium text-[var(--text-primary)]">
                         {row.title}
                       </p>
-	                      <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
-	                        {row.subtitle}
-	                      </p>
+                      <p className="mt-0.5 truncate text-xs text-[var(--text-secondary)]">
+                        {row.subtitle}
+                      </p>
+                      {typeof row.varianceAmount === "number" && (
+                        <Badge
+                          title={`Verschil met standaardbedrag: ${currency(row.varianceAmount)}`}
+                          className="mt-1 w-fit border-amber-400/25 bg-amber-500/10 text-[11px] text-amber-200"
+                        >
+                          wijkt af
+                        </Badge>
+                      )}
 	                    </div>
 	                  </div>
 	                  <div className="grid shrink-0 grid-cols-[5.75rem_7rem] items-center gap-2 text-right">
@@ -7971,7 +8050,7 @@ function FixedExpenseAgenda({
   message,
   highlightedId,
   skippingId,
-  onSkip,
+  onConfirm,
   compact = false,
 }: {
   items: FixedAgendaItem[];
@@ -7981,25 +8060,17 @@ function FixedExpenseAgenda({
   message?: string;
   highlightedId?: string | null;
   skippingId?: string | null;
-  onSkip?: (item: FixedAgendaItem) => void;
+  onConfirm?: (item: FixedAgendaItem) => void;
   compact?: boolean;
 }) {
   const monthlyTotal = items.reduce((total, item) => total + item.amount, 0);
   const openTotal = items
-    .filter(
-      (item) =>
-        item.state === "today" ||
-        item.state === "upcoming",
-    )
+    .filter((item) => isOpenAgendaState(item.state))
     .reduce((total, item) => total + item.amount, 0);
   const processedTotal = items
     .filter((item) => isProcessedAgendaState(item.state))
     .reduce((total, item) => total + item.amount, 0);
-  const upcomingItems = items.filter(
-    (item) =>
-      item.state === "today" ||
-      item.state === "upcoming",
-  );
+  const upcomingItems = items.filter((item) => isOpenAgendaState(item.state));
   const pastItems = items.filter((item) => isProcessedAgendaState(item.state));
   const skippedItems = items.filter((item) => item.state === "skipped");
   const timelineItems = compact
@@ -8051,6 +8122,7 @@ function FixedExpenseAgenda({
               plannedContributions={plannedContributions}
               currentMonth={currentMonth}
               highlightedId={highlightedId}
+              onConfirm={onConfirm}
             />
           )}
 
@@ -8077,7 +8149,7 @@ function FixedExpenseAgenda({
                 items={timelineItems}
                 highlightedId={highlightedId}
                 skippingId={skippingId}
-                onSkip={onSkip}
+                onConfirm={onConfirm}
               />
             )}
             {compact && items.length > timelineItems.length && (
@@ -8098,12 +8170,14 @@ function FixedExpenseCalendar({
   plannedContributions,
   currentMonth,
   highlightedId,
+  onConfirm,
 }: {
   items: FixedAgendaItem[];
   transactions: Transaction[];
   plannedContributions: ContributionPlanRow[];
   currentMonth: string;
   highlightedId?: string | null;
+  onConfirm?: (item: FixedAgendaItem) => void;
 }) {
   const [year, monthNumber] = currentMonth.split("-").map(Number);
   const daysInMonth = new Date(year, monthNumber, 0).getDate();
@@ -8200,13 +8274,14 @@ function FixedExpenseCalendar({
         fixedItems,
         contributionItems,
         items: [
-          ...fixedItems.map((item) => ({
-            id: `fixed-${item.id}`,
-            name: item.name,
-            amount: item.amount,
-            color: item.categoryColor,
-            kind: "fixed" as const,
-          })),
+	          ...fixedItems.map((item) => ({
+	            id: `fixed-${item.id}`,
+	            name: item.name,
+	            amount: item.amount,
+	            color: item.categoryColor,
+	            kind: "fixed" as const,
+	            fixedItem: item,
+	          })),
           ...contributionItems,
         ],
       };
@@ -8409,7 +8484,7 @@ function FixedExpenseCalendar({
       {activeTooltip && (
         <div
           ref={tooltipRef}
-          className="pointer-events-none absolute z-[90] rounded-[12px] border border-[var(--border-strong)] bg-[#1E1E28] p-2 text-left shadow-[0_18px_45px_rgba(0,0,0,0.38)]"
+	          className="pointer-events-auto absolute z-[90] rounded-[12px] border border-[var(--border-strong)] bg-[#1E1E28] p-2 text-left shadow-[0_18px_45px_rgba(0,0,0,0.38)]"
           style={{
             left: activeTooltip.position.left,
             top: activeTooltip.position.top,
@@ -8417,27 +8492,193 @@ function FixedExpenseCalendar({
           }}
         >
           <div className="grid gap-1.5">
-            {activeTooltip.items.map((item) => (
-              <div
-                key={item.id}
-                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
-              >
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: item.color }}
-                />
-                <span className="truncate text-[11px] font-medium text-[var(--text-primary)]">
-                  {item.name}
-                </span>
-                <span className="text-[11px] text-[var(--text-secondary)]">
-                  {currency(item.amount)}
-                </span>
-              </div>
-            ))}
+	            {activeTooltip.items.map((item) => (
+	              <div key={item.id} className="grid gap-1">
+	                <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+	                  <span
+	                    className="h-2 w-2 rounded-full"
+	                    style={{ backgroundColor: item.color }}
+	                  />
+	                  <span className="truncate text-[11px] font-medium text-[var(--text-primary)]">
+	                    {item.name}
+	                  </span>
+	                  <span className="text-[11px] text-[var(--text-secondary)]">
+	                    {currency(item.amount)}
+	                  </span>
+	                </div>
+	                {item.fixedItem?.canConfirm && onConfirm && (
+	                  <Button
+	                    type="button"
+	                    size="sm"
+	                    variant="secondary"
+	                    className="h-7 justify-center px-2 text-[11px]"
+	                    onClick={(event) => {
+	                      event.stopPropagation();
+	                      setActiveTooltip(null);
+	                      onConfirm(item.fixedItem!);
+	                    }}
+	                  >
+	                    Bevestigen
+	                  </Button>
+	                )}
+	              </div>
+	            ))}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function FixedExpenseBookingDialog({
+  item,
+  amount,
+  actualDate,
+  updateDefault,
+  isSaving,
+  isMounted,
+  onAmountChange,
+  onActualDateChange,
+  onUpdateDefaultChange,
+  onConfirm,
+  onSkip,
+  onClose,
+}: {
+  item: FixedAgendaItem | null;
+  amount: string;
+  actualDate: string;
+  updateDefault: boolean;
+  isSaving: boolean;
+  isMounted: boolean;
+  onAmountChange: (value: string) => void;
+  onActualDateChange: (value: string) => void;
+  onUpdateDefaultChange: (value: boolean) => void;
+  onConfirm: () => void;
+  onSkip: () => void;
+  onClose: () => void;
+}) {
+  if (!item || !isMounted) {
+    return null;
+  }
+
+  const parsedAmount = parseCurrencyInput(amount);
+  const amountChanged =
+    Boolean(parsedAmount) && Math.abs(parsedAmount - item.expectedAmount) > 0.004;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/75 px-3 pb-[calc(92px+env(safe-area-inset-bottom))] pt-6 backdrop-blur-xl md:items-center md:p-6 md:pb-6">
+      <div className="max-h-[calc(100dvh-120px)] w-full max-w-md overflow-y-auto rounded-t-[24px] border border-[var(--border)] bg-[#18181B] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.48)] md:rounded-[24px] md:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)]">
+              Vaste last bevestigen
+            </p>
+            <h2 className="mt-1 truncate text-lg font-semibold text-[var(--text-primary)]">
+              {item.name}
+            </h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              {item.categoryName} · verwacht op {item.expectedDate}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={onClose}
+            disabled={isSaving}
+            className="h-8 w-8 shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium text-[var(--text-muted)]">
+              Bedrag
+            </span>
+            <Input
+              inputMode="decimal"
+              value={amount}
+              onChange={(event) => onAmountChange(event.target.value)}
+              disabled={isSaving}
+              className="h-11"
+            />
+          </label>
+
+          {amountChanged && (
+            <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Dit bedrag voortaan gebruiken?
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onUpdateDefaultChange(!updateDefault)}
+                  disabled={isSaving}
+                  className={cn(
+                    "rounded-md border px-3 py-1.5 text-xs font-semibold transition",
+                    updateDefault
+                      ? "border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]"
+                      : "border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)]",
+                  )}
+                >
+                  Ja
+                </button>
+              </div>
+            </div>
+          )}
+
+          <label className="grid gap-1.5">
+            <span className="text-xs font-medium text-[var(--text-muted)]">
+              Datum afschrijving
+            </span>
+            <Input
+              type="date"
+              value={actualDate}
+              onChange={(event) => onActualDateChange(event.target.value)}
+              disabled={isSaving}
+              className="h-11"
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-[auto_1fr_auto]">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onClose}
+            disabled={isSaving}
+            className="justify-center"
+          >
+            Annuleren
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onSkip}
+            disabled={isSaving}
+            className="justify-center"
+          >
+            Overslaan
+          </Button>
+          <Button
+            type="button"
+            onClick={onConfirm}
+            disabled={isSaving}
+            className="justify-center"
+          >
+            {isSaving ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Check className="h-4 w-4" />
+            )}
+            Bevestigen
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -8473,23 +8714,23 @@ function AgendaSection({
   items,
   highlightedId,
   skippingId,
-  onSkip,
+  onConfirm,
 }: {
   items: FixedAgendaItem[];
   highlightedId?: string | null;
   skippingId?: string | null;
-  onSkip?: (item: FixedAgendaItem) => void;
+  onConfirm?: (item: FixedAgendaItem) => void;
 }) {
   return (
     <div className="relative space-y-0">
       {items.map((item) => (
         <AgendaRow
           key={item.id}
-          item={item}
-          isHighlighted={highlightedId === item.id}
-          isSkipping={skippingId === item.id}
-          onSkip={onSkip}
-        />
+	          item={item}
+	          isHighlighted={highlightedId === item.id}
+	          isSkipping={skippingId === item.id}
+	          onConfirm={onConfirm}
+	        />
       ))}
     </div>
   );
@@ -8499,12 +8740,12 @@ function AgendaRow({
   item,
   isHighlighted,
   isSkipping,
-  onSkip,
+  onConfirm,
 }: {
   item: FixedAgendaItem;
   isHighlighted: boolean;
   isSkipping: boolean;
-  onSkip?: (item: FixedAgendaItem) => void;
+  onConfirm?: (item: FixedAgendaItem) => void;
 }) {
   const isProcessed = isProcessedAgendaState(item.state);
   const isSkipped = item.state === "skipped";
@@ -8571,22 +8812,22 @@ function AgendaRow({
             >
               {currency(item.amount)}
             </p>
-            {item.canSkip && onSkip && !isSkipped && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => onSkip(item)}
-                disabled={isSkipping}
-                className="h-7 px-2 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              >
-                {isSkipping ? (
-                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  "Overslaan"
-                )}
-              </Button>
-            )}
+	            {item.canConfirm && onConfirm && !isSkipped && (
+	              <Button
+	                type="button"
+	                size="sm"
+	                variant="secondary"
+	                onClick={() => onConfirm(item)}
+	                disabled={isSkipping}
+	                className="h-7 px-2 text-[11px]"
+	              >
+	                {isSkipping ? (
+	                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+	                ) : (
+	                  "Bevestigen"
+	                )}
+	              </Button>
+	            )}
           </div>
         </div>
       </div>
@@ -11665,17 +11906,27 @@ function buildOutgoingTransactionRows(
 ) {
   const fixedRows: OutgoingTransactionRow[] = fixedItems
     .filter((item) => item.state !== "skipped" && item.date <= today)
-    .map((item) => ({
-      id: `fixed-${item.recurringExpenseId}-${item.date}`,
-      date: item.date,
-      title: item.name,
-      subtitle: `${item.categoryName} · ${agendaStateLabel(item.state)}`,
-      amount: item.amount,
-      signedAmount: -item.amount,
-      kind: "fixed",
-      color: item.categoryColor,
-      state: item.state,
-    }));
+    .map((item) => {
+      const varianceAmount =
+        item.state === "processed" &&
+        Math.abs(item.amount - item.expectedAmount) > 0.004
+          ? item.amount - item.expectedAmount
+          : undefined;
+
+      return {
+        id: `fixed-${item.recurringExpenseId}-${item.date}`,
+        date: item.date,
+        title: item.name,
+        subtitle: `${item.categoryName} · ${agendaStateLabel(item.state)}`,
+        amount: item.amount,
+        signedAmount: -item.amount,
+        kind: "fixed",
+        color: item.categoryColor,
+        state: item.state,
+        isExpected: item.canConfirm,
+        varianceAmount,
+      };
+    });
   const variableRows: OutgoingTransactionRow[] = monthTransactions
     .filter((transaction) => transaction.type === "variable")
     .map((transaction) => {
@@ -11777,7 +12028,38 @@ function expectedFixedTotalForMonth(
       }
 
       return total + (instance?.amount ?? expense.currentAmount);
-    }, 0);
+	    }, 0);
+}
+
+function expectedOpenFixedExpensesForMonth(
+  fixedItems: FixedAgendaItem[],
+  today: string,
+) {
+  const items = fixedItems.filter((item) => item.canConfirm);
+
+  return {
+    items,
+    total: items.reduce((total, item) => total + item.amount, 0),
+    overdueItems: items.filter((item) => item.date < today),
+  };
+}
+
+function projectedOpenFixedExpenseDate(
+  dueDate: string,
+  today: string,
+  month: string,
+) {
+  if (!dueDate.startsWith(month)) {
+    return null;
+  }
+
+  if (!today.startsWith(month) || dueDate > today) {
+    return dueDate;
+  }
+
+  const tomorrow = addIsoDays(today, 1);
+
+  return tomorrow.startsWith(month) ? tomorrow : dueDate;
 }
 
 function contributionKindLabel(kind: ContributionKind) {
@@ -12331,25 +12613,33 @@ function buildFixedAgendaItems(
 
   return recurringExpenses
     .filter((expense) => expense.isActive)
-    .map((expense) => {
-      const instance = currentMonthInstances.get(expense.id);
-      const date = dateForBillingDay(currentMonth, expense.billingDay);
-      const category = labels.get(expense.categoryId);
-      const state = agendaState(instance?.status, date, today);
+	    .map((expense) => {
+	      const instance = currentMonthInstances.get(expense.id);
+	      const expectedDate = dateForBillingDay(currentMonth, expense.billingDay);
+	      const date = instance?.actualDate ?? expectedDate;
+	      const category = labels.get(expense.categoryId);
+	      const state = agendaState(instance?.status, date, today);
+	      const canProcess = instance?.status === "open";
 
-      return {
-        id: instance?.id ?? expense.id,
-        recurringExpenseId: expense.id,
-        name: instance?.name ?? expense.name,
-        categoryName: category?.name ?? "Onbekend",
-        categoryColor: category?.color ?? "#6366F1",
-        amount: instance?.amount ?? expense.currentAmount,
-        date,
-        day: Number(date.slice(8, 10)),
-        state,
-        canSkip: instance?.status === "pending",
-        note: instance?.note,
-      } satisfies FixedAgendaItem;
+	      return {
+	        id: instance?.id ?? expense.id,
+	        recurringExpenseId: expense.id,
+	        name: instance?.name ?? expense.name,
+	        categoryName: category?.name ?? "Onbekend",
+	        categoryId: expense.categoryId,
+	        categoryColor: category?.color ?? "#6366F1",
+	        amount: instance?.amount ?? expense.currentAmount,
+	        expectedAmount: expense.currentAmount,
+	        date,
+	        expectedDate,
+	        actualDate: instance?.actualDate,
+	        billingDay: expense.billingDay,
+	        day: Number(date.slice(8, 10)),
+	        state,
+	        canConfirm: canProcess,
+	        canSkip: canProcess,
+	        note: instance?.note,
+	      } satisfies FixedAgendaItem;
     })
     .sort(
       (first, second) =>
@@ -12364,29 +12654,30 @@ function agendaState(
   today: string,
 ): FixedAgendaState {
   if (status === "confirmed") return "processed";
-  if (status === "adjusted") return "changed";
   if (status === "skipped") return "skipped";
-  if (date < today) return "autoProcessed";
+  if (date < today) return "overdue";
   if (date === today) return "today";
   return "upcoming";
 }
 
 function agendaStateLabel(state: FixedAgendaState) {
   const labels: Record<FixedAgendaState, string> = {
-        processed: "afgelopen",
-        autoProcessed: "afgeschreven",
-        changed: "aangepast",
-        skipped: "overgeslagen",
-        overdue: "had al moeten komen",
-        today: "vandaag",
-        upcoming: "komt eraan",
+    processed: "bevestigd",
+    skipped: "overgeslagen",
+    overdue: "nog te bevestigen",
+    today: "vandaag",
+    upcoming: "komt eraan",
   };
 
   return labels[state];
 }
 
 function isProcessedAgendaState(state: FixedAgendaState) {
-  return state === "processed" || state === "autoProcessed" || state === "changed";
+  return state === "processed";
+}
+
+function isOpenAgendaState(state: FixedAgendaState) {
+  return state === "overdue" || state === "today" || state === "upcoming";
 }
 
 function dateForBillingDay(month: string, billingDay: number) {
@@ -12456,6 +12747,17 @@ function addIsoMonths(month: string, delta: number) {
   const date = new Date(year, monthNumber - 1 + delta, 1);
 
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function addIsoDays(isoDate: string, delta: number) {
+  const [year, monthNumber, day] = isoDate.split("-").map(Number);
+  const date = new Date(year, monthNumber - 1, day + delta);
+
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function normalizeMonthRange(fromMonth: string, toMonth: string) {

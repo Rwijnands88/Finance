@@ -35,9 +35,9 @@ export const recurringExpenses: RecurringExpense[] = [
 export const fixedInstances: FixedExpenseInstance[] = [
   { id: "fix-1", recurringExpenseId: "rec-1", month: "2026-05", name: "Hypotheek", categoryId: "mortgage", amount: 1840, status: "confirmed", confirmedBy: "Ralph" },
   { id: "fix-2", recurringExpenseId: "rec-2", month: "2026-05", name: "Internet + TV", categoryId: "internet", amount: 74, status: "confirmed", confirmedBy: "Dorine" },
-  { id: "fix-3", recurringExpenseId: "rec-3", month: "2026-05", name: "Water en elektra voorschot", categoryId: "utilities", amount: 256, status: "pending" },
+  { id: "fix-3", recurringExpenseId: "rec-3", month: "2026-05", name: "Water en elektra voorschot", categoryId: "utilities", amount: 256, status: "open" },
   { id: "fix-4", recurringExpenseId: "rec-4", month: "2026-05", name: "Kinderopvang", categoryId: "childcare", amount: 645, status: "confirmed", confirmedBy: "Dorine" },
-  { id: "fix-5", recurringExpenseId: "rec-5", month: "2026-05", name: "BSO", categoryId: "childcare", amount: 265, status: "pending" },
+  { id: "fix-5", recurringExpenseId: "rec-5", month: "2026-05", name: "BSO", categoryId: "childcare", amount: 265, status: "open" },
   { id: "fix-6", recurringExpenseId: "rec-6", month: "2026-05", name: "Verzekeringen pakket", categoryId: "insurance", amount: 315, status: "confirmed", confirmedBy: "Ralph" },
 ];
 

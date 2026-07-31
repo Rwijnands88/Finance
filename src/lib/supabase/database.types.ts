@@ -230,7 +230,7 @@ export type Database = {
           category_id: string;
           amount_snapshot: number;
           actual_date: string | null;
-          status: "pending" | "confirmed" | "adjusted" | "skipped";
+          status: "open" | "confirmed" | "skipped";
           confirmed_by: string | null;
           confirmed_at: string | null;
           note: string | null;
@@ -246,7 +246,7 @@ export type Database = {
           category_id: string;
           amount_snapshot: number;
           actual_date?: string | null;
-          status?: "pending" | "confirmed" | "adjusted" | "skipped";
+          status?: "open" | "confirmed" | "skipped";
           confirmed_by?: string | null;
           confirmed_at?: string | null;
           note?: string | null;
@@ -258,7 +258,7 @@ export type Database = {
           category_id?: string;
           amount_snapshot?: number;
           actual_date?: string | null;
-          status?: "pending" | "confirmed" | "adjusted" | "skipped";
+          status?: "open" | "confirmed" | "skipped";
           confirmed_by?: string | null;
           confirmed_at?: string | null;
           note?: string | null;
@@ -433,6 +433,54 @@ export type Database = {
         };
         Relationships: [];
       };
+      month_reconciliations: {
+        Row: {
+          id: string;
+          account_id: string;
+          month: string;
+          actual_balance: number;
+          checked_at: string;
+          note: string | null;
+          entered_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          month: string;
+          actual_balance: number;
+          checked_at?: string;
+          note?: string | null;
+          entered_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          actual_balance?: number;
+          checked_at?: string;
+          note?: string | null;
+        };
+        Relationships: [];
+      };
+      user_settings: {
+        Row: {
+          user_id: string;
+          reconciliation_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          reconciliation_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          reconciliation_enabled?: boolean;
+        };
+        Relationships: [];
+      };
       fuel_details: {
         Row: {
           transaction_id: string;
@@ -537,9 +585,17 @@ export type Database = {
         Args: {
           target_instance_id: string;
           target_amount?: number | null;
+          target_actual_date?: string | null;
           target_note?: string | null;
         };
         Returns: Database["public"]["Tables"]["transactions"]["Row"];
+      };
+      fixed_expense_due_date: {
+        Args: {
+          target_month: string;
+          target_billing_day: number;
+        };
+        Returns: string;
       };
       seed_default_accounts: {
         Args: {

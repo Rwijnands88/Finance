@@ -421,7 +421,8 @@ export async function PATCH(request: Request) {
       .update({
         category_id: body.categoryId,
         amount_snapshot: amount,
-        status: "adjusted",
+        actual_date: body.date,
+        status: "confirmed",
         note,
       })
       .eq("id", existingTransaction.fixed_expense_instance_id)
@@ -617,7 +618,8 @@ export async function DELETE(request: Request) {
   const { data: fixedInstance, error: fixedError } = await supabase
     .from("fixed_expense_instances")
     .update({
-      status: "pending",
+      status: "open",
+      actual_date: null,
       confirmed_by: null,
       confirmed_at: null,
       note: null,
@@ -642,7 +644,8 @@ function mapFixedInstance(row: {
   name_snapshot: string;
   category_id: string;
   amount_snapshot: number;
-  status: "pending" | "confirmed" | "adjusted" | "skipped";
+  actual_date: string | null;
+  status: "open" | "confirmed" | "skipped";
   note: string | null;
 }): FixedExpenseInstance {
   return {
@@ -652,6 +655,7 @@ function mapFixedInstance(row: {
     name: row.name_snapshot,
     categoryId: row.category_id,
     amount: Number(row.amount_snapshot),
+    actualDate: row.actual_date ?? undefined,
     status: row.status,
     note: row.note ?? undefined,
   };

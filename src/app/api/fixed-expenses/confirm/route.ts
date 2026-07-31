@@ -6,6 +6,7 @@ type FixedExpenseActionBody = {
   instanceId?: string;
   action?: "confirm" | "skip";
   amount?: number | null;
+  actualDate?: string | null;
   note?: string | null;
 };
 
@@ -31,6 +32,10 @@ export async function POST(request: Request) {
   const note = typeof body.note === "string" && body.note.trim()
     ? body.note.trim()
     : null;
+  const actualDate =
+    typeof body.actualDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.actualDate)
+      ? body.actualDate
+      : null;
 
   if (action === "confirm" && amount !== null && amount <= 0) {
     return NextResponse.json(
@@ -59,7 +64,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: instanceError.message }, { status: 400 });
   }
 
-  if (instance.status !== "pending") {
+  if (instance.status !== "open") {
     return NextResponse.json(
       { error: "Deze vaste last is al verwerkt." },
       { status: 409 },
@@ -71,6 +76,7 @@ export async function POST(request: Request) {
       .from("fixed_expense_instances")
       .update({
         status: "skipped",
+        actual_date: null,
         confirmed_by: user.id,
         confirmed_at: new Date().toISOString(),
         note: note ?? "Overgeslagen",
@@ -89,14 +95,13 @@ export async function POST(request: Request) {
     });
   }
 
-  const adjustedAmount =
-    amount !== null && Math.abs(amount - Number(instance.amount_snapshot)) > 0.004
-      ? amount
-      : null;
-  const fixedNote = note ?? (adjustedAmount ? "Aangepast bedrag" : null);
+  const hasAmountChange =
+    amount !== null && Math.abs(amount - Number(instance.amount_snapshot)) > 0.004;
+  const fixedNote = note ?? (hasAmountChange ? "Aangepast bedrag" : null);
   const { data, error } = await supabase.rpc("confirm_fixed_expense_instance", {
     target_instance_id: body.instanceId,
-    target_amount: adjustedAmount,
+    target_amount: amount,
+    target_actual_date: actualDate,
     target_note: fixedNote,
   });
 
@@ -128,7 +133,8 @@ function mapFixedInstance(row: {
   name_snapshot: string;
   category_id: string;
   amount_snapshot: number;
-  status: "pending" | "confirmed" | "adjusted" | "skipped";
+  actual_date: string | null;
+  status: "open" | "confirmed" | "skipped";
   note: string | null;
 }): FixedExpenseInstance {
   return {
@@ -138,6 +144,7 @@ function mapFixedInstance(row: {
     name: row.name_snapshot,
     categoryId: row.category_id,
     amount: Number(row.amount_snapshot),
+    actualDate: row.actual_date ?? undefined,
     status: row.status,
     note: row.note ?? undefined,
   };

@@ -251,7 +251,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  const fixedInstance = await updatePendingCurrentInstance(
+  const fixedInstance = await updateOpenCurrentInstance(
     recurringExpense.id,
     recurringExpense.name,
     recurringExpense.category_id,
@@ -323,10 +323,10 @@ export async function DELETE(request: Request) {
   }
 
   const { data: removedInstances, error: instancesError } = await supabase
-    .from("fixed_expense_instances")
-    .delete()
-    .eq("recurring_expense_id", body.id)
-    .eq("status", "pending")
+	    .from("fixed_expense_instances")
+	    .delete()
+	    .eq("recurring_expense_id", body.id)
+	    .eq("status", "open")
     .gte("month", currentMonthStart())
     .select("id");
 
@@ -573,7 +573,7 @@ async function createOrReadCurrentInstance(
   return data ? mapFixedInstance(data) : null;
 }
 
-async function updatePendingCurrentInstance(
+async function updateOpenCurrentInstance(
   recurringExpenseId: string,
   name: string,
   categoryId: string,
@@ -587,9 +587,9 @@ async function updatePendingCurrentInstance(
       category_id: categoryId,
       amount_snapshot: amount,
     })
-    .eq("recurring_expense_id", recurringExpenseId)
-    .eq("month", currentMonthStart())
-    .eq("status", "pending")
+	    .eq("recurring_expense_id", recurringExpenseId)
+	    .eq("month", currentMonthStart())
+	    .eq("status", "open")
     .select("*");
 
   if (error || !data?.[0]) {
@@ -632,7 +632,8 @@ function mapFixedInstance(row: {
   name_snapshot: string;
   category_id: string;
   amount_snapshot: number;
-  status: "pending" | "confirmed" | "adjusted" | "skipped";
+  actual_date: string | null;
+  status: "open" | "confirmed" | "skipped";
   note: string | null;
   profiles?:
     | { display_name?: string | null }
@@ -648,6 +649,7 @@ function mapFixedInstance(row: {
     name: row.name_snapshot,
     categoryId: row.category_id,
     amount: Number(row.amount_snapshot),
+    actualDate: row.actual_date ?? undefined,
     status: row.status,
     confirmedBy: profile?.display_name ?? undefined,
     note: row.note ?? undefined,
