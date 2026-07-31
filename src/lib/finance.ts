@@ -4,6 +4,48 @@ export function categoryById(categories: Category[]) {
   return new Map(categories.map((category) => [category.id, category]));
 }
 
+export function budgetAmount(transaction: Transaction) {
+  const amount = Math.abs(transaction.amount);
+
+  switch (transaction.type) {
+    case "fixed":
+    case "variable":
+    case "sparen":
+    case "prepaid":
+      return amount;
+    case "settlement":
+    case "contribution":
+    case "income":
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+export function cashAmount(transaction: Transaction) {
+  const amount = Math.abs(transaction.amount);
+
+  switch (transaction.type) {
+    case "income":
+    case "contribution":
+      return amount;
+    case "settlement":
+      return transaction.settlementDirection === "in"
+        ? amount
+        : transaction.settlementDirection === "out"
+          ? -amount
+          : 0;
+    case "fixed":
+    case "variable":
+    case "sparen":
+      return -amount;
+    case "prepaid":
+      return 0;
+    default:
+      return 0;
+  }
+}
+
 export function totalsForMonth(transactions: Transaction[], month: string) {
   const monthTransactions = transactions.filter((transaction) =>
     transaction.date.startsWith(month),

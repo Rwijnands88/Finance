@@ -44,8 +44,16 @@ export type FixedExpenseInstance = {
 
 export type Transaction = {
   id: string;
-  type: "fixed" | "variable" | "contribution" | "income" | "sparen";
+  type:
+    | "fixed"
+    | "variable"
+    | "contribution"
+    | "income"
+    | "sparen"
+    | "prepaid"
+    | "settlement";
   contributionKind?: ContributionKind;
+  settlementDirection?: "in" | "out";
   accountId?: string;
   accountName?: string;
   accountKind?: Account["kind"];

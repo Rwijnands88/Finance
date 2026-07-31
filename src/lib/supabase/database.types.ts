@@ -229,6 +229,7 @@ export type Database = {
           name_snapshot: string;
           category_id: string;
           amount_snapshot: number;
+          actual_date: string | null;
           status: "pending" | "confirmed" | "adjusted" | "skipped";
           confirmed_by: string | null;
           confirmed_at: string | null;
@@ -244,6 +245,7 @@ export type Database = {
           name_snapshot: string;
           category_id: string;
           amount_snapshot: number;
+          actual_date?: string | null;
           status?: "pending" | "confirmed" | "adjusted" | "skipped";
           confirmed_by?: string | null;
           confirmed_at?: string | null;
@@ -255,6 +257,7 @@ export type Database = {
           name_snapshot?: string;
           category_id?: string;
           amount_snapshot?: number;
+          actual_date?: string | null;
           status?: "pending" | "confirmed" | "adjusted" | "skipped";
           confirmed_by?: string | null;
           confirmed_at?: string | null;
@@ -271,8 +274,16 @@ export type Database = {
           category_id: string;
           amount: number;
           transaction_date: string;
-          type: "fixed" | "variable" | "contribution" | "income" | "sparen";
+          type:
+            | "fixed"
+            | "variable"
+            | "contribution"
+            | "income"
+            | "sparen"
+            | "prepaid"
+            | "settlement";
           contribution_kind: "planned" | "extra" | "belastingteruggave" | null;
+          settlement_direction: "in" | "out" | null;
           note: string | null;
           receipt_url: string | null;
           entered_by: string;
@@ -288,8 +299,16 @@ export type Database = {
           category_id: string;
           amount: number;
           transaction_date: string;
-          type: "fixed" | "variable" | "contribution" | "income" | "sparen";
+          type:
+            | "fixed"
+            | "variable"
+            | "contribution"
+            | "income"
+            | "sparen"
+            | "prepaid"
+            | "settlement";
           contribution_kind?: "planned" | "extra" | "belastingteruggave" | null;
+          settlement_direction?: "in" | "out" | null;
           note?: string | null;
           receipt_url?: string | null;
           entered_by: string;
@@ -302,6 +321,7 @@ export type Database = {
           amount?: number;
           transaction_date?: string;
           contribution_kind?: "planned" | "extra" | "belastingteruggave" | null;
+          settlement_direction?: "in" | "out" | null;
           note?: string | null;
           receipt_url?: string | null;
           category_id?: string;

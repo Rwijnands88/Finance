@@ -56,6 +56,7 @@ import {
   type Transaction,
 } from "@/lib/types";
 import {
+  cashAmount,
   categoryById,
   categoryTotalsByPerson,
   categoryTotals,
@@ -11383,19 +11384,7 @@ function loadImage(file: File) {
 }
 
 function signedTransactionAmount(transaction: Transaction) {
-  const amount = Math.abs(transaction.amount);
-
-  switch (transaction.type) {
-    case "income":
-    case "contribution":
-      return amount;
-    case "sparen":
-    case "fixed":
-    case "variable":
-      return -amount;
-    default:
-      return 0;
-  }
+  return cashAmount(transaction);
 }
 
 function buildHeroBudgetSnapshot({
@@ -11730,6 +11719,8 @@ function buildOutgoingTransactionRows(
     )
     .filter((transaction) => transaction.date <= today)
     .map((transaction) => {
+      const positiveKind =
+        transaction.type === "contribution" ? "contribution" : "income";
       const category = labels.get(transaction.categoryId);
       const title =
         transaction.type === "contribution"
@@ -11752,7 +11743,7 @@ function buildOutgoingTransactionRows(
         subtitle,
         amount: transaction.amount,
         signedAmount: transaction.amount,
-        kind: transaction.type,
+        kind: positiveKind,
         color: transaction.type === "contribution" ? "#10B981" : "#22C55E",
         receiptUrl: transaction.receiptUrl,
         transaction,

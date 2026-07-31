@@ -114,6 +114,7 @@ export async function GET(request: Request) {
         amount: Number(transaction.amount),
         date: transaction.transaction_date,
         contributionKind: transaction.contribution_kind ?? undefined,
+        settlementDirection: transaction.settlement_direction ?? undefined,
         note: transaction.note ?? undefined,
         receiptUrl: transaction.receipt_url ?? undefined,
         enteredById: transaction.entered_by,
