@@ -8733,8 +8733,6 @@ function ChartsPanel({
             )}
             <div className="space-y-3 px-3">
               {visibleCategoryRows.filter((row) => row.amount > 0).map((row) => {
-                const overBudget = row.average > 0 && row.amount > row.average;
-
                 return (
                   <div
                     key={row.categoryId}
@@ -8747,15 +8745,11 @@ function ChartsPanel({
                       <CategoryProgressBar
                         value={row.amount}
                         max={categoryProgressMax}
-                        color={overBudget ? "#EF4444" : row.color}
+                        color={row.color}
+                        markerValue={row.average > 0 ? row.average : undefined}
                       />
                     </div>
-                    <span
-                      className={cn(
-                        "justify-self-end pb-px text-right font-medium",
-                        overBudget ? "text-[var(--negative)]" : "text-[var(--positive)]",
-                      )}
-                    >
+                    <span className="justify-self-end pb-px text-right font-medium text-[var(--text-primary)]">
                       {currency(row.amount)}
                     </span>
                   </div>
@@ -10082,18 +10076,24 @@ function CategoryProgressBar({
   value,
   max,
   color,
+  markerValue,
   className,
 }: {
   value: number;
   max: number;
   color: string;
+  markerValue?: number;
   className?: string;
 }) {
   const width = Math.min(100, Math.max(0, (value / Math.max(max, 1)) * 100));
+  const markerPosition =
+    typeof markerValue === "number" && markerValue > 0
+      ? Math.min(100, Math.max(0, (markerValue / Math.max(max, 1)) * 100))
+      : null;
 
   return (
     <div
-      className={cn("h-2.5 overflow-hidden rounded-full bg-zinc-950", className)}
+      className={cn("relative h-2.5 overflow-hidden rounded-full bg-zinc-950", className)}
       role="progressbar"
       aria-valuenow={value}
       aria-valuemax={max}
@@ -10103,6 +10103,13 @@ function CategoryProgressBar({
         className="h-full rounded-full"
         style={{ width: `${width}%`, backgroundColor: color }}
       />
+      {markerPosition !== null && (
+        <span
+          className="pointer-events-none absolute top-0 bottom-0 w-[2px] -translate-x-1/2 bg-[#A1A1AA]/70"
+          style={{ left: `${markerPosition}%` }}
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }
