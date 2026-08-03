@@ -4,7 +4,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 type FixedExpenseActionBody = {
   instanceId?: string;
-  action?: "confirm" | "skip";
+  action?: "confirm";
   amount?: number | null;
   actualDate?: string | null;
   note?: string | null;
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (action !== "confirm" && action !== "skip") {
+  if (action !== "confirm") {
     return NextResponse.json({ error: "Actie is ongeldig." }, { status: 400 });
   }
 
@@ -69,30 +69,6 @@ export async function POST(request: Request) {
       { error: "Deze vaste last is al verwerkt." },
       { status: 409 },
     );
-  }
-
-  if (action === "skip") {
-    const { data: skippedInstance, error } = await supabase
-      .from("fixed_expense_instances")
-      .update({
-        status: "skipped",
-        actual_date: null,
-        confirmed_by: user.id,
-        confirmed_at: new Date().toISOString(),
-        note: note ?? "Overgeslagen",
-      })
-      .eq("id", body.instanceId)
-      .select("*")
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    return NextResponse.json({
-      fixedInstance: mapFixedInstance(skippedInstance),
-      transaction: null,
-    });
   }
 
   const hasAmountChange =

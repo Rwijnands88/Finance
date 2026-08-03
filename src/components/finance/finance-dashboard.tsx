@@ -492,9 +492,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   );
   const autoBookingContributionPlanIds = useRef(new Set<string>());
   const lastForegroundRefreshAt = useRef(0);
-  const [skippingFixedInstanceId, setSkippingFixedInstanceId] = useState<
-    string | null
-  >(null);
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
   const [editAmount, setEditAmount] = useState("");
@@ -1468,64 +1465,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     setFixedBookingDate("");
     setFixedBookingUpdateDefault(false);
     setFixedMessage(`${bookingFixedItem.name} is bevestigd.`);
-  }
-
-  async function skipFixedExpense(
-    item: FixedAgendaItem,
-    options: { skipPrompt?: boolean } = {},
-  ) {
-    if (!item.canSkip || skippingFixedInstanceId) return;
-
-    const confirmed =
-      options.skipPrompt ??
-      window.confirm(`${item.name} overslaan voor ${monthLabel(currentMonth)}?`);
-
-    if (!confirmed) return;
-
-    setSkippingFixedInstanceId(item.id);
-    setFixedMessage("");
-
-    const response = await fetch("/api/fixed-expenses/confirm", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        instanceId: item.id,
-        action: "skip",
-      }),
-    });
-    const result = await response.json();
-
-    setSkippingFixedInstanceId(null);
-
-    if (!response.ok) {
-      setFixedMessage(
-        typeof result.error === "string"
-          ? result.error
-          : "Vaste last overslaan lukte niet.",
-      );
-      return;
-    }
-
-    if (result.fixedInstance) {
-      const fixedInstance = result.fixedInstance as FixedExpenseInstance;
-      setFixedInstances((items) =>
-        mergeById(items, [fixedInstance]).sort((first, second) =>
-          first.name.localeCompare(second.name, "nl"),
-        ),
-      );
-      setHighlightedFixedInstanceId(fixedInstance.id);
-    }
-
-    if (bookingFixedItem?.id === item.id) {
-      setBookingFixedItem(null);
-      setFixedBookingAmount("");
-      setFixedBookingDate("");
-      setFixedBookingUpdateDefault(false);
-    }
-
-    setFixedMessage(`${item.name} is overgeslagen.`);
   }
 
   const dashboardPrimaryValue =
@@ -3574,7 +3513,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
           day: Number(transaction.date.slice(8, 10)),
           state: "processed",
           canConfirm: false,
-          canSkip: false,
           note: transaction.note,
         } satisfies FixedAgendaItem;
       });
@@ -4432,7 +4370,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             currentMonth={currentMonth}
             message={fixedMessage}
             highlightedId={highlightedFixedInstanceId}
-            skippingId={skippingFixedInstanceId}
             onConfirm={startFixedExpenseBooking}
           />
           {isMobileFixedManagerVisible && (
@@ -4813,7 +4750,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   currentMonth={currentMonth}
                   message={fixedMessage}
                   highlightedId={highlightedFixedInstanceId}
-                  skippingId={skippingFixedInstanceId}
                   onConfirm={startFixedExpenseBooking}
                 />
                 <FixedExpenseManager
@@ -5077,24 +5013,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
 	          onDownloadReceiptRange={downloadReceiptZipRange}
 	        />
 	      )}
-	      <FixedExpenseBookingDialog
-	        item={bookingFixedItem}
-	        amount={fixedBookingAmount}
-	        actualDate={fixedBookingDate}
-	        updateDefault={fixedBookingUpdateDefault}
-	        isSaving={isSavingFixedBooking}
-	        isMounted={isMounted}
-	        onAmountChange={setFixedBookingAmount}
-	        onActualDateChange={setFixedBookingDate}
-	        onUpdateDefaultChange={setFixedBookingUpdateDefault}
-	        onConfirm={confirmFixedExpense}
-	        onSkip={() => {
-	          if (bookingFixedItem) {
-	            void skipFixedExpense(bookingFixedItem, { skipPrompt: true });
-	          }
-	        }}
-	        onClose={closeFixedExpenseBooking}
-	      />
+		      <FixedExpenseBookingDialog
+		        item={bookingFixedItem}
+		        amount={fixedBookingAmount}
+		        actualDate={fixedBookingDate}
+		        updateDefault={fixedBookingUpdateDefault}
+		        isSaving={isSavingFixedBooking}
+		        isMounted={isMounted}
+		        onAmountChange={setFixedBookingAmount}
+		        onActualDateChange={setFixedBookingDate}
+		        onUpdateDefaultChange={setFixedBookingUpdateDefault}
+		        onConfirm={confirmFixedExpense}
+		        onClose={closeFixedExpenseBooking}
+		      />
 	    </main>
 	  );
 	}
@@ -5122,7 +5053,6 @@ type FixedAgendaItem = {
   day: number;
   state: FixedAgendaState;
   canConfirm: boolean;
-  canSkip: boolean;
   note?: string;
 };
 
@@ -8876,7 +8806,6 @@ function FixedExpenseAgenda({
   currentMonth,
   message,
   highlightedId,
-  skippingId,
   onConfirm,
   compact = false,
 }: {
@@ -8886,7 +8815,6 @@ function FixedExpenseAgenda({
   currentMonth: string;
   message?: string;
   highlightedId?: string | null;
-  skippingId?: string | null;
   onConfirm?: (item: FixedAgendaItem) => void;
   compact?: boolean;
 }) {
@@ -8975,7 +8903,6 @@ function FixedExpenseAgenda({
               <AgendaSection
                 items={timelineItems}
                 highlightedId={highlightedId}
-                skippingId={skippingId}
                 onConfirm={onConfirm}
               />
             )}
@@ -9368,7 +9295,6 @@ function FixedExpenseBookingDialog({
   onActualDateChange,
   onUpdateDefaultChange,
   onConfirm,
-  onSkip,
   onClose,
 }: {
   item: FixedAgendaItem | null;
@@ -9381,7 +9307,6 @@ function FixedExpenseBookingDialog({
   onActualDateChange: (value: string) => void;
   onUpdateDefaultChange: (value: boolean) => void;
   onConfirm: () => void;
-  onSkip: () => void;
   onClose: () => void;
 }) {
   if (!item || !isMounted) {
@@ -9470,7 +9395,7 @@ function FixedExpenseBookingDialog({
           </label>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-[auto_1fr_auto]">
+        <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-[auto_1fr]">
           <Button
             type="button"
             variant="ghost"
@@ -9479,15 +9404,6 @@ function FixedExpenseBookingDialog({
             className="justify-center"
           >
             Annuleren
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onSkip}
-            disabled={isSaving}
-            className="justify-center"
-          >
-            Overslaan
           </Button>
           <Button
             type="button"
@@ -9540,12 +9456,10 @@ function AgendaTotal({
 function AgendaSection({
   items,
   highlightedId,
-  skippingId,
   onConfirm,
 }: {
   items: FixedAgendaItem[];
   highlightedId?: string | null;
-  skippingId?: string | null;
   onConfirm?: (item: FixedAgendaItem) => void;
 }) {
   return (
@@ -9553,11 +9467,10 @@ function AgendaSection({
       {items.map((item) => (
         <AgendaRow
           key={item.id}
-	          item={item}
-	          isHighlighted={highlightedId === item.id}
-	          isSkipping={skippingId === item.id}
-	          onConfirm={onConfirm}
-	        />
+          item={item}
+          isHighlighted={highlightedId === item.id}
+          onConfirm={onConfirm}
+        />
       ))}
     </div>
   );
@@ -9566,12 +9479,10 @@ function AgendaSection({
 function AgendaRow({
   item,
   isHighlighted,
-  isSkipping,
   onConfirm,
 }: {
   item: FixedAgendaItem;
   isHighlighted: boolean;
-  isSkipping: boolean;
   onConfirm?: (item: FixedAgendaItem) => void;
 }) {
   const isProcessed = isProcessedAgendaState(item.state);
@@ -9639,22 +9550,17 @@ function AgendaRow({
             >
               {currency(item.amount)}
             </p>
-	            {item.canConfirm && onConfirm && !isSkipped && (
-	              <Button
-	                type="button"
-	                size="sm"
-	                variant="secondary"
-	                onClick={() => onConfirm(item)}
-	                disabled={isSkipping}
-	                className="h-7 px-2 text-[11px]"
-	              >
-	                {isSkipping ? (
-	                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-	                ) : (
-	                  "Bevestigen"
-	                )}
-	              </Button>
-	            )}
+            {item.canConfirm && onConfirm && !isSkipped && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => onConfirm(item)}
+                className="h-7 px-2 text-[11px]"
+              >
+                Bevestigen
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -13917,7 +13823,6 @@ function buildFixedAgendaItems(
           day: Number(date.slice(8, 10)),
           state,
           canConfirm: canProcess,
-          canSkip: canProcess,
           note: instance?.note,
         },
       ];
