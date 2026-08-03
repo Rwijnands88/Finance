@@ -6463,6 +6463,11 @@ function MonthReconciliationCard({
 }: {
   reconciliation: MonthReconciliationCardModel;
 }) {
+  const reconciliationMonth = reconciliation.monthEndDate.slice(0, 7);
+  const previousMonth = addIsoMonths(new Date().toISOString().slice(0, 7), -1);
+  const shouldAutoOpen =
+    !reconciliation.existing && reconciliationMonth === previousMonth;
+  const [isReconciliationOpen, setIsReconciliationOpen] = useState(false);
   const hasActualBalance = reconciliation.parsedActualBalance !== null;
   const hasDifference =
     reconciliation.difference !== null && Math.abs(reconciliation.difference) >= 0.005;
@@ -6476,6 +6481,18 @@ function MonthReconciliationCard({
     ? "Er ontbreekt een transactie of een bedrag is verkeerd ingevoerd"
     : "Sluit aan";
   const statusTone = hasDifference ? "text-[#EF4444]" : "text-[#10B981]";
+  const headerStatus = reconciliation.existing
+    ? `Vastgelegd · ${
+        reconciliation.difference === null
+          ? "verschil onbekend"
+          : formatSignedPreciseCurrency(differenceValue)
+      }`
+    : "Nog niet vastgelegd";
+  const headerStatusTone = reconciliation.existing
+    ? hasDifference
+      ? "text-[#EF4444]"
+      : "text-[#10B981]"
+    : "text-[#A1A1AA]";
   const hints = [
     "een gemiste verrekening naar of van een priverekening",
     "een vaste last bevestigd met een verkeerd bedrag",
@@ -6483,131 +6500,156 @@ function MonthReconciliationCard({
     "een uitgave die met een eigen pas is betaald en niet is verrekend",
   ];
 
+  useEffect(() => {
+    setIsReconciliationOpen(shouldAutoOpen);
+  }, [reconciliation.existing?.id, reconciliationMonth, shouldAutoOpen]);
+
   return (
     <div className="rounded-[14px] border border-[var(--border)] bg-[var(--bg-surface)] p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-[var(--text-muted)]">
-            Aansluiting
-          </p>
-          <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">
-            {reconciliation.accountName} · eindsaldo op{" "}
-            {formatCashflowStartDate(reconciliation.monthEndDate)}.
-          </p>
-        </div>
-        {reconciliation.existing && (
-          <Badge className="border-[var(--border)] bg-[#27272A] text-[var(--text-secondary)]">
-            Vastgelegd
-          </Badge>
-        )}
-      </div>
-
-      <div className="mt-3 grid gap-2">
-        <label className="grid gap-1 text-xs font-medium text-zinc-300">
-          Werkelijk saldo volgens de bank
-          <Input
-            inputMode="decimal"
-            value={reconciliation.actualBalance}
-            placeholder="Eindsaldo na alle boekingen"
-            className="h-10"
-            onChange={(event) =>
-              reconciliation.onActualBalanceChange(event.target.value)
-            }
-          />
-        </label>
-        <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-          Vul het saldo in nadat alle af- en bijschrijvingen op deze dag zijn
-          verwerkt.
-        </p>
-      </div>
-
-      <div className="mt-3 grid gap-2 rounded-[12px] border border-[var(--border)] bg-[#09090B]/50 p-3 text-sm">
-        <ReconciliationAmountRow
-          label="Berekend saldo"
-          value={
-            reconciliation.calculatedBalance === null
-              ? "Geen ijkpunt"
-              : preciseCurrency(reconciliation.calculatedBalance)
-          }
-        />
-        <ReconciliationAmountRow
-          label="Werkelijk saldo"
-          value={
-            hasActualBalance
-              ? preciseCurrency(reconciliation.parsedActualBalance ?? 0)
-              : "Nog niet ingevuld"
-          }
-        />
-        <div className="flex items-start justify-between gap-3 border-t border-[var(--border)] pt-2">
-          <div>
-            <p className="font-medium text-[var(--text-primary)]">Verschil</p>
-            {hasActualBalance && reconciliation.calculatedBalance !== null && (
-              <p className={cn("mt-0.5 text-xs", statusTone)}>{statusText}</p>
+      <div
+        className="grid cursor-pointer grid-cols-[minmax(0,1fr)_max-content] items-start gap-3"
+        onClick={() => setIsReconciliationOpen((value) => !value)}
+      >
+        <div className="flex min-w-0 items-start gap-2">
+          <ChevronDown
+            className={cn(
+              "mt-0.5 h-4 w-4 shrink-0 text-[#A1A1AA] transition-transform duration-200",
+              isReconciliationOpen && "rotate-180",
             )}
+          />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-normal text-[var(--text-muted)]">
+              Aansluiting
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">
+              {reconciliation.accountName} · eindsaldo op{" "}
+              {formatCashflowStartDate(reconciliation.monthEndDate)}.
+            </p>
           </div>
-          <p className={cn("shrink-0 font-semibold", statusTone)}>
-            {hasActualBalance && reconciliation.calculatedBalance !== null
-              ? formatSignedPreciseCurrency(differenceValue)
-              : "-"}
-          </p>
         </div>
-      </div>
-
-      {hasDifference && (
-        <div className="mt-3 grid gap-2">
-          <label className="grid gap-1 text-xs font-medium text-zinc-300">
-            Notitie bij verschil
-            <textarea
-              value={reconciliation.note}
-              rows={3}
-              placeholder="Wat is waarschijnlijk de oorzaak?"
-              className="min-h-20 resize-none rounded-[10px] border border-[var(--border)] bg-[#09090B] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[#6366F1]"
-              onChange={(event) => reconciliation.onNoteChange(event.target.value)}
-            />
-          </label>
-        </div>
-      )}
-
-      <div className="mt-3 rounded-[12px] border border-[var(--border)] bg-[#09090B]/35 p-3">
-        <p className="text-xs font-medium text-[var(--text-primary)]">
-          Waarschijnlijkste oorzaken
-        </p>
-        <ol className="mt-2 grid list-decimal gap-1 pl-4 text-xs leading-5 text-[var(--text-secondary)]">
-          {hints.map((hint) => (
-            <li key={hint}>{hint}</li>
-          ))}
-        </ol>
-      </div>
-
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p
+        <span
           className={cn(
-            "min-h-4 text-xs",
-            reconciliation.message.includes("bevestigd") ||
-              reconciliation.message.includes("vastgelegd")
-              ? "text-[#10B981]"
-              : "text-[var(--text-secondary)]",
+            "justify-self-end text-right text-xs font-semibold tabular-nums",
+            headerStatusTone,
           )}
         >
-          {reconciliation.message ||
-            (hasDifference
-              ? "Leg vast met notitie, zodat het verschil zichtbaar blijft."
-              : "Bij €0,00 verschil wordt automatisch een ijkpunt gezet.")}
-        </p>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="h-10 justify-center"
-          disabled={!canSave}
-          onClick={reconciliation.onSave}
-        >
-          {reconciliation.isSaving
-            ? "Opslaan..."
-            : hasDifference
-              ? "Vastleggen"
-              : "Bevestigen"}
-        </Button>
+          {headerStatus}
+        </span>
+      </div>
+
+      <div
+        className={cn(
+          "overflow-hidden transition-all duration-200 ease-in-out",
+          isReconciliationOpen ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0",
+        )}
+      >
+        <div className="mt-3 grid gap-2">
+          <label className="grid gap-1 text-xs font-medium text-zinc-300">
+            Werkelijk saldo volgens de bank
+            <Input
+              inputMode="decimal"
+              value={reconciliation.actualBalance}
+              placeholder="Eindsaldo na alle boekingen"
+              className="h-10"
+              onChange={(event) =>
+                reconciliation.onActualBalanceChange(event.target.value)
+              }
+            />
+          </label>
+          <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+            Vul het saldo in nadat alle af- en bijschrijvingen op deze dag zijn
+            verwerkt.
+          </p>
+        </div>
+
+        <div className="mt-3 grid gap-2 rounded-[12px] border border-[var(--border)] bg-[#09090B]/50 p-3 text-sm">
+          <ReconciliationAmountRow
+            label="Berekend saldo"
+            value={
+              reconciliation.calculatedBalance === null
+                ? "Geen ijkpunt"
+                : preciseCurrency(reconciliation.calculatedBalance)
+            }
+          />
+          <ReconciliationAmountRow
+            label="Werkelijk saldo"
+            value={
+              hasActualBalance
+                ? preciseCurrency(reconciliation.parsedActualBalance ?? 0)
+                : "Nog niet ingevuld"
+            }
+          />
+          <div className="flex items-start justify-between gap-3 border-t border-[var(--border)] pt-2">
+            <div>
+              <p className="font-medium text-[var(--text-primary)]">Verschil</p>
+              {hasActualBalance && reconciliation.calculatedBalance !== null && (
+                <p className={cn("mt-0.5 text-xs", statusTone)}>{statusText}</p>
+              )}
+            </div>
+            <p className={cn("shrink-0 font-semibold", statusTone)}>
+              {hasActualBalance && reconciliation.calculatedBalance !== null
+                ? formatSignedPreciseCurrency(differenceValue)
+                : "-"}
+            </p>
+          </div>
+        </div>
+
+        {hasDifference && (
+          <div className="mt-3 grid gap-2">
+            <label className="grid gap-1 text-xs font-medium text-zinc-300">
+              Notitie bij verschil
+              <textarea
+                value={reconciliation.note}
+                rows={3}
+                placeholder="Wat is waarschijnlijk de oorzaak?"
+                className="min-h-20 resize-none rounded-[10px] border border-[var(--border)] bg-[#09090B] px-3 py-2 text-sm text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[#6366F1]"
+                onChange={(event) => reconciliation.onNoteChange(event.target.value)}
+              />
+            </label>
+          </div>
+        )}
+
+        <div className="mt-3 rounded-[12px] border border-[var(--border)] bg-[#09090B]/35 p-3">
+          <p className="text-xs font-medium text-[var(--text-primary)]">
+            Waarschijnlijkste oorzaken
+          </p>
+          <ol className="mt-2 grid list-decimal gap-1 pl-4 text-xs leading-5 text-[var(--text-secondary)]">
+            {hints.map((hint) => (
+              <li key={hint}>{hint}</li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p
+            className={cn(
+              "min-h-4 text-xs",
+              reconciliation.message.includes("bevestigd") ||
+                reconciliation.message.includes("vastgelegd")
+                ? "text-[#10B981]"
+                : "text-[var(--text-secondary)]",
+            )}
+          >
+            {reconciliation.message ||
+              (hasDifference
+                ? "Leg vast met notitie, zodat het verschil zichtbaar blijft."
+                : "Bij €0,00 verschil wordt automatisch een ijkpunt gezet.")}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-10 justify-center"
+            disabled={!canSave}
+            onClick={reconciliation.onSave}
+          >
+            {reconciliation.isSaving
+              ? "Opslaan..."
+              : hasDifference
+                ? "Vastleggen"
+                : "Bevestigen"}
+          </Button>
+        </div>
       </div>
     </div>
   );
