@@ -38,6 +38,7 @@ import {
   Pie,
   PieChart,
   ReferenceArea,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -5373,14 +5374,25 @@ function CashflowTimelineCard({
   compact?: boolean;
 }) {
   const insight = cashflowInsight(points, buffer, month);
+  const [scrubPoint, setScrubPoint] = useState<CashflowPoint | null>(null);
   const hasCashflowPoints = points.length > 0;
   const monthStartDate = `${month}-01`;
+  const scrubDate = scrubPoint
+    ? formatCashflowStartDate(dateForBillingDay(month, scrubPoint.day))
+    : null;
+  const isScrubForecast = scrubPoint
+    ? isForecastCashflowPoint(month, scrubPoint)
+    : false;
   const startDescription =
     startSnapshot && monthStartBalance !== null
       ? startSnapshot.snapshotDate < monthStartDate
         ? `Start ${monthLabel(month)}: ${currency(monthStartBalance)} — berekend uit eindsaldo ${formatCashflowStartDate(startSnapshot.snapshotDate)} (${currency(startSnapshot.balance)}) plus mutaties tot ${formatCashflowStartDate(monthStartDate)}`
         : `Start ${monthLabel(month)}: ${currency(monthStartBalance)} — teruggerekend uit eindsaldo ${formatCashflowStartDate(startSnapshot.snapshotDate)} (${currency(startSnapshot.balance)})`
       : "Geen openingssaldo ingevoerd";
+
+  useEffect(() => {
+    setScrubPoint(null);
+  }, [month, points]);
 
   return (
     <Card className="finance-card">
@@ -5393,6 +5405,27 @@ function CashflowTimelineCard({
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle>Cashflow</CardTitle>
+            {scrubPoint && scrubDate && (
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span
+                  className={cn(
+                    "text-xl font-semibold tabular-nums",
+                    compact && "text-lg sm:text-xl",
+                    isScrubForecast ? "text-[#A1A1AA]" : "text-[#FAFAFA]",
+                  )}
+                >
+                  {currency(scrubPoint.balance)}
+                </span>
+                <span className="text-xs text-[var(--text-secondary)]">
+                  {scrubDate}
+                </span>
+                {isScrubForecast && (
+                  <span className="text-[11px] font-medium text-[#A1A1AA]">
+                    verwacht
+                  </span>
+                )}
+              </div>
+            )}
             <CardDescription className={cn(compact && "leading-4")}>
               Lopend saldo deze maand
               <span className="mt-1 block max-w-[28rem] text-[11px] leading-relaxed text-[var(--text-muted)]">
@@ -5423,6 +5456,9 @@ function CashflowTimelineCard({
               points={points}
               month={month}
               buffer={buffer}
+              scrubPoint={scrubPoint}
+              onScrubPointChange={setScrubPoint}
+              onScrubEnd={() => setScrubPoint(null)}
               emptyMessage="Voer een openingssaldo in om de cashflow te starten."
             />
           ) : (
@@ -5474,13 +5510,22 @@ function CashflowRechartsChart({
   points,
   month,
   buffer,
+  scrubPoint,
+  onScrubPointChange,
+  onScrubEnd,
   emptyMessage = "Nog geen cashflowpunten.",
 }: {
   points: CashflowPoint[];
   month: string;
   buffer: number;
+  scrubPoint?: CashflowPoint | null;
+  onScrubPointChange?: (point: CashflowPoint) => void;
+  onScrubEnd?: () => void;
   emptyMessage?: string;
 }) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const isScrubbingRef = useRef(false);
+
   if (!points.length) {
     return (
       <div className="flex h-full items-center justify-center rounded-[12px] border border-dashed border-[var(--border)] bg-black/10 text-xs text-[var(--text-muted)]">
@@ -5491,115 +5536,207 @@ function CashflowRechartsChart({
 
   const chart = buildCashflowChartModel(points, buffer, month);
 
+  function pointForClientX(clientX: number) {
+    const rect = chartRef.current?.getBoundingClientRect();
+
+    if (!rect || points.length === 0) {
+      return null;
+    }
+
+    const plotLeft = 54;
+    const plotRight = 8;
+    const plotWidth = Math.max(rect.width - plotLeft - plotRight, 1);
+    const relativeX = Math.min(
+      Math.max(clientX - rect.left - plotLeft, 0),
+      plotWidth,
+    );
+    const [minDay, maxDay] = chart.xDomain;
+    const estimatedDay =
+      minDay + (relativeX / plotWidth) * Math.max(maxDay - minDay, 1);
+
+    return points.reduce((nearest, point) =>
+      Math.abs(point.day - estimatedDay) < Math.abs(nearest.day - estimatedDay)
+        ? point
+        : nearest,
+    );
+  }
+
+  function updateScrubPoint(clientX: number) {
+    const nextPoint = pointForClientX(clientX);
+
+    if (nextPoint) {
+      onScrubPointChange?.(nextPoint);
+    }
+  }
+
+  function startScrub(event: React.PointerEvent<HTMLDivElement>) {
+    isScrubbingRef.current = true;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+    updateScrubPoint(event.clientX);
+  }
+
+  function moveScrub(event: React.PointerEvent<HTMLDivElement>) {
+    if (!isScrubbingRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    updateScrubPoint(event.clientX);
+  }
+
+  function endScrub(event: React.PointerEvent<HTMLDivElement>) {
+    if (!isScrubbingRef.current) {
+      return;
+    }
+
+    isScrubbingRef.current = false;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    onScrubEnd?.();
+  }
+
   return (
-    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-      <LineChart
-        data={chart.data}
-        margin={{ top: 12, right: 8, bottom: 0, left: 0 }}
-      >
-        <CartesianGrid
-          vertical={false}
-          stroke="rgba(161,161,170,0.18)"
-          strokeDasharray="3 3"
-        />
-        <XAxis
-          dataKey="day"
-          type="number"
-          domain={chart.xDomain}
-          ticks={chart.xTicks}
-          axisLine={false}
-          tickLine={false}
-          tick={{ fill: "#A1A1AA", fontSize: 11 }}
-          tickFormatter={(value) =>
-            formatCashflowDateTick(month, Number(value))
-          }
-        />
-        <YAxis
-          type="number"
-          domain={chart.yDomain}
-          ticks={chart.yTicks}
-          width={54}
-          axisLine={false}
-          tickLine={false}
-          tick={{ fill: "#A1A1AA", fontSize: 11 }}
-          tickFormatter={(value) => formatCashflowAxisValue(Number(value))}
-        />
-        {chart.showOrangeZone && (
-          <ReferenceArea
-            y1={chart.orangeZone[0]}
-            y2={chart.orangeZone[1]}
-            fill="#F59E0B"
-            fillOpacity={0.1}
-            ifOverflow="extendDomain"
-          />
-        )}
-        {chart.showRedZone && (
-          <ReferenceArea
-            y1={chart.redZone[0]}
-            y2={chart.redZone[1]}
-            fill="#EF4444"
-            fillOpacity={0.1}
-            ifOverflow="extendDomain"
-          />
-        )}
-        <ReferenceLine
-          y={buffer}
-          stroke="#6366F1"
-          strokeDasharray="4 4"
-          strokeWidth={1.5}
-          ifOverflow="extendDomain"
-          label={{
-            value: "Buffer",
-            position: "right",
-            fill: "#6366F1",
-            fontSize: 11,
-          }}
-        />
-        {typeof chart.todayLineDay === "number" && (
-          <ReferenceLine
-            x={chart.todayLineDay}
-            stroke="rgba(255,255,255,0.22)"
+    <div
+      ref={chartRef}
+      className="h-full touch-none select-none"
+      onPointerDown={startScrub}
+      onPointerMove={moveScrub}
+      onPointerUp={endScrub}
+      onPointerCancel={endScrub}
+      onTouchMove={(event) => event.preventDefault()}
+    >
+      <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+        <LineChart
+          data={chart.data}
+          margin={{ top: 12, right: 8, bottom: 0, left: 0 }}
+        >
+          <CartesianGrid
+            vertical={false}
+            stroke="rgba(161,161,170,0.18)"
             strokeDasharray="3 3"
-            strokeWidth={1}
-            ifOverflow="visible"
+          />
+          <XAxis
+            dataKey="day"
+            type="number"
+            domain={chart.xDomain}
+            ticks={chart.xTicks}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#A1A1AA", fontSize: 11 }}
+            tickFormatter={(value) =>
+              formatCashflowDateTick(month, Number(value))
+            }
+          />
+          <YAxis
+            type="number"
+            domain={chart.yDomain}
+            ticks={chart.yTicks}
+            width={54}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#A1A1AA", fontSize: 11 }}
+            tickFormatter={(value) => formatCashflowAxisValue(Number(value))}
+          />
+          {chart.showOrangeZone && (
+            <ReferenceArea
+              y1={chart.orangeZone[0]}
+              y2={chart.orangeZone[1]}
+              fill="#F59E0B"
+              fillOpacity={0.1}
+              ifOverflow="extendDomain"
+            />
+          )}
+          {chart.showRedZone && (
+            <ReferenceArea
+              y1={chart.redZone[0]}
+              y2={chart.redZone[1]}
+              fill="#EF4444"
+              fillOpacity={0.1}
+              ifOverflow="extendDomain"
+            />
+          )}
+          <ReferenceLine
+            y={buffer}
+            stroke="#6366F1"
+            strokeDasharray="4 4"
+            strokeWidth={1.5}
+            ifOverflow="extendDomain"
             label={{
-              value: "vandaag",
-              position: "top",
-              fill: "#A1A1AA",
-              fontSize: 10,
+              value: "Buffer",
+              position: "right",
+              fill: "#6366F1",
+              fontSize: 11,
             }}
           />
-        )}
-        {chart.segments.length > 0 ? (
-          chart.segments.map((segment) => (
+          {typeof chart.todayLineDay === "number" && (
+            <ReferenceLine
+              x={chart.todayLineDay}
+              stroke="rgba(255,255,255,0.22)"
+              strokeDasharray="3 3"
+              strokeWidth={1}
+              ifOverflow="visible"
+              label={{
+                value: "vandaag",
+                position: "top",
+                fill: "#A1A1AA",
+                fontSize: 10,
+              }}
+            />
+          )}
+          {chart.segments.length > 0 ? (
+            chart.segments.map((segment) => (
+              <Line
+                key={segment.id}
+                data={segment.data}
+                type="linear"
+                dataKey="balance"
+                stroke={segment.color}
+                strokeWidth={3}
+                dot={false}
+                activeDot={false}
+                isAnimationActive={false}
+                strokeLinecap="round"
+                connectNulls
+              />
+            ))
+          ) : (
             <Line
-              key={segment.id}
-              data={segment.data}
+              data={chart.data}
               type="linear"
               dataKey="balance"
-              stroke={segment.color}
+              stroke={cashflowLineColor(points[0].balance, buffer)}
               strokeWidth={3}
-              dot={false}
+              dot={{ r: 4 }}
               activeDot={false}
               isAnimationActive={false}
-              strokeLinecap="round"
-              connectNulls
             />
-          ))
-        ) : (
-          <Line
-            data={chart.data}
-            type="linear"
-            dataKey="balance"
-            stroke={cashflowLineColor(points[0].balance, buffer)}
-            strokeWidth={3}
-            dot={{ r: 4 }}
-            activeDot={false}
-            isAnimationActive={false}
-          />
-        )}
-      </LineChart>
-    </ResponsiveContainer>
+          )}
+          {scrubPoint && (
+            <>
+              <ReferenceLine
+                x={scrubPoint.day}
+                stroke="#6366F1"
+                strokeOpacity={0.65}
+                strokeDasharray="2 3"
+                strokeWidth={1.2}
+                ifOverflow="visible"
+              />
+              <ReferenceDot
+                x={scrubPoint.day}
+                y={scrubPoint.balance}
+                r={5}
+                fill="#6366F1"
+                stroke="#18181B"
+                strokeWidth={2}
+                ifOverflow="visible"
+              />
+            </>
+          )}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -13499,6 +13636,21 @@ function cashflowLineColor(balance: number, buffer: number) {
   if (balance < 0) return "#EF4444";
   if (balance < buffer) return "#F59E0B";
   return "#10B981";
+}
+
+function isForecastCashflowPoint(month: string, point: CashflowPoint) {
+  const today = new Date().toISOString().slice(0, 10);
+  const currentMonth = today.slice(0, 7);
+
+  if (month < currentMonth) {
+    return false;
+  }
+
+  if (month > currentMonth) {
+    return true;
+  }
+
+  return point.day > Number(today.slice(8, 10));
 }
 
 function buildCashflowChartModel(
