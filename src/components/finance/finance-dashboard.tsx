@@ -8746,7 +8746,11 @@ function ChartsPanel({
                         value={row.amount}
                         max={categoryProgressMax}
                         color={row.color}
-                        markerValue={row.average > 0 ? row.average : undefined}
+                        markerValue={
+                          row.kind === "variable" && row.average > 0
+                            ? row.average
+                            : undefined
+                        }
                       />
                     </div>
                     <span className="justify-self-end pb-px text-right font-medium text-[var(--text-primary)]">

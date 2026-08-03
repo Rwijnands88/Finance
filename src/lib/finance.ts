@@ -148,6 +148,7 @@ export function categoryTotals(
       return {
         categoryId,
         name: category?.name ?? "Onbekend",
+        kind: category?.kind,
         amount,
         average: category?.averageMonthly ?? 0,
         color: category?.color ?? "#6366F1",
