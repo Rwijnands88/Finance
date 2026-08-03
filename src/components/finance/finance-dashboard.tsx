@@ -2245,45 +2245,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     );
   }
 
-  async function deleteBalanceSnapshot(snapshot: AccountBalanceSnapshot) {
-    const confirmed = window.confirm(
-      "Saldo-invoer verwijderen?\n\nJe kunt daarna gewoon een nieuw saldo invoeren.",
-    );
-
-    if (!confirmed) return;
-
-    setIsSavingBalance(true);
-    setBalanceMessage("");
-
-    const response = await fetch("/api/account-balance-snapshots", {
-      method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        householdId: initialData.householdId,
-        snapshotId: snapshot.id,
-      }),
-    });
-    const result = await response.json();
-
-    setIsSavingBalance(false);
-
-    if (!response.ok) {
-      setBalanceMessage(
-        typeof result.error === "string"
-          ? result.error
-          : "Saldo verwijderen lukte niet.",
-      );
-      return;
-    }
-
-    setBalanceSnapshots((items) =>
-      items.filter((item) => item.id !== snapshot.id),
-    );
-    setBalanceMessage("Saldo verwijderd. Je kunt nu een nieuw saldo invoeren.");
-  }
-
   async function saveSavingsSnapshot() {
     const amount = parseCurrencyInput(savingsStartAmount);
 
@@ -4632,7 +4593,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
             onBalanceAmountChange={updateBalanceAmount}
             onBalanceDateChange={updateBalanceDate}
             onSaveBalance={saveBalanceSnapshot}
-            onDeleteBalance={deleteBalanceSnapshot}
             onEditIncome={startEditingTransaction}
             onDeleteIncome={deleteTransaction}
             onIncomeAmountChange={setIncomeAmount}
@@ -4961,7 +4921,6 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               onBalanceAmountChange={updateBalanceAmount}
               onBalanceDateChange={updateBalanceDate}
               onSaveBalance={saveBalanceSnapshot}
-              onDeleteBalance={deleteBalanceSnapshot}
               onEditIncome={startEditingTransaction}
               onDeleteIncome={deleteTransaction}
               onIncomeAmountChange={setIncomeAmount}
@@ -10226,7 +10185,6 @@ function AccountBalanceCard({
   onBalanceAmountChange,
   onBalanceDateChange,
   onSaveBalance,
-  onDeleteBalance,
   onEditIncome,
   onDeleteIncome,
   onIncomeAmountChange,
@@ -10256,7 +10214,6 @@ function AccountBalanceCard({
   onBalanceAmountChange: (value: string) => void;
   onBalanceDateChange: (value: string) => void;
   onSaveBalance: () => void;
-  onDeleteBalance: (snapshot: AccountBalanceSnapshot) => void;
   onEditIncome: (transaction: Transaction) => void;
   onDeleteIncome: (transaction: Transaction) => void;
   onIncomeAmountChange: (value: string) => void;
@@ -10265,116 +10222,108 @@ function AccountBalanceCard({
   onIncomeNoteChange: (value: string) => void;
   onAddIncome: () => void;
 }) {
+  const showStartBalanceSetup = !snapshot;
+  const showCard =
+    showStartBalanceSetup ||
+    Boolean(coverage) ||
+    showIncomeForm ||
+    Boolean(incomeMessage);
+  const title = showStartBalanceSetup
+    ? showIncomeForm
+      ? "Startsaldo & inkomen"
+      : "Startsaldo instellen"
+    : "Inkomen";
+
+  if (!showCard) {
+    return null;
+  }
+
   return (
     <Card className="finance-card">
       <CardHeader>
-        <CardTitle>{showIncomeForm ? "Saldo & inkomen" : "Saldo"}</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription>{accountName}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3">
-          <div className="flex items-start justify-between gap-3">
+        {showStartBalanceSetup && (
+          <div className="rounded-[13px] border border-zinc-800/70 bg-zinc-950/35 p-3">
             <div>
-              <p className="text-sm font-medium text-zinc-100">
-                {snapshot ? currency(snapshot.balance) : "Geen startsaldo"}
-              </p>
+              <p className="text-sm font-medium text-zinc-100">Geen startsaldo</p>
               <p className="mt-1 text-xs text-zinc-500">
-                {snapshot
-                  ? `Eindsaldo ingevuld op ${snapshot.snapshotDate}`
-                  : "Vul het eindsaldo van een dag in als startpunt."}
+                Vul het eindsaldo van een dag in als startpunt.
               </p>
             </div>
-            {snapshot && (
-              <div className="flex items-center gap-2">
-                <Badge className="border-zinc-800 bg-zinc-950/70 text-zinc-400">
-                  {snapshot.enteredBy}
-                </Badge>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  title="Saldo-invoer verwijderen"
-                  onClick={() => onDeleteBalance(snapshot)}
-                  disabled={isSavingBalance}
-                  className="h-8 w-8 text-zinc-500 hover:text-red-300"
-                >
-                  {isSavingBalance ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            )}
           </div>
-        </div>
+        )}
 
         {coverage && (
           <ContributionCoverageCard coverage={coverage} showSavingsIndicator />
         )}
 
-        <details className="group rounded-[14px] border border-zinc-800 bg-zinc-950/30">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-zinc-100">
-            Saldo aanpassen
-            <Plus className="h-4 w-4 text-zinc-500 transition group-open:rotate-45" />
-          </summary>
-          <div className="grid gap-2 border-t border-zinc-900 p-3">
-            <label className="grid gap-1 text-xs font-medium text-zinc-300">
-              Eindsaldo van deze dag
-              <Input
-                inputMode="decimal"
-                placeholder="Saldo na alle boekingen"
-                value={balanceAmount}
-                className="h-10"
-                onChange={(event) => onBalanceAmountChange(event.target.value)}
-              />
-            </label>
-            <label className="grid gap-1 text-xs font-medium text-zinc-300">
-              Datum eindsaldo
-              <Input
-                type="date"
-                value={balanceDate}
-                className="h-10"
-                onChange={(event) => onBalanceDateChange(event.target.value)}
-              />
-            </label>
-            <p className="text-[11px] leading-relaxed text-zinc-500">
-              Gebruik het saldo nadat alle af- en bijschrijvingen op die datum
-              zijn verwerkt. Kies bij voorkeur de laatste dag van de maand als
-              snapshotdatum.
-            </p>
-            {balanceWarning && (
-              <div className="rounded-[12px] border border-amber-400/25 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-100">
-                <p>
-                  Op deze datum staan {balanceWarning.transactionCount}{" "}
-                  transacties voor in totaal{" "}
-                  {currency(balanceWarning.totalAmount)}. Die worden geacht al
-                  in dit saldo verwerkt te zijn.
-                </p>
-                <p className="mt-1 text-amber-200/80">
-                  Klik nogmaals op bewaren om door te gaan.
-                </p>
+        {showStartBalanceSetup && (
+          <details className="group rounded-[14px] border border-zinc-800 bg-zinc-950/30">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-medium text-zinc-100">
+              Startsaldo instellen
+              <Plus className="h-4 w-4 text-zinc-500 transition group-open:rotate-45" />
+            </summary>
+            <div className="grid gap-2 border-t border-zinc-900 p-3">
+              <label className="grid gap-1 text-xs font-medium text-zinc-300">
+                Eindsaldo van deze dag
+                <Input
+                  inputMode="decimal"
+                  placeholder="Saldo na alle boekingen"
+                  value={balanceAmount}
+                  className="h-10"
+                  onChange={(event) => onBalanceAmountChange(event.target.value)}
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-zinc-300">
+                Datum eindsaldo
+                <Input
+                  type="date"
+                  value={balanceDate}
+                  className="h-10"
+                  onChange={(event) => onBalanceDateChange(event.target.value)}
+                />
+              </label>
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                Gebruik het saldo nadat alle af- en bijschrijvingen op die datum
+                zijn verwerkt. Kies bij voorkeur de laatste dag van de maand als
+                snapshotdatum.
+              </p>
+              {balanceWarning && (
+                <div className="rounded-[12px] border border-amber-400/25 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-100">
+                  <p>
+                    Op deze datum staan {balanceWarning.transactionCount}{" "}
+                    transacties voor in totaal{" "}
+                    {currency(balanceWarning.totalAmount)}. Die worden geacht al
+                    in dit saldo verwerkt te zijn.
+                  </p>
+                  <p className="mt-1 text-amber-200/80">
+                    Klik nogmaals op bewaren om door te gaan.
+                  </p>
+                </div>
+              )}
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={onSaveBalance}
+                  disabled={isSavingBalance}
+                >
+                  {isSavingBalance ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  {balanceWarning ? "Toch bewaren" : "Bewaar"}
+                </Button>
               </div>
-            )}
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={onSaveBalance}
-                disabled={isSavingBalance}
-              >
-                {isSavingBalance ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                {balanceWarning ? "Toch bewaren" : "Bewaar"}
-              </Button>
             </div>
-          </div>
-        </details>
+          </details>
+        )}
 
-        {balanceMessage && (
+        {showStartBalanceSetup && balanceMessage && (
           <p className="rounded-[12px] border border-zinc-800 bg-zinc-950/60 p-3 text-sm text-zinc-300">
             {balanceMessage}
           </p>
