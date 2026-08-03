@@ -55,6 +55,7 @@ import {
   type DegiroPosition,
   type FixedExpenseInstance,
   type MonthReconciliation,
+  type OpenFixedExpenseMonthSummary,
   type RecurringExpense,
   type Transaction,
 } from "@/lib/types";
@@ -142,6 +143,11 @@ type MonthDataResponse = {
   recurringExpenses?: RecurringExpense[];
   fixedInstances?: FixedExpenseInstance[];
   monthReconciliations?: MonthReconciliation[];
+  error?: string;
+};
+
+type OpenFixedExpenseMonthsResponse = {
+  openFixedExpenseMonths?: OpenFixedExpenseMonthSummary[];
   error?: string;
 };
 type CashflowPoint = {
@@ -335,6 +341,9 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   );
   const [monthReconciliations, setMonthReconciliations] = useState(
     initialData.monthReconciliations,
+  );
+  const [openFixedExpenseMonths, setOpenFixedExpenseMonths] = useState(
+    initialData.openFixedExpenseMonths,
   );
   const [contributionPlans, setContributionPlans] = useState<ContributionPlan[]>(
     initialData.contributionPlans,
@@ -681,6 +690,55 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
   const showReconciliationReminder =
     Boolean(initialData.userSettings.reconciliationEnabled && defaultAccount) &&
     !previousMonthReconciliation;
+  const openFixedExpenseCount = openFixedExpenseMonths.reduce(
+    (total, month) => total + month.count,
+    0,
+  );
+  const openFixedExpenseTotal = openFixedExpenseMonths.reduce(
+    (total, month) => total + month.total,
+    0,
+  );
+  const firstOpenFixedExpenseMonth = openFixedExpenseMonths[0];
+  const persistentMonthSignal = useMemo(() => {
+    const parts: string[] = [];
+
+    if (showReconciliationReminder) {
+      parts.push("Vorige maand nog niet aangesloten");
+    }
+
+    if (openFixedExpenseCount > 0) {
+      const itemLabel =
+        openFixedExpenseCount === 1
+          ? "vaste last"
+          : "vaste lasten";
+      const monthLabelText =
+        openFixedExpenseMonths.length === 1
+          ? `in ${monthLabel(firstOpenFixedExpenseMonth?.month ?? currentMonth)}`
+          : `in ${openFixedExpenseMonths.length} maanden`;
+
+      parts.push(
+        `${openFixedExpenseCount} ${itemLabel} ${monthLabelText} nog te bevestigen (${currency(openFixedExpenseTotal)})`,
+      );
+    }
+
+    if (!parts.length) {
+      return null;
+    }
+
+    const targetMonth = firstOpenFixedExpenseMonth?.month;
+    const action = targetMonth
+      ? `Open ${monthLabel(targetMonth)}`
+      : "Open maandaansluiting";
+
+    return `${parts.join(" · ")} — ${action}.`;
+  }, [
+    currentMonth,
+    firstOpenFixedExpenseMonth?.month,
+    openFixedExpenseCount,
+    openFixedExpenseMonths.length,
+    openFixedExpenseTotal,
+    showReconciliationReminder,
+  ]);
   const viewCopy = isSharedView
     ? {
         label: "Gezamenlijke rekening",
@@ -1458,6 +1516,7 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
     }
 
     await loadMonthData(currentMonth, { force: true });
+    await refreshOpenFixedExpenseMonths();
 
     setIsSavingFixedBooking(false);
     setBookingFixedItem(null);
@@ -1675,6 +1734,19 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       );
     } finally {
       setLoadingMonth(null);
+    }
+  }
+
+  async function refreshOpenFixedExpenseMonths() {
+    try {
+      const response = await fetch("/api/fixed-expenses/open-months");
+      const result = (await response.json()) as OpenFixedExpenseMonthsResponse;
+
+      if (response.ok && Array.isArray(result.openFixedExpenseMonths)) {
+        setOpenFixedExpenseMonths(result.openFixedExpenseMonths);
+      }
+    } catch {
+      // Dit signaal mag een bevestiging nooit blokkeren; de volgende dashboardload haalt het opnieuw op.
     }
   }
 
@@ -4238,6 +4310,25 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
       scrollToFinanceSection("month");
     });
   };
+  const openClosedMonthSignal = () => {
+    if (firstOpenFixedExpenseMonth) {
+      if (firstOpenFixedExpenseMonth.accountId) {
+        setSelectedAccountId(firstOpenFixedExpenseMonth.accountId);
+        setQuickAccount(firstOpenFixedExpenseMonth.accountId);
+      }
+
+      setCurrentMonth(firstOpenFixedExpenseMonth.month);
+      setMonthMessage("");
+      setActiveSection("fixed");
+      void loadMonthData(firstOpenFixedExpenseMonth.month);
+      window.requestAnimationFrame(() => {
+        scrollToFinanceSection("fixed");
+      });
+      return;
+    }
+
+    openPreviousMonthReconciliation();
+  };
 
   return (
     <main className="min-h-dvh overflow-x-hidden bg-[var(--bg-base)] pb-[calc(84px+env(safe-area-inset-bottom))] text-[var(--text-primary)] lg:pb-0">
@@ -4284,13 +4375,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
               Nieuwe maand — vergeet je openingssaldo niet in te voeren.
             </div>
           )}
-          {showReconciliationReminder && (
+          {persistentMonthSignal && (
             <button
               type="button"
-              onClick={openPreviousMonthReconciliation}
+              onClick={openClosedMonthSignal}
               className="rounded-[14px] border border-indigo-400/25 bg-indigo-500/10 px-3 py-2 text-left text-sm text-indigo-100 transition hover:border-indigo-300/40"
             >
-              Vorige maand nog niet aangesloten — open maandaansluiting.
+              {persistentMonthSignal}
             </button>
           )}
 
@@ -4666,13 +4757,13 @@ export function FinanceDashboard({ initialData }: { initialData: DashboardData }
                   Nieuwe maand — vergeet je openingssaldo niet in te voeren.
                 </div>
               )}
-              {showReconciliationReminder && (
+              {persistentMonthSignal && (
                 <button
                   type="button"
-                  onClick={openPreviousMonthReconciliation}
+                  onClick={openClosedMonthSignal}
                   className="rounded-[14px] border border-indigo-400/25 bg-indigo-500/10 px-3 py-2 text-left text-sm text-indigo-100 transition hover:border-indigo-300/40"
                 >
-                  Vorige maand nog niet aangesloten — open maandaansluiting.
+                  {persistentMonthSignal}
                 </button>
               )}
 

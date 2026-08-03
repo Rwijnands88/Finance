@@ -1,6 +1,7 @@
 import type {
   Category,
   FixedExpenseInstance,
+  OpenFixedExpenseMonthSummary,
   RecurringExpense,
   Transaction,
 } from "@/lib/types";
@@ -40,6 +41,8 @@ export const fixedInstances: FixedExpenseInstance[] = [
   { id: "fix-5", recurringExpenseId: "rec-5", month: "2026-05", name: "BSO", categoryId: "childcare", amount: 265, status: "open" },
   { id: "fix-6", recurringExpenseId: "rec-6", month: "2026-05", name: "Verzekeringen pakket", categoryId: "insurance", amount: 315, status: "confirmed", confirmedBy: "Ralph" },
 ];
+
+export const openFixedExpenseMonths: OpenFixedExpenseMonthSummary[] = [];
 
 export const transactions: Transaction[] = [
   { id: "txn-1", type: "fixed", fixedInstanceId: "fix-1", categoryId: "mortgage", amount: 1840, date: "2026-05-01", enteredBy: "Ralph", note: "Automatisch terugkerend" },

@@ -7,6 +7,7 @@ import type {
   DegiroPosition,
   InvestmentSettings,
   MonthReconciliation,
+  OpenFixedExpenseMonthSummary,
   Transaction,
   UserSettings,
 } from "@/lib/types";
@@ -20,6 +21,18 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 type SupabaseClient = Awaited<ReturnType<typeof getSupabaseServerClient>>;
 
 const monthFormatter = new Intl.DateTimeFormat("nl-NL", { month: "short" });
+
+type RecurringAccountRow = {
+  id: string;
+  account_id: string | null;
+};
+
+type OpenFixedExpenseInstanceRow = {
+  id: string;
+  recurring_expense_id: string;
+  month: string;
+  amount_snapshot: number;
+};
 
 export async function getDashboardData(): Promise<DashboardData> {
   const supabase = await getSupabaseServerClient();
@@ -159,6 +172,20 @@ export async function getDashboardData(): Promise<DashboardData> {
     accounts.find((account) => account.kind === "shared") ?? accounts[0];
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
   const accountIds = accounts.map((account) => account.id);
+  const recurringAccountRows = (recurringResult.data ?? []).map((expense) => ({
+    id: expense.id,
+    account_id: expense.account_id ?? null,
+  }));
+  const openFixedExpenseMonths =
+    recurringAccountRows.length > 0
+      ? await fetchOpenFixedExpenseMonthsForRecurring(
+          supabase,
+          membership.household_id,
+          monthStart,
+          recurringAccountRows,
+          fallbackAccount?.id,
+        )
+      : [];
   const monthReconciliationsResult = accountIds.length
     ? await supabase
         .from("month_reconciliations")
@@ -241,6 +268,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     userSettings: mapUserSettings(userSettingsResult.data, user.id),
     degiroPositions: mapDegiroPositions(degiroPositionsResult.data ?? []),
     cryptoPositions: mapCryptoPositions(cryptoPositionsResult.data ?? []),
+    openFixedExpenseMonths,
     monthReconciliations: mapMonthReconciliations(
       monthReconciliationsResult.data ?? [],
     ),
@@ -283,6 +311,106 @@ export async function getDashboardData(): Promise<DashboardData> {
     ),
     sixMonthTrend: buildSixMonthTrend(historicalTransactionsResult, monthStart),
   };
+}
+
+export async function fetchOpenFixedExpenseMonths(
+  supabase: SupabaseClient,
+  householdId: string,
+  beforeMonthStart: string,
+  fallbackAccountId?: string,
+) {
+  const recurringResult = await supabase
+    .from("recurring_expenses")
+    .select("id, account_id")
+    .eq("household_id", householdId);
+
+  throwIfError(recurringResult.error);
+
+  const recurringRows = (recurringResult.data ?? []).map((expense) => ({
+    id: expense.id,
+    account_id: expense.account_id ?? null,
+  }));
+
+  if (!recurringRows.length) {
+    return [];
+  }
+
+  return fetchOpenFixedExpenseMonthsForRecurring(
+    supabase,
+    householdId,
+    beforeMonthStart,
+    recurringRows,
+    fallbackAccountId,
+  );
+}
+
+async function fetchOpenFixedExpenseMonthsForRecurring(
+  supabase: SupabaseClient,
+  householdId: string,
+  beforeMonthStart: string,
+  recurringRows: RecurringAccountRow[],
+  fallbackAccountId?: string,
+) {
+  const recurringAccountById = new Map(
+    recurringRows.map((expense) => [
+      expense.id,
+      expense.account_id ?? fallbackAccountId,
+    ]),
+  );
+  const { data, error } = await supabase
+    .from("fixed_expense_instances")
+    .select("id, recurring_expense_id, month, amount_snapshot")
+    .eq("household_id", householdId)
+    .eq("status", "open")
+    .lt("month", beforeMonthStart)
+    .in(
+      "recurring_expense_id",
+      recurringRows.map((expense) => expense.id),
+    )
+    .order("month", { ascending: true });
+
+  throwIfError(error);
+
+  return summarizeOpenFixedExpenseMonths(
+    data ?? [],
+    recurringAccountById,
+  );
+}
+
+function summarizeOpenFixedExpenseMonths(
+  rows: OpenFixedExpenseInstanceRow[],
+  accountIdByRecurringId: Map<string, string | undefined>,
+) {
+  const months = new Map<string, OpenFixedExpenseMonthSummary>();
+
+  rows.forEach((row) => {
+    const accountId = accountIdByRecurringId.get(row.recurring_expense_id);
+
+    if (!accountIdByRecurringId.has(row.recurring_expense_id)) {
+      return;
+    }
+
+    const month = row.month.slice(0, 7);
+    const existing =
+      months.get(month) ??
+      ({
+        month,
+        count: 0,
+        total: 0,
+        accountId,
+      } satisfies OpenFixedExpenseMonthSummary);
+
+    months.set(month, {
+      ...existing,
+      accountId: existing.accountId ?? accountId,
+      count: existing.count + 1,
+      total: existing.total + Number(row.amount_snapshot),
+    });
+  });
+
+  return Array.from(months.values()).sort((first, second) =>
+    first.month.localeCompare(second.month),
+  );
 }
 
 function mapDegiroPositions(

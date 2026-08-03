@@ -112,6 +112,13 @@ export type MonthReconciliation = {
   enteredById: string;
 };
 
+export type OpenFixedExpenseMonthSummary = {
+  month: string;
+  count: number;
+  total: number;
+  accountId?: string;
+};
+
 export type CryptoPosition = {
   id: string;
   userId: string;
@@ -148,6 +155,7 @@ export type DashboardData = {
   cryptoPositions: CryptoPosition[];
   degiroPositions: DegiroPosition[];
   monthReconciliations: MonthReconciliation[];
+  openFixedExpenseMonths: OpenFixedExpenseMonthSummary[];
   balanceSnapshots: AccountBalanceSnapshot[];
   recurringExpenses: RecurringExpense[];
   fixedInstances: FixedExpenseInstance[];
