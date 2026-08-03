@@ -5372,7 +5372,7 @@ function CashflowTimelineCard({
   onBufferChange: (value: number) => void;
   compact?: boolean;
 }) {
-  const insight = cashflowInsight(points, buffer);
+  const insight = cashflowInsight(points, buffer, month);
   const hasCashflowPoints = points.length > 0;
   const monthStartDate = `${month}-01`;
   const startDescription =
@@ -12945,32 +12945,50 @@ function activeRecurringFixedTotalForMonth(
   );
   const representedFixedInstanceIds = new Set<string>();
 
-  const total = recurringExpenses
-    .filter((expense) => expense.isActive)
-    .reduce((total, expense) => {
-      const instance = currentMonthInstances.get(expense.id);
-      const expectedDate = dateForBillingDay(currentMonth, expense.billingDay);
-      const effectiveDate = instance?.actualDate ?? expectedDate;
+  const total = recurringExpenses.reduce((total, expense) => {
+    const instance = currentMonthInstances.get(expense.id);
 
-      if (instance?.status === "skipped") {
-        return total;
-      }
+    if (!isRecurringExpenseVisibleInMonth(expense, currentMonth, instance)) {
+      return total;
+    }
 
-      if (!effectiveDate.startsWith(currentMonth)) {
-        return total;
-      }
+    const expectedDate = dateForBillingDay(currentMonth, expense.billingDay);
+    const effectiveDate = instance?.actualDate ?? expectedDate;
 
-      if (instance) {
-        representedFixedInstanceIds.add(instance.id);
-      }
+    if (instance?.status === "skipped") {
+      return total;
+    }
 
-      return total + (instance?.amount ?? expense.currentAmount);
-    }, 0);
+    if (!effectiveDate.startsWith(currentMonth)) {
+      return total;
+    }
+
+    if (instance) {
+      representedFixedInstanceIds.add(instance.id);
+    }
+
+    return total + (instance?.amount ?? expense.currentAmount);
+  }, 0);
 
   return {
     total,
     representedFixedInstanceIds,
   };
+}
+
+function isRecurringExpenseVisibleInMonth(
+  expense: RecurringExpense,
+  currentMonth: string,
+  instance?: FixedExpenseInstance,
+) {
+  const startsMonth = expense.startsOn.slice(0, 7);
+  const endsMonth = expense.endsOn?.slice(0, 7);
+
+  return (
+    (expense.isActive || Boolean(instance)) &&
+    startsMonth <= currentMonth &&
+    (!endsMonth || endsMonth >= currentMonth)
+  );
 }
 
 function confirmedFixedTransactionTotalOutsideRecurring(
@@ -13604,7 +13622,7 @@ function formatCashflowAxisValue(value: number) {
   return `${prefix}${Math.round(absoluteValue).toLocaleString("nl-NL")}`;
 }
 
-function cashflowInsight(points: CashflowPoint[], buffer: number) {
+function cashflowInsight(points: CashflowPoint[], buffer: number, month: string) {
   if (!points.length) {
     return {
       status: "healthy" as const,
@@ -13617,11 +13635,14 @@ function cashflowInsight(points: CashflowPoint[], buffer: number) {
     points[0],
   );
   const firstNegative = points.find((point) => point.balance < 0);
+  const lowestPointDate = formatCashflowStartDate(
+    dateForBillingDay(month, lowestPoint.day),
+  );
 
   if (firstNegative) {
     return {
       status: "negative" as const,
-      text: `Opgelet: saldo wordt negatief rond dag ${firstNegative.day}. Laagste punt: ${currency(lowestPoint.balance)}.`,
+      text: `Opgelet: saldo wordt negatief rond dag ${firstNegative.day}. Laagste punt: ${currency(lowestPoint.balance)} op ${lowestPointDate}.`,
     };
   }
 
@@ -13630,7 +13651,7 @@ function cashflowInsight(points: CashflowPoint[], buffer: number) {
   if (!belowBufferPoints.length) {
     return {
       status: "healthy" as const,
-      text: `Geen stress deze maand. Laagste punt: ${currency(lowestPoint.balance)} op dag ${lowestPoint.day}.`,
+      text: `Geen stress deze maand. Laagste punt: ${currency(lowestPoint.balance)} op ${lowestPointDate}.`,
     };
   }
 
@@ -13642,8 +13663,8 @@ function cashflowInsight(points: CashflowPoint[], buffer: number) {
   return {
     status: "below-buffer" as const,
     text: recoveryPoint
-      ? `Jullie komen ${belowBufferPoints.length} dagen onder de buffer — trekt bij rond dag ${recoveryPoint.day}.`
-      : `Jullie komen ${belowBufferPoints.length} dagen onder de buffer en herstellen niet voor einde maand.`,
+      ? `Jullie komen ${belowBufferPoints.length} dagen onder de buffer — laagste punt: ${currency(lowestPoint.balance)} op ${lowestPointDate}. Trekt bij rond dag ${recoveryPoint.day}.`
+      : `Jullie komen ${belowBufferPoints.length} dagen onder de buffer en herstellen niet voor einde maand. Laagste punt: ${currency(lowestPoint.balance)} op ${lowestPointDate}.`,
   };
 }
 
@@ -13661,34 +13682,40 @@ function buildFixedAgendaItems(
   const today = new Date().toISOString().slice(0, 10);
 
   return recurringExpenses
-    .filter((expense) => expense.isActive)
-	    .map((expense) => {
-	      const instance = currentMonthInstances.get(expense.id);
-	      const expectedDate = dateForBillingDay(currentMonth, expense.billingDay);
-	      const date = instance?.actualDate ?? expectedDate;
-	      const category = labels.get(expense.categoryId);
-	      const state = agendaState(instance?.status, date, today);
-	      const canProcess = instance?.status === "open";
+    .flatMap((expense): FixedAgendaItem[] => {
+      const instance = currentMonthInstances.get(expense.id);
 
-	      return {
-	        id: instance?.id ?? expense.id,
-	        recurringExpenseId: expense.id,
-	        name: instance?.name ?? expense.name,
-	        categoryName: category?.name ?? "Onbekend",
-	        categoryId: expense.categoryId,
-	        categoryColor: category?.color ?? "#6366F1",
-	        amount: instance?.amount ?? expense.currentAmount,
-	        expectedAmount: expense.currentAmount,
-	        date,
-	        expectedDate,
-	        actualDate: instance?.actualDate,
-	        billingDay: expense.billingDay,
-	        day: Number(date.slice(8, 10)),
-	        state,
-	        canConfirm: canProcess,
-	        canSkip: canProcess,
-	        note: instance?.note,
-	      } satisfies FixedAgendaItem;
+      if (!isRecurringExpenseVisibleInMonth(expense, currentMonth, instance)) {
+        return [];
+      }
+
+      const expectedDate = dateForBillingDay(currentMonth, expense.billingDay);
+      const date = instance?.actualDate ?? expectedDate;
+      const category = labels.get(expense.categoryId);
+      const state = agendaState(instance?.status, date, today);
+      const canProcess = instance?.status === "open";
+
+      return [
+        {
+          id: instance?.id ?? expense.id,
+          recurringExpenseId: expense.id,
+          name: instance?.name ?? expense.name,
+          categoryName: category?.name ?? "Onbekend",
+          categoryId: expense.categoryId,
+          categoryColor: category?.color ?? "#6366F1",
+          amount: instance?.amount ?? expense.currentAmount,
+          expectedAmount: expense.currentAmount,
+          date,
+          expectedDate,
+          actualDate: instance?.actualDate,
+          billingDay: expense.billingDay,
+          day: Number(date.slice(8, 10)),
+          state,
+          canConfirm: canProcess,
+          canSkip: canProcess,
+          note: instance?.note,
+        },
+      ];
     })
     .sort(
       (first, second) =>

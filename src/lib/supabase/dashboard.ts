@@ -257,6 +257,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       currentAmount: Number(expense.current_amount),
       billingDay: expense.billing_day,
       startsOn: expense.starts_on,
+      endsOn: expense.ends_on ?? undefined,
       isActive: expense.is_active,
     })),
     fixedInstances: (fixedInstancesResult.data ?? []).map((expense) => {

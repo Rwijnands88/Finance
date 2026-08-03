@@ -607,6 +607,7 @@ function mapRecurringExpense(row: {
   current_amount: number;
   billing_day: number;
   starts_on: string;
+  ends_on: string | null;
   is_active: boolean;
 }): RecurringExpense {
   return {
@@ -617,6 +618,7 @@ function mapRecurringExpense(row: {
     currentAmount: Number(row.current_amount),
     billingDay: row.billing_day,
     startsOn: row.starts_on,
+    endsOn: row.ends_on ?? undefined,
     isActive: row.is_active,
   };
 }
